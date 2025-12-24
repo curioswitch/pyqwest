@@ -1,0 +1,22 @@
+[package]
+name = "pyqwest"
+version = "0.0.1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "pyqwest"
+crate-type = ["cdylib"]
+
+[dependencies]
+bytes = "1"
+futures-core = "0.3"
+http = "1.4.0"
+pyo3 = { version = "0.27.2", features = ["bytes"] }
+reqwest = { version = "0.12.28", features = ["http2", "multipart", "stream"] }
+pyo3-async-runtimes = { version = "0.27.0", features = [
+    "tokio-runtime",
+    "unstable-streams",
+] }
+tokio = "1.47.1"
+url = "2.5.7"

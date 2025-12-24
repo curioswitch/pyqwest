@@ -1,0 +1,83 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Cancel in-progress jobs for PRs only
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-15
+          - ubuntu-24.04
+          - windows-2025
+        python:
+          - "3.10"
+          - "3.14"
+        # Test oldest and newest on all OS's, but others only on one
+        # to save CI load.
+        include:
+          - os: ubuntu-24.04
+            python: "3.11"
+          - os: ubuntu-24.04
+            python: "3.12"
+          - os: ubuntu-24.04
+            python: "3.13"
+          - os: ubuntu-24.04
+            python: "3.14t"
+          # Enable coverage on just one job
+          - os: ubuntu-24.04
+            python: "3.14"
+            coverage: "cov"
+
+    env:
+      # Avoid multiple compile e.g. in lint and test by setting as a job env var
+      RUSTFLAGS: ${{ matrix.coverage == 'cov' && '-C instrument-coverage' || '' }}
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+
+      - name: Setup rust
+        run: |
+          rustup update
+          ${{ matrix.coverage == 'cov' && 'rustup component add llvm-tools' || '' }}
+
+      - run: uv lock --check
+
+      - run: uv sync --python ${{ matrix.python }}
+
+      # Go ahead and run lint on all Python versions since we may have version-specific
+      # guards in rust in the future.
+      - name: run lints
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: uv run poe lint
+
+      - name: run tests
+        run: uv run poe test
+
+      - name: verify wheel build
+        run: uv run poe wheel
+
+      - name: prepare coverage
+        if: ${{ matrix.coverage == 'cov' }}
+        run: |
+          $(rustc --print=target-libdir)/../bin/llvm-profdata merge -sparse default_*.profraw tests/go/default_*.profraw -o tests.profdata
+          $(rustc --print=target-libdir)/../bin/llvm-cov export -format=lcov --ignore-filename-regex='/.cargo/registry' --ignore-filename-regex='.cargo/git/checkouts' --ignore-filename-regex='.rustup/toolchains' -instr-profile tests.profdata pyvoy/_bin/libpyvoy.so > tests.lcov
+
+      - uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+        if: ${{ matrix.coverage == 'cov' }}

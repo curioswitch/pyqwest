@@ -1,0 +1,48 @@
+[tasks.build]
+help = "Builds native extensions"
+cmd = "uv run maturin develop"
+
+[tasks.check]
+help = "Runs all checks"
+sequence = ["lint", "test"]
+
+[tasks.fix-python]
+help = "Fixes python lint errors where possible"
+cmd = "ruff check --fix --unsafe-fixes --exit-zero ."
+
+[tasks.fix-rust]
+help = "Fixes rust lint errors where possible"
+cmd = "cargo clippy --fix --allow-dirty"
+
+[tasks.format-python]
+help = "Format python code"
+cmd = "ruff format ."
+
+[tasks.format-rust]
+help = "Format rust code"
+cmd = "cargo fmt"
+
+[tasks.format]
+help = "Formats code"
+sequence = ["fix-python", "fix-rust", "format-python", "format-rust"]
+
+[tasks.lint-python]
+help = "Lints python code"
+cmd = "ruff check ."
+
+[tasks.lint-rust]
+help = "Lints rust code"
+cmd = "cargo clippy"
+
+[tasks.lint]
+help = "Lints code"
+sequence = ["lint-python", "lint-rust"]
+
+[tasks.test]
+help = "Run the test suite"
+deps = ["build"]
+cmd = "pytest"
+
+[tasks.wheel]
+help = "Builds the wheel"
+cmd = "uv run maturin build --release --strip --out dist"
