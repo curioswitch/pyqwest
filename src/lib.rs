@@ -7,7 +7,7 @@ mod request;
 mod response;
 
 /// Entrypoint to pyqwest extension module.
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn pyqwest(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<client::Client>()?;
     m.add_class::<client::HTTPVersion>()?;
