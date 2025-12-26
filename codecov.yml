@@ -1,0 +1,8 @@
+# TODO: Consider enabling PR comments, etc, after finding coverage bar.
+# For now, just make it easy to view it by uploading without reporting.
+
+comment: false
+coverage:
+  status:
+    project: off
+    patch: off
