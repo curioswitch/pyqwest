@@ -116,7 +116,7 @@ jobs:
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i pypy3.11
+          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
           sccache: true
 
       - name: Upload wheels
@@ -145,6 +145,7 @@ jobs:
             3.12
             3.13
             3.14
+            3.14t
             pypy3.11
 
       - uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
@@ -153,7 +154,7 @@ jobs:
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i pypy3.11
+          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
           sccache: true
 
       - name: Upload wheels
