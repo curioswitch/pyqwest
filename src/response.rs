@@ -18,6 +18,10 @@ pub(crate) struct Response {
     /// it happens on a Python thread instead of Tokio.
     headers: Option<Py<Headers>>,
 
+    /// The response trailers. Will only be present after consuming the response content.
+    /// If after consumption, it is still None, it means there were no trailers.
+    trailers: Option<Py<Headers>>,
+
     /// The underlying reqwest response.
     response: Arc<Mutex<reqwest::Response>>,
 }
@@ -28,6 +32,7 @@ impl Response {
         Response {
             status,
             headers: None,
+            trailers: None,
             response: Arc::new(Mutex::new(response)),
         }
     }
@@ -50,6 +55,23 @@ impl Response {
             let headers = Py::new(py, headers)?;
             self.headers = Some(headers.clone_ref(py));
             Ok(headers)
+        }
+    }
+
+    #[getter]
+    fn trailers<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<Headers>>> {
+        if let Some(trailers) = &self.trailers {
+            Ok(Some(trailers.clone_ref(py)))
+        } else {
+            let mut response = self.response.blocking_lock();
+            if let Some(trailers_map) = response.trailers() {
+                let trailers = Headers::from_response_headers(py, &trailers_map);
+                let trailers = Py::new(py, trailers)?;
+                self.trailers = Some(trailers.clone_ref(py));
+                Ok(Some(trailers))
+            } else {
+                Ok(None)
+            }
         }
     }
 

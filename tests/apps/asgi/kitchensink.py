@@ -17,7 +17,7 @@ async def _echo(
             "type": "http.response.start",
             "status": 200,
             "headers": echoed_headers,
-            "trailers": False,
+            "trailers": True,
         }
     )
     # ASGI requires a body message before sending headers.
@@ -37,7 +37,14 @@ async def _echo(
                 )
             if not more_body:
                 break
-    send({"type": "http.response.body", "body": b"", "more_body": False})
+    await send({"type": "http.response.body", "body": b"", "more_body": False})
+    await send(
+        {
+            "type": "http.response.trailers",
+            "headers": [(b"x-echo-trailer", b"last info")],
+            "more_trailers": False,
+        }
+    )
 
 
 async def app(

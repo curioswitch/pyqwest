@@ -13,7 +13,11 @@ bytes = "1"
 futures-core = "0.3"
 http = "1.4.0"
 pyo3 = { version = "0.27.2", features = ["bytes"] }
-reqwest = { version = "0.12.28", features = ["http2", "multipart", "stream"] }
+reqwest = { features = [
+    "http2",
+    "multipart",
+    "stream",
+], git = "https://github.com/chokoswitch/reqwest", branch = "trailers" }
 pyo3-async-runtimes = { version = "0.27.0", features = [
     "tokio-runtime",
     "unstable-streams",
