@@ -26,16 +26,15 @@ async def _echo(
         message = await receive()
         if message["type"] == "http.request":
             body = message["body"]
-            more_body = message["more_body"]
             if body:
                 await send(
                     {
                         "type": "http.response.body",
                         "body": message["body"],
-                        "more_body": more_body,
+                        "more_body": True,
                     }
                 )
-            if not more_body:
+            if not message["more_body"]:
                 break
     await send({"type": "http.response.body", "body": b"", "more_body": False})
     await send(
