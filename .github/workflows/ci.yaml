@@ -76,8 +76,8 @@ jobs:
       - name: prepare coverage
         if: ${{ matrix.coverage == 'cov' }}
         run: |
-          $(rustc --print=target-libdir)/../bin/llvm-profdata merge -sparse default_*.profraw tests/go/default_*.profraw -o tests.profdata
-          $(rustc --print=target-libdir)/../bin/llvm-cov export -format=lcov --ignore-filename-regex='/.cargo/registry' --ignore-filename-regex='.cargo/git/checkouts' --ignore-filename-regex='.rustup/toolchains' -instr-profile tests.profdata pyvoy/_bin/libpyvoy.so > tests.lcov
+          $(rustc --print=target-libdir)/../bin/llvm-profdata merge -sparse default_*.profraw -o tests.profdata
+          $(rustc --print=target-libdir)/../bin/llvm-cov export -format=lcov --ignore-filename-regex='/.cargo/registry' --ignore-filename-regex='.cargo/git/checkouts' --ignore-filename-regex='.rustup/toolchains' -instr-profile tests.profdata pyqwest/pyqwest.*.so > tests.lcov
 
       - uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         if: ${{ matrix.coverage == 'cov' }}
