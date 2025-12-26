@@ -65,7 +65,7 @@ impl Response {
         } else {
             let mut response = self.response.blocking_lock();
             if let Some(trailers_map) = response.trailers() {
-                let trailers = Headers::from_response_headers(py, &trailers_map);
+                let trailers = Headers::from_response_headers(py, trailers_map);
                 let trailers = Py::new(py, trailers)?;
                 self.trailers = Some(trailers.clone_ref(py));
                 Ok(Some(trailers))

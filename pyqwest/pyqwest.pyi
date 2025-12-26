@@ -8,27 +8,175 @@ from collections.abc import (
     Sequence,
     ValuesView,
 )
+from typing import TypeVar, overload
+
+_T = TypeVar("_T")
 
 class Client:
     def __init__(self, http_version: HTTPVersion | None = None) -> None: ...
     async def execute(self, request: Request) -> Response: ...
 
 class Headers:
+    """Container of HTTP headers.
+
+    This class behaves like a dictionary with case-insensitive keys and
+    string values. Standard dictionary access will act as if keys can only
+    have a single value. The add method can be used to It additionally can be used to store
+    multiple values for the same key by using the [`add`][] method. Iterating over
+    values or items will return all values, including duplicates.
+    """
+
     def __init__(
         self, items: Mapping[str, str] | Iterable[tuple[str, str]] | None = None
-    ) -> None: ...
-    def __getitem__(self, key: str) -> str: ...
-    def __setitem__(self, key: str, value: str) -> None: ...
-    def __delitem__(self, key: str) -> None: ...
-    def __iter__(self) -> Iterator[str]: ...
-    def __len__(self) -> int: ...
-    def add(self, key: str, value: str) -> None: ...
-    def clear(self) -> None: ...
-    def getall(self, key: str) -> Sequence[str]: ...
-    def items(self) -> ItemsView[str, str]: ...
-    def keys(self) -> KeysView[str]: ...
-    def values(self) -> ValuesView[str]: ...
-    def __contains__(self, key: object) -> bool: ...
+    ) -> None:
+        """Creates a new [`Headers`][] object.
+
+        Args:
+            items: Initial headers to add.
+        """
+
+    def __getitem__(self, key: str) -> str:
+        """Return the header value for the key.
+
+        If multiple values are present for the key, returns the first value.
+
+        Args:
+            key: The header name.
+
+        Raises:
+            KeyError: If the key is not present.
+        """
+
+    def __setitem__(self, key: str, value: str) -> None:
+        """Sets the header value for the key, replacing any existing values.
+
+        Args:
+            key: The header name.
+            value: The header value.
+        """
+
+    def __delitem__(self, key: str) -> None:
+        """Deletes all values for the key.
+
+        Args:
+            key: The header name.
+
+        Raises:
+            KeyError: If the key is not present.
+        """
+
+    def __iter__(self) -> Iterator[str]:
+        """Returns an iterator over the header names."""
+
+    def __len__(self) -> int:
+        """Returns the number of unique header names."""
+
+    def __eq__(
+        self, other: Headers | Mapping[str, str] | Iterable[tuple[str, str]]
+    ) -> bool:
+        """Compares the headers for equality with another Headers object,
+        mapping, or iterable of key-value pairs.
+
+        Args:
+            other: The object to compare against.
+        """
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        """Returns the header value for the key, or default if not present.
+
+        Args:
+            key: The header name.
+            default: The default value to return if the key is not present.
+        """
+
+    @overload
+    def pop(self, key: str) -> str:
+        """Removes and returns the header value for the key.
+
+        Args:
+            key: The header name.
+
+        Raises:
+            KeyError: If the key is not present.
+        """
+
+    @overload
+    def pop(self, key: str, default: _T) -> str | _T:
+        """Removes and returns the header value for the key, or default if not present.
+
+        Args:
+            key: The header name.
+            default: The default value to return if the key is not present.
+        """
+
+    def popitem(self) -> tuple[str, str]:
+        """Removes and returns an arbitrary (name, value) pair. Will return the same
+        name multiple times if it has multiple values.
+
+        Raises:
+            KeyError: If the headers are empty.
+        """
+
+    def setdefault(self, key: str, default: str | None = None) -> str:
+        """If the key is not present, sets it to the default value.
+        Returns the value for the key.
+
+        Args:
+            key: The header name.
+            default: The default value to set and return if the key is not present.
+        """
+
+    def add(self, key: str, value: str) -> None:
+        """Adds a header value for the key. Existing values are preserved.
+
+        Args:
+            key: The header name.
+            value: The header value.
+        """
+
+    @overload
+    def update(self, **kwargs: str) -> None:
+        """Updates headers from keyword arguments. Existing values are replaced.
+
+        Args:
+            **kwargs: Header names and values to set.
+        """
+    @overload
+    def update(
+        self, items: Mapping[str, str] | Iterable[tuple[str, str]], /, **kwargs: str
+    ) -> None:
+        """Updates headers with the provided items. Existing values are replaced.
+
+        Args:
+            items: Header names and values to set.
+            **kwargs: Additional header names and values to set after items. May overwrite items.
+        """
+
+    def clear(self) -> None:
+        """Removes all headers."""
+
+    def getall(self, key: str) -> Sequence[str]:
+        """Returns all header values for the key.
+
+        Args:
+            key: The header name.
+        """
+
+    def items(self) -> ItemsView[str, str]:
+        """Returns a new view of all header name-value pairs, including duplicates."""
+
+    def keys(self) -> KeysView[str]:
+        """Returns a new view of all unique header names."""
+
+    def values(self) -> ValuesView[str]:
+        """Returns a new view of all header values, including duplicates."""
+
+    def __contains__(self, key: object) -> bool:
+        """Returns True if the header name is present.
+
+        Args:
+            key: The header name.
+        """
 
 class Request:
     def __init__(
