@@ -1,14 +1,15 @@
 use std::str::FromStr;
 
 use http::{header, HeaderMap, HeaderName};
+use pyo3::exceptions::{PyKeyError, PyTypeError};
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAnyMethods as _, PyIterator, PyList, PyListMethods, PyMapping, PyString,
+    PyAnyMethods as _, PyDict, PyIterator, PyList, PyListMethods as _, PyMapping, PyString,
     PyStringMethods as _, PyTuple,
 };
 use pyo3::{prelude::*, IntoPyObjectExt};
 
-#[pyclass]
+#[pyclass(mapping)]
 pub(crate) struct Headers {
     pub(crate) store: HeaderMap<Py<PyString>>,
 }
@@ -63,7 +64,7 @@ impl Headers {
         if let Some(value) = self.store.get(normalize_key(key)?) {
             Ok(value.clone_ref(py))
         } else {
-            Err(pyo3::exceptions::PyKeyError::new_err(format!(
+            Err(PyKeyError::new_err(format!(
                 "KeyError: '{}'",
                 key.to_str()?
             )))
@@ -82,7 +83,7 @@ impl Headers {
 
     fn __delitem__<'py>(&mut self, key: &Bound<'py, PyString>) -> PyResult<()> {
         if self.store.remove(normalize_key(key)?).is_none() {
-            Err(pyo3::exceptions::PyKeyError::new_err(format!(
+            Err(PyKeyError::new_err(format!(
                 "KeyError: '{}'",
                 key.to_str()?
             )))
@@ -107,6 +108,14 @@ impl Headers {
         self.store.keys_len()
     }
 
+    fn __contains__<'py>(&self, key: &Bound<'py, PyAny>) -> PyResult<bool> {
+        let Ok(key) = key.cast::<PyString>() else {
+            return Ok(false);
+        };
+        let key = normalize_key(key)?;
+        Ok(self.store.contains_key(key))
+    }
+
     fn __repr__<'py>(&self, py: Python<'py>) -> String {
         self.store
             .iter()
@@ -118,6 +127,119 @@ impl Headers {
             + "})"
     }
 
+    fn __eq__<'py>(&self, py: Python<'py>, other: &Bound<'py, PyAny>) -> PyResult<bool> {
+        let store = if let Ok(other_headers) = other.cast::<Headers>() {
+            &other_headers.borrow().store
+        } else {
+            &Headers::py_new(Some(other.clone()))?.store
+        };
+
+        // We need to redefine equality since the values are Py<PyString> which can't be compared without
+        // binding.
+        if self.store.len() != store.len() {
+            return Ok(false);
+        }
+        Ok(self.store.keys().all(|key| {
+            let self_values = self.store.get_all(key).iter();
+            let mut other_values = store.get_all(key).iter();
+
+            for a in self_values {
+                let Some(b) = other_values.next() else {
+                    return false;
+                };
+                if a.to_str(py).unwrap_or_default() != b.to_str(py).unwrap_or_default() {
+                    return false;
+                }
+            }
+            other_values.next().is_none()
+        }))
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn get<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+        default: Option<Py<PyAny>>,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let Ok(key) = key.cast::<PyString>() else {
+            return Ok(default);
+        };
+        if let Some(value) = self.store.get(normalize_key(key)?) {
+            Ok(Some(value.clone_ref(py).into_any()))
+        } else {
+            Ok(default)
+        }
+    }
+
+    #[pyo3(signature = (key, *args))]
+    fn pop(&mut self, key: &Bound<PyString>, args: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+        if args.len() > 1 {
+            return Err(PyTypeError::new_err(format!(
+                "pop expected at most 2 arguments, got {}",
+                1 + args.len()
+            )));
+        }
+        let key = normalize_key(key)?;
+        if let Some(value) = self.store.remove(&key) {
+            Ok(value.into_any())
+        } else if args.len() == 1 {
+            let default = args.get_item(0)?;
+            Ok(default.clone().unbind())
+        } else {
+            Err(PyKeyError::new_err(format!("KeyError: '{}'", key.as_str())))
+        }
+    }
+
+    fn popitem<'py>(&mut self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+        let store = &mut self.store;
+        let Some(key) = store.keys().next() else {
+            return Err(PyKeyError::new_err("Headers is empty"));
+        };
+        let key = key.clone();
+        let names = HeaderNames::get(py);
+        match store.entry(key) {
+            header::Entry::Occupied(occ) => {
+                // We only want to pop off the last value, but HeaderMap's implementation means
+                // we remove them all and add back.
+                let (name, mut values) = occ.remove_entry_mult();
+
+                let mut ret = values.next().unwrap();
+                let mut rest: Vec<Py<PyString>> = Vec::new();
+                for value in values {
+                    rest.push(ret);
+                    ret = value;
+                }
+
+                for value in rest {
+                    store.append(name.clone(), value);
+                }
+                let key_py = names.header_name_to_py(py, &name);
+                let tuple = PyTuple::new(py, &[key_py, ret])?;
+                Ok(tuple.into())
+            }
+            header::Entry::Vacant(_) => unreachable!(),
+        }
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault<'py>(
+        &mut self,
+        py: Python<'py>,
+        key: &Bound<'py, PyString>,
+        default: Option<&Bound<'py, PyString>>,
+    ) -> PyResult<Option<Bound<'py, PyString>>> {
+        let key = normalize_key(key)?;
+        if let Some(value) = self.store.get(&key) {
+            Ok(Some(value.bind(py).clone()))
+        } else if let Some(default) = default {
+            self.store.insert(key, default.clone().unbind());
+            Ok(Some(default.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn add<'py>(
         &mut self,
         key: &Bound<'py, PyString>,
@@ -125,6 +247,45 @@ impl Headers {
     ) -> PyResult<()> {
         self.store
             .append(normalize_key(key)?, value.clone().unbind());
+        Ok(())
+    }
+
+    #[pyo3(signature = (items=None, **kwargs))]
+    fn update<'py>(
+        &mut self,
+        items: Option<Bound<'py, PyAny>>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<()> {
+        if let Some(items) = items {
+            if let Ok(mapping) = items.cast::<PyMapping>() {
+                for item in mapping.items()?.iter() {
+                    let key_py = item.get_item(0)?;
+                    let key = key_py.cast::<PyString>()?;
+                    let value_py = item.get_item(1)?;
+                    let value = value_py.cast::<PyString>()?;
+                    self.store
+                        .insert(normalize_key(key)?, value.clone().unbind());
+                }
+            } else {
+                for item in items.try_iter()? {
+                    let item = item?;
+                    let key_py = item.get_item(0)?;
+                    let key = key_py.cast::<PyString>()?;
+                    let value_py = item.get_item(1)?;
+                    let value = value_py.cast::<PyString>()?;
+                    self.store
+                        .insert(normalize_key(key)?, value.clone().unbind());
+                }
+            }
+        }
+        if let Some(kwargs) = kwargs {
+            for (key_py, value_py) in kwargs.iter() {
+                let key = key_py.cast::<PyString>()?;
+                let value = value_py.cast::<PyString>()?;
+                self.store
+                    .insert(normalize_key(key)?, value.clone().unbind());
+            }
+        }
         Ok(())
     }
 
@@ -164,14 +325,6 @@ impl Headers {
             headers: slf.into_pyobject(py)?.unbind(),
         }
         .into_bound_py_any(py)
-    }
-
-    fn __contains__<'py>(&self, key: &Bound<'py, PyAny>) -> PyResult<bool> {
-        let Ok(key) = key.cast::<PyString>() else {
-            return Ok(false);
-        };
-        let key = normalize_key(key)?;
-        Ok(self.store.contains_key(key))
     }
 }
 
@@ -252,9 +405,13 @@ impl ItemsView {
             return Ok(false);
         }
         let key_py = tuple.get_item(0)?;
-        let key = key_py.cast::<PyString>()?;
+        let Ok(key) = key_py.cast::<PyString>() else {
+            return Ok(false);
+        };
         let value_py = tuple.get_item(1)?;
-        let value = value_py.cast::<PyString>()?;
+        let Ok(value) = value_py.cast::<PyString>() else {
+            return Ok(false);
+        };
         let key = normalize_key(key)?;
         for stored_value in headers.store.get_all(&key) {
             let stored_value = stored_value.bind(py).as_any();
@@ -318,10 +475,6 @@ impl<I: Iterator> Iterator for ExactIter<I> {
             self.remaining -= 1;
         }
         item
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
     }
 }
 

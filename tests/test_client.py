@@ -15,7 +15,9 @@ if TYPE_CHECKING:
 
 @pytest_asyncio.fixture(scope="module")
 async def server() -> AsyncIterator[PyvoyServer]:
-    async with PyvoyServer("tests.apps.asgi.kitchensink", lifespan=False) as server:
+    async with PyvoyServer(
+        "tests.apps.asgi.kitchensink", lifespan=False, stdout=None, stderr=None
+    ) as server:
         yield server
 
 
