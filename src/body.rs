@@ -33,14 +33,6 @@ pub struct Body {
     inner: BodyInner,
 }
 
-#[pymethods]
-impl Body {
-    #[new]
-    fn new(body: Bound<'_, PyAny>) -> PyResult<Self> {
-        Self::from_py_any(body)
-    }
-}
-
 impl Body {
     pub(crate) fn from_py_any<'py>(body: Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(bytes) = body.extract::<Bytes>() {

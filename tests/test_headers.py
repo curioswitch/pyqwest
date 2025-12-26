@@ -32,9 +32,11 @@ def test_headers_no_duplicates() -> None:
     assert h.get(10) is None  # pyright: ignore[reportArgumentType]
     assert h.get("missing", "default") == "default"
     assert h.getall("missing") == []
+    assert repr(h) == "Headers()"
 
     h["Content-Type"] = "application/json"
     h["X-Test"] = "foo"
+    assert repr(h) == "Headers(('content-type', 'application/json'), ('x-test', 'foo'))"
     assert h["content-type"] == "application/json"
     assert h.setdefault("content-type", "text/plain") == "application/json"
     assert h["CONTENT-TYPE"] == "application/json"

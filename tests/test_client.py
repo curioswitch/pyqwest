@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from queue import Queue
 from typing import TYPE_CHECKING
 
 import pytest
@@ -10,7 +11,7 @@ from pyvoy import PyvoyServer
 from pyqwest import Client, HTTPVersion, Request
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -58,12 +59,33 @@ async def test_basic(client: Client, url: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_iterable_body(client: Client, url: str) -> None:
+    req = Request("POST", f"{url}/echo", content=[b"Hello, ", b"World!"])
+    resp = await client.execute(req)
+    assert resp.status == 200
+    content = b""
+    async for chunk in resp.content:
+        content += chunk
+    assert content == b"Hello, World!"
+
+
+@pytest.mark.asyncio
+async def test_empty_request(client: Client, url: str) -> None:
+    req = Request("GET", f"{url}/echo")
+    resp = await client.execute(req)
+    assert resp.status == 200
+    content = b""
+    async for chunk in resp.content:
+        content += chunk
+    assert content == b""
+
+
+@pytest.mark.asyncio
 async def test_bidi(client: Client, url: str) -> None:
     queue = asyncio.Queue()
 
     async def request_body() -> AsyncIterator[bytes]:
         while True:
-            yield b""
             item: bytes | None = await queue.get()
             if item is None:
                 return
@@ -86,6 +108,40 @@ async def test_bidi(client: Client, url: str) -> None:
     chunk = await anext(content)
     assert chunk == b" World!"
     await queue.put(None)
+    chunk = await anext(content, None)
+    assert chunk is None
+    assert resp.trailers is not None
+    assert resp.trailers["x-echo-trailer"] == "last info"
+
+
+@pytest.mark.asyncio
+async def test_bidi_sync_iter(client: Client, url: str) -> None:
+    queue = Queue()
+
+    def request_body() -> Iterator[bytes]:
+        while True:
+            item: bytes | None = queue.get()
+            if item is None:
+                return
+            yield item
+
+    req = Request(
+        "POST",
+        f"{url}/echo",
+        headers={"content-type": "text/plain", "te": "trailers"},
+        content=request_body(),
+    )
+
+    resp = await client.execute(req)
+    assert resp.status == 200
+    content = resp.content
+    await asyncio.to_thread(queue.put, b"Hello!")
+    chunk = await anext(content)
+    assert chunk == b"Hello!"
+    await asyncio.to_thread(queue.put, b" World!")
+    chunk = await anext(content)
+    assert chunk == b" World!"
+    await asyncio.to_thread(queue.put, None)
     chunk = await anext(content, None)
     assert chunk is None
     assert resp.trailers is not None
