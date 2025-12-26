@@ -51,6 +51,8 @@ async def test_basic(client: Client, url: str) -> None:
     async for chunk in resp.content:
         content += chunk
     assert content == b"Hello, World!"
+    # Didn't send te so should be no trailers
+    assert resp.trailers is None
 
 
 @pytest.mark.asyncio
@@ -68,7 +70,7 @@ async def test_bidi(client: Client, url: str) -> None:
     req = Request(
         "POST",
         f"{url}/echo",
-        headers=[("content-type", "text/plain")],
+        headers={"content-type": "text/plain", "te": "trailers"},
         content=request_body(),
     )
 
@@ -83,8 +85,6 @@ async def test_bidi(client: Client, url: str) -> None:
     assert chunk == b" World!"
     await queue.put(None)
     chunk = await anext(content, None)
-    # ASGI always ends with empty bytes when streaming
-    assert chunk == b""
-
-    chunk = await anext(content, None)
     assert chunk is None
+    assert resp.trailers is not None
+    assert resp.trailers["x-echo-trailer"] == "last info"

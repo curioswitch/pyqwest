@@ -562,6 +562,8 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "trustme" },
+]
+docs = [
     { name = "zensical" },
 ]
 
@@ -580,8 +582,8 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "trustme" },
-    { name = "zensical" },
 ]
+docs = [{ name = "zensical" }]
 
 [[package]]
 name = "pyright"

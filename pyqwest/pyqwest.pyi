@@ -43,6 +43,7 @@ class Response:
     status: int
     headers: Headers
     content: AsyncIterator[bytes]
+    trailers: Headers | None
 
 class HTTPVersion:
     HTTP1: HTTPVersion
