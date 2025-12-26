@@ -76,7 +76,6 @@ jobs:
       - name: prepare coverage
         if: ${{ matrix.coverage == 'cov' }}
         run: |
-          ls -al pyqwest
           $(rustc --print=target-libdir)/../bin/llvm-profdata merge -sparse default_*.profraw -o tests.profdata
           $(rustc --print=target-libdir)/../bin/llvm-cov export -format=lcov --ignore-filename-regex='/.cargo/registry' --ignore-filename-regex='.cargo/git/checkouts' --ignore-filename-regex='.rustup/toolchains' -instr-profile tests.profdata pyqwest/pyqwest.*.so > tests.lcov
 
