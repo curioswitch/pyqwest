@@ -8,7 +8,7 @@ import pytest
 import pytest_asyncio
 from pyvoy import PyvoyServer
 
-from pyqwest import Client, HTTPVersion, Request
+from pyqwest import Client, Headers, HTTPVersion, Request
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -128,7 +128,7 @@ async def test_bidi_sync_iter(client: Client, url: str) -> None:
     req = Request(
         "POST",
         f"{url}/echo",
-        headers={"content-type": "text/plain", "te": "trailers"},
+        headers=Headers({"content-type": "text/plain", "te": "trailers"}),
         content=request_body(),
     )
 
