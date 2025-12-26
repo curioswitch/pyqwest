@@ -476,10 +476,6 @@ impl<I: Iterator> Iterator for ExactIter<I> {
         }
         item
     }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
 }
 
 impl<I: Iterator> ExactSizeIterator for ExactIter<I> {
