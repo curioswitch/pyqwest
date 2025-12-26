@@ -184,7 +184,7 @@ class Request:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: bytes | AsyncIterator[bytes] | Iterable[bytes] | None = None,
     ) -> None: ...
 
 class Response:

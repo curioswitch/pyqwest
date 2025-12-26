@@ -117,14 +117,21 @@ impl Headers {
     }
 
     fn __repr__<'py>(&self, py: Python<'py>) -> String {
-        self.store
-            .iter()
-            .fold("Headers({".to_string(), |mut acc, (key, value)| {
-                let value_str = value.to_str(py).unwrap_or_default();
-                acc.push_str(&format!("'{}': '{}', ", key.as_str(), value_str));
-                acc
-            })
-            + "})"
+        if self.store.is_empty() {
+            return "Headers()".to_string();
+        }
+        let mut res = "Headers(".to_string();
+        let mut first = true;
+        for (key, value) in self.store.iter() {
+            if !first {
+                res.push_str(", ");
+            }
+            let value_str = value.to_str(py).unwrap_or_default();
+            res.push_str(&format!("('{}', '{}')", key.as_str(), value_str));
+            first = false;
+        }
+        res.push(')');
+        res
     }
 
     fn __eq__<'py>(&self, py: Python<'py>, other: &Bound<'py, PyAny>) -> PyResult<bool> {

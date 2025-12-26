@@ -1,4 +1,4 @@
-use pyo3::{pyclass, pymethods, Bound, Py, PyAny, PyResult, Python};
+use pyo3::{exceptions::PyValueError, pyclass, pymethods, Bound, Py, PyAny, PyResult, Python};
 
 use crate::{body::Body, headers::Headers};
 
@@ -21,11 +21,10 @@ impl Request {
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
-        let method = method.parse::<http::Method>().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid HTTP method: {}", e))
-        })?;
+        let method = http::Method::try_from(method)
+            .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {}", e)))?;
         let url = reqwest::Url::parse(url)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Invalid URL: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Invalid URL: {}", e)))?;
         let headers = if let Some(headers) = headers {
             if let Ok(hdrs) = headers.cast::<Headers>() {
                 Some(hdrs.clone().unbind())
