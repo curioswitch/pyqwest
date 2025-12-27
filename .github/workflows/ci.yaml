@@ -38,6 +38,8 @@ jobs:
             python: "3.13"
           - os: ubuntu-24.04
             python: "3.14t"
+          - os: ubuntu-24.04
+            python: "pypy3.11"
           # Enable coverage on just one job
           - os: ubuntu-24.04
             python: "3.14"
