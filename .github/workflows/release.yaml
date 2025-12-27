@@ -127,7 +127,7 @@ jobs:
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i ${{ steps.python-314.outputs.python-version }} -i ${{ steps.python-314t.outputs.python-version }} -i ${{ matrix.platform.target == 'x64' && 'pypy3.11' || '' }}
+          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i ${{ steps.python-314.outputs.python-path }} -i ${{ steps.python-314t.outputs.python-path }} -i ${{ matrix.platform.target == 'x64' && 'pypy3.11' || '' }}
           sccache: true
 
       - name: Upload wheels
