@@ -27,6 +27,7 @@ class Certs:
 @pytest.fixture(scope="module")
 def certs() -> Certs:
     ca = trustme.CA()
+    # Workaround https://github.com/seanmonstar/reqwest/issues/2911
     server = ca.issue_cert("127.0.0.1")
     return Certs(
         ca=ca.cert_pem.bytes(),
