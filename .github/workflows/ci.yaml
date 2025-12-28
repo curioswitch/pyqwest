@@ -45,7 +45,7 @@ jobs:
 
     env:
       # Avoid multiple compile e.g. in lint and test by setting as a job env var
-      RUSTFLAGS: ${{ matrix.coverage == 'cov' && '-C instrument-coverage' || '' }}
+      RUSTFLAGS: "--cfg reqwest_unstable ${{ matrix.coverage == 'cov' && '-C instrument-coverage' || '' }}"
 
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1

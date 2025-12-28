@@ -13,7 +13,9 @@ from typing import TypeVar, overload
 _T = TypeVar("_T")
 
 class Client:
-    def __init__(self, http_version: HTTPVersion | None = None) -> None: ...
+    def __init__(
+        self, tls_ca_cert: bytes | None = None, http_version: HTTPVersion | None = None
+    ) -> None: ...
     async def execute(self, request: Request) -> Response: ...
 
 class Headers:
@@ -189,6 +191,7 @@ class Request:
 
 class Response:
     status: int
+    http_version: HTTPVersion
     headers: Headers
     content: AsyncIterator[bytes]
     trailers: Headers | None

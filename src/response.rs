@@ -7,12 +7,15 @@ use pyo3::{
 use pyo3_async_runtimes::tokio::future_into_py;
 use tokio::sync::Mutex;
 
-use crate::headers::Headers;
+use crate::{common::HTTPVersion, headers::Headers};
 
 #[pyclass]
 pub(crate) struct Response {
     /// The HTTP status code of the response.
     status: u16,
+
+    /// The HTTP version of the response.
+    http_version: HTTPVersion,
 
     /// The response headers. We convert from Rust to Python lazily mainly to make sure
     /// it happens on a Python thread instead of Tokio.
@@ -29,8 +32,17 @@ pub(crate) struct Response {
 impl Response {
     pub(crate) fn new(response: reqwest::Response) -> Response {
         let status = response.status().as_u16();
+        let http_version = match response.version() {
+            reqwest::Version::HTTP_09 => HTTPVersion::HTTP1,
+            reqwest::Version::HTTP_10 => HTTPVersion::HTTP1,
+            reqwest::Version::HTTP_11 => HTTPVersion::HTTP1,
+            reqwest::Version::HTTP_2 => HTTPVersion::HTTP2,
+            reqwest::Version::HTTP_3 => HTTPVersion::HTTP3,
+            _ => HTTPVersion::HTTP1,
+        };
         Response {
             status,
+            http_version,
             headers: None,
             trailers: None,
             response: Arc::new(Mutex::new(response)),
@@ -43,6 +55,11 @@ impl Response {
     #[getter]
     fn status(&self) -> u16 {
         self.status
+    }
+
+    #[getter]
+    fn http_version(&self) -> HTTPVersion {
+        self.http_version.clone()
     }
 
     #[getter]

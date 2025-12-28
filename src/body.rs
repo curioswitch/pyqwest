@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use futures_core::Stream;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyIterator, PyModule};
@@ -49,12 +49,7 @@ impl Body {
                     "Async iterator must implement __anext__",
                 ));
             }
-            let locals = pyo3_async_runtimes::tokio::get_current_locals(py).map_err(|err| {
-                PyRuntimeError::new_err(format!(
-                    "Async iterator requires a running event loop: {}",
-                    err
-                ))
-            })?;
+            let locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
             let wrapped = wrap_async_iter(py, aiter.unbind())?;
             return Ok(Self {
                 inner: BodyInner::AsyncIter {
@@ -64,12 +59,7 @@ impl Body {
             });
         }
 
-        let iter = PyIterator::from_object(&body).map_err(|err| {
-            PyTypeError::new_err(format!(
-                "Body must be bytes or an iterator/async iterator yielding bytes: {}",
-                err
-            ))
-        })?;
+        let iter = PyIterator::from_object(&body)?;
         Ok(Self {
             inner: BodyInner::Iter(iter.unbind()),
         })
