@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from dataclasses import dataclass
 from queue import Queue
 from typing import TYPE_CHECKING
@@ -26,7 +27,7 @@ class Certs:
 @pytest.fixture(scope="module")
 def certs() -> Certs:
     ca = trustme.CA()
-    server = ca.issue_cert("localhost")
+    server = ca.issue_cert("127.0.0.1")
     return Certs(
         ca=ca.cert_pem.bytes(),
         server_cert=server.cert_chain_pems[0].bytes(),
@@ -36,9 +37,14 @@ def certs() -> Certs:
 
 @pytest_asyncio.fixture(scope="module")
 async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
+    # TODO: Fix issue in pyvoy where if tls_port is 0, separate ports are picked for
+    # TLS and QUIC and we cannot find the latter.
+    with socket.socket() as s:
+        s.bind(("", 0))
+        tls_port = s.getsockname()[1]
     async with PyvoyServer(
         "tests.apps.asgi.kitchensink",
-        tls_port=0,
+        tls_port=tls_port,
         tls_key=certs.server_key,
         tls_cert=certs.server_cert,
         lifespan=False,
@@ -46,18 +52,6 @@ async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
         stderr=None,
     ) as server:
         yield server
-
-
-@pytest.fixture(params=["http", "https"])
-def url(server: PyvoyServer, request: pytest.FixtureRequest) -> str:
-    match request.param:
-        case "http":
-            return f"http://localhost:{server.listener_port}"
-        case "https":
-            return f"https://localhost:{server.listener_port_tls}"
-        case _:
-            msg = "Invalid scheme"
-            raise ValueError(msg)
 
 
 @pytest.fixture(params=["h1", "h2", "h3", "auto"], scope="module")
@@ -68,7 +62,6 @@ def http_version(request: pytest.FixtureRequest) -> HTTPVersion | None:
         case "h2":
             return HTTPVersion.HTTP2
         case "h3":
-            pytest.skip("HTTP/3 currently hangs")
             return HTTPVersion.HTTP3
         case "auto":
             return None
@@ -77,15 +70,34 @@ def http_version(request: pytest.FixtureRequest) -> HTTPVersion | None:
             raise ValueError(msg)
 
 
+@pytest.fixture(params=["http", "https"])
+def url(
+    server: PyvoyServer,
+    http_version: HTTPVersion | None,
+    request: pytest.FixtureRequest,
+) -> str:
+    match request.param:
+        case "http":
+            if http_version == HTTPVersion.HTTP3:
+                pytest.skip("HTTP/3 over plain HTTP is not supported")
+            return f"http://127.0.0.1:{server.listener_port}"
+        case "https":
+            return f"https://127.0.0.1:{server.listener_port_tls}"
+        case _:
+            msg = "Invalid scheme"
+            raise ValueError(msg)
+
+
 @pytest.fixture(scope="module")
 def client(certs: Certs, http_version: HTTPVersion | None) -> Client:
     return Client(tls_ca_cert=certs.ca, http_version=http_version)
 
 
-def is_http1(http_version: HTTPVersion | None, url: str) -> bool:
-    if http_version == HTTPVersion.HTTP1:
-        return True
-    return bool(http_version is None and url.startswith("http://"))
+def supports_trailers(http_version: HTTPVersion | None, url: str) -> bool:
+    # Currently reqwest trailers patch does not apply to HTTP/3.
+    return http_version == HTTPVersion.HTTP2 or (
+        http_version is None and url.startswith("https://")
+    )
 
 
 @pytest.mark.asyncio
@@ -175,7 +187,7 @@ async def test_bidi(client: Client, url: str, http_version: HTTPVersion | None) 
     await queue.put(None)
     chunk = await anext(content, None)
     assert chunk is None
-    if not is_http1(http_version, url):
+    if supports_trailers(http_version, url):
         assert resp.trailers is not None
         assert resp.trailers["x-echo-trailer"] == "last info"
     else:
@@ -214,7 +226,7 @@ async def test_bidi_sync_iter(
     await asyncio.to_thread(queue.put, None)
     chunk = await anext(content, None)
     assert chunk is None
-    if not is_http1(http_version, url):
+    if supports_trailers(http_version, url):
         assert resp.trailers is not None
         assert resp.trailers["x-echo-trailer"] == "last info"
     else:
