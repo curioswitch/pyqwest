@@ -40,9 +40,11 @@ def certs() -> Certs:
 async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
     # TODO: Fix issue in pyvoy where if tls_port is 0, separate ports are picked for
     # TLS and QUIC and we cannot find the latter.
-    with socket.socket() as s:
-        s.bind(("", 0))
-        tls_port = s.getsockname()[1]
+    tls_port = 0
+    while tls_port <= 0:
+        with socket.socket() as s:
+            s.bind(("", 0))
+            tls_port = s.getsockname()[1]
     async with PyvoyServer(
         "tests.apps.asgi.kitchensink",
         tls_port=tls_port,
