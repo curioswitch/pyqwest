@@ -96,9 +96,10 @@ impl SyncClient {
             });
             tx.send(res).unwrap();
         });
-        let res = rx
-            .blocking_recv()
-            .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {}", e)))??;
+        let res = py.detach(|| {
+            rx.blocking_recv()
+                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {}", e)))
+        })??;
         Ok(SyncResponse::new(res))
     }
 }

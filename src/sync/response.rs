@@ -112,7 +112,7 @@ impl SyncContentGenerator {
         slf
     }
 
-    fn __next__<'py>(&self) -> PyResult<Option<Bytes>> {
+    fn __next__<'py>(&self, py: Python<'py>) -> PyResult<Option<Bytes>> {
         let response = self.response.clone();
         let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
         get_runtime().spawn(async move {
@@ -123,7 +123,9 @@ impl SyncContentGenerator {
                 .map_err(|e| PyRuntimeError::new_err(format!("Error reading chunk: {}", e)));
             tx.send(chunk).unwrap();
         });
-        rx.blocking_recv()
-            .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {}", e)))?
+        py.detach(|| {
+            rx.blocking_recv()
+                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {}", e)))
+        })?
     }
 }
