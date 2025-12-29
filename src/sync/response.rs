@@ -65,8 +65,16 @@ impl SyncResponse {
         if let Some(headers) = &self.headers {
             Ok(headers.clone_ref(py))
         } else {
-            let headers = py
-                .detach(|| Headers::from_response_headers(self.response.blocking_lock().headers()));
+            // For the response to be locked, we would need to be concurrently consuming response body
+            // and accessing headers. It is so rare, we go ahead and optimize for it at the expense of code
+            // complexity.
+            let headers = if let Ok(response) = self.response.try_lock() {
+                Headers::from_response_headers(response.headers())
+            } else {
+                py.detach(|| {
+                    Headers::from_response_headers(self.response.blocking_lock().headers())
+                })
+            };
             let headers = Py::new(py, headers)?;
             self.headers = Some(headers.clone_ref(py));
             Ok(headers)
@@ -78,15 +86,21 @@ impl SyncResponse {
         if let Some(trailers) = &self.trailers {
             Ok(Some(trailers.clone_ref(py)))
         } else {
-            let Some(res) = py.detach(|| {
-                let mut response = self.response.blocking_lock();
+            let trailers = if let Ok(mut response) = self.response.try_lock() {
                 response.trailers().map(Headers::from_response_headers)
-            }) else {
-                return Ok(None);
+            } else {
+                py.detach(|| {
+                    let mut response = self.response.blocking_lock();
+                    response.trailers().map(Headers::from_response_headers)
+                })
             };
-            let trailers = Py::new(py, res)?;
-            self.trailers = Some(trailers.clone_ref(py));
-            Ok(Some(trailers))
+            if let Some(trailers) = trailers {
+                let trailers = Py::new(py, trailers)?;
+                self.trailers = Some(trailers.clone_ref(py));
+                Ok(Some(trailers))
+            } else {
+                Ok(None)
+            }
         }
     }
 
