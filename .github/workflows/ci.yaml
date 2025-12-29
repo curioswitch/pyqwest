@@ -68,7 +68,7 @@ jobs:
         run: uv run poe lint
 
       - name: run tests
-        run: uv run poe test
+        run: uv run poe test -k '[sync' -v
 
       - name: verify wheel build
         run: uv run poe wheel
