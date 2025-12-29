@@ -67,8 +67,8 @@ impl Response {
         if let Some(headers) = &self.headers {
             Ok(headers.clone_ref(py))
         } else {
-            let headers =
-                Headers::from_response_headers(py, self.response.blocking_lock().headers());
+            let headers = py
+                .detach(|| Headers::from_response_headers(self.response.blocking_lock().headers()));
             let headers = Py::new(py, headers)?;
             self.headers = Some(headers.clone_ref(py));
             Ok(headers)
@@ -80,15 +80,15 @@ impl Response {
         if let Some(trailers) = &self.trailers {
             Ok(Some(trailers.clone_ref(py)))
         } else {
-            let mut response = self.response.blocking_lock();
-            if let Some(trailers_map) = response.trailers() {
-                let trailers = Headers::from_response_headers(py, trailers_map);
-                let trailers = Py::new(py, trailers)?;
-                self.trailers = Some(trailers.clone_ref(py));
-                Ok(Some(trailers))
-            } else {
-                Ok(None)
-            }
+            let Some(res) = py.detach(|| {
+                let mut response = self.response.blocking_lock();
+                response.trailers().map(Headers::from_response_headers)
+            }) else {
+                return Ok(None);
+            };
+            let trailers = Py::new(py, res)?;
+            self.trailers = Some(trailers.clone_ref(py));
+            Ok(Some(trailers))
         }
     }
 

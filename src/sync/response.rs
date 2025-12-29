@@ -65,8 +65,8 @@ impl SyncResponse {
         if let Some(headers) = &self.headers {
             Ok(headers.clone_ref(py))
         } else {
-            let headers =
-                Headers::from_response_headers(py, self.response.blocking_lock().headers());
+            let headers = py
+                .detach(|| Headers::from_response_headers(self.response.blocking_lock().headers()));
             let headers = Py::new(py, headers)?;
             self.headers = Some(headers.clone_ref(py));
             Ok(headers)
@@ -78,15 +78,15 @@ impl SyncResponse {
         if let Some(trailers) = &self.trailers {
             Ok(Some(trailers.clone_ref(py)))
         } else {
-            let mut response = self.response.blocking_lock();
-            if let Some(trailers_map) = response.trailers() {
-                let trailers = Headers::from_response_headers(py, trailers_map);
-                let trailers = Py::new(py, trailers)?;
-                self.trailers = Some(trailers.clone_ref(py));
-                Ok(Some(trailers))
-            } else {
-                Ok(None)
-            }
+            let Some(res) = py.detach(|| {
+                let mut response = self.response.blocking_lock();
+                response.trailers().map(Headers::from_response_headers)
+            }) else {
+                return Ok(None);
+            };
+            let trailers = Py::new(py, res)?;
+            self.trailers = Some(trailers.clone_ref(py));
+            Ok(Some(trailers))
         }
     }
 
@@ -113,17 +113,17 @@ impl SyncContentGenerator {
     }
 
     fn __next__<'py>(&self, py: Python<'py>) -> PyResult<Option<Bytes>> {
-        let response = self.response.clone();
-        let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
-        get_runtime().spawn(async move {
-            let mut response = response.lock().await;
-            let chunk = response
-                .chunk()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Error reading chunk: {}", e)));
-            tx.send(chunk).unwrap();
-        });
         py.detach(|| {
+            let response = self.response.clone();
+            let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
+            get_runtime().spawn(async move {
+                let mut response = response.lock().await;
+                let chunk = response
+                    .chunk()
+                    .await
+                    .map_err(|e| PyRuntimeError::new_err(format!("Error reading chunk: {}", e)));
+                tx.send(chunk).unwrap();
+            });
             rx.blocking_recv()
                 .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {}", e)))
         })?
