@@ -2,9 +2,9 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use crate::asyncio::request::Request;
+use crate::asyncio::response::Response;
 use crate::common::HTTPVersion;
-use crate::request::Request;
-use crate::response::Response;
 
 #[pyclass(module = "pyqwest")]
 pub struct Client {
@@ -62,12 +62,16 @@ impl Client {
         Ok(Self { client, http3 })
     }
 
+    #[pyo3(signature = (method, url, headers=None, content=None))]
     fn execute<'py>(
         &self,
         py: Python<'py>,
-        request: &Bound<'py, Request>,
+        method: &str,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut request = request.clone().borrow_mut();
+        let mut request = Request::new(py, method, url, headers, content)?;
         let mut req_builder = self
             .client
             .request(request.method.clone(), request.url.clone());
@@ -81,8 +85,8 @@ impl Client {
                 req_builder = req_builder.header(key, value_str);
             }
         }
-        if let Some(body) = request.body.take() {
-            req_builder = req_builder.body(body.into_reqwest_body(py)?);
+        if let Some(content) = request.content_into_reqwest(py)? {
+            req_builder = req_builder.body(content);
         }
         future_into_py(py, async move {
             let res = req_builder.send().await.map_err(|e| {

@@ -15,14 +15,16 @@ pub(crate) struct Headers {
 }
 
 impl Headers {
-    pub(crate) fn from_response_headers<'py>(py: Python<'py>, headers: &HeaderMap) -> Self {
-        let mut store: HeaderMap<Py<PyString>> = HeaderMap::with_capacity(headers.len());
-        for (key, value) in headers.iter() {
-            if let Ok(value_str) = value.to_str() {
-                store.append(key.clone(), PyString::new(py, value_str).unbind());
+    pub(crate) fn from_response_headers(headers: &HeaderMap) -> Self {
+        Python::attach(|py| {
+            let mut store: HeaderMap<Py<PyString>> = HeaderMap::with_capacity(headers.len());
+            for (key, value) in headers.iter() {
+                if let Ok(value_str) = value.to_str() {
+                    store.append(key.clone(), PyString::new(py, value_str).unbind());
+                }
             }
-        }
-        Headers { store }
+            Headers { store }
+        })
     }
 }
 
