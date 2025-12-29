@@ -12,12 +12,6 @@ from typing import TypeVar, overload
 
 _T = TypeVar("_T")
 
-class Client:
-    def __init__(
-        self, tls_ca_cert: bytes | None = None, http_version: HTTPVersion | None = None
-    ) -> None: ...
-    async def execute(self, request: Request) -> Response: ...
-
 class Headers:
     """Container of HTTP headers.
 
@@ -180,6 +174,23 @@ class Headers:
             key: The header name.
         """
 
+class HTTPVersion:
+    HTTP1: HTTPVersion
+    HTTP2: HTTPVersion
+    HTTP3: HTTPVersion
+
+class Client:
+    def __init__(
+        self, tls_ca_cert: bytes | None = None, http_version: HTTPVersion | None = None
+    ) -> None: ...
+    async def execute(
+        self,
+        method: str,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
+    ) -> Response: ...
+
 class Request:
     def __init__(
         self,
@@ -196,7 +207,30 @@ class Response:
     content: AsyncIterator[bytes]
     trailers: Headers | None
 
-class HTTPVersion:
-    HTTP1: HTTPVersion
-    HTTP2: HTTPVersion
-    HTTP3: HTTPVersion
+class SyncClient:
+    def __init__(
+        self, tls_ca_cert: bytes | None = None, http_version: HTTPVersion | None = None
+    ) -> None: ...
+    def execute(
+        self,
+        method: str,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
+    ) -> SyncResponse: ...
+
+class SyncRequest:
+    def __init__(
+        self,
+        method: str,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
+    ) -> None: ...
+
+class SyncResponse:
+    status: int
+    http_version: HTTPVersion
+    headers: Headers
+    content: Iterator[bytes]
+    trailers: Headers | None

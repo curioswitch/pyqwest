@@ -11,7 +11,7 @@ import pytest_asyncio
 import trustme
 from pyvoy import PyvoyServer
 
-from pyqwest import Client, Headers, HTTPVersion, Request
+from pyqwest import Client, Headers, HTTPVersion, SyncClient
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -92,8 +92,27 @@ def url(
 
 
 @pytest.fixture(scope="module")
-def client(certs: Certs, http_version: HTTPVersion | None) -> Client:
+def async_client(certs: Certs, http_version: HTTPVersion | None) -> Client:
     return Client(tls_ca_cert=certs.ca, http_version=http_version)
+
+
+@pytest.fixture(scope="module")
+def sync_client(certs: Certs, http_version: HTTPVersion | None) -> SyncClient:
+    return SyncClient(tls_ca_cert=certs.ca, http_version=http_version)
+
+
+@pytest.fixture(scope="module", params=["async", "sync"])
+def client(
+    async_client: Client, sync_client: SyncClient, request: pytest.FixtureRequest
+) -> Client | SyncClient:
+    match request.param:
+        case "async":
+            return async_client
+        case "sync":
+            return sync_client
+        case _:
+            msg = "Invalid client type"
+            raise ValueError(msg)
 
 
 def supports_trailers(http_version: HTTPVersion | None, url: str) -> bool:
@@ -104,26 +123,32 @@ def supports_trailers(http_version: HTTPVersion | None, url: str) -> bool:
 
 
 @pytest.mark.asyncio
-async def test_basic(client: Client, url: str, http_version: HTTPVersion) -> None:
-    req = Request(
-        "POST",
-        f"{url}/echo",
-        headers=[
-            ("content-type", "text/plain"),
-            ("x-hello", "rust"),
-            ("x-hello", "python"),
-        ],
-        content=b"Hello, World!",
-    )
-    resp = await client.execute(req)
+async def test_basic(
+    client: Client | SyncClient, url: str, http_version: HTTPVersion
+) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+    ]
+    req_content = b"Hello, World!"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(
+            client.execute, method, url, headers, req_content
+        )
+        content = b"".join(resp.content)
+    else:
+        resp = await client.execute(method, url, headers, req_content)
+        content = b""
+        async for chunk in resp.content:
+            content += chunk
     assert resp.status == 200
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.headers["x-echo-x-hello"] == "rust"
     assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
-    content = b""
-    async for chunk in resp.content:
-        content += chunk
     assert content == b"Hello, World!"
     # Didn't send te so should be no trailers
     assert resp.trailers is None
@@ -139,29 +164,49 @@ async def test_basic(client: Client, url: str, http_version: HTTPVersion) -> Non
 
 
 @pytest.mark.asyncio
-async def test_iterable_body(client: Client, url: str) -> None:
-    req = Request("POST", f"{url}/echo", content=[b"Hello, ", b"World!"])
-    resp = await client.execute(req)
+async def test_iterable_body(client: Client | SyncClient, url: str) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(
+            client.execute, method, url, content=[b"Hello, ", b"World!"]
+        )
+        content = b"".join(resp.content)
+    else:
+
+        async def req_content() -> AsyncIterator[bytes]:
+            yield b"Hello, "
+            yield b"World!"
+
+        resp = await client.execute(method, url, content=req_content())
+        content = b""
+        async for chunk in resp.content:
+            content += chunk
     assert resp.status == 200
-    content = b""
-    async for chunk in resp.content:
-        content += chunk
     assert content == b"Hello, World!"
 
 
 @pytest.mark.asyncio
-async def test_empty_request(client: Client, url: str) -> None:
-    req = Request("GET", f"{url}/echo")
-    resp = await client.execute(req)
+async def test_empty_request(client: Client | SyncClient, url: str) -> None:
+    method = "GET"
+    url = f"{url}/echo"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.execute, method, url)
+        content = b"".join(resp.content)
+    else:
+        resp = await client.execute(method, url)
+        content = b""
+        async for chunk in resp.content:
+            content += chunk
     assert resp.status == 200
-    content = b""
-    async for chunk in resp.content:
-        content += chunk
     assert content == b""
 
 
 @pytest.mark.asyncio
-async def test_bidi(client: Client, url: str, http_version: HTTPVersion | None) -> None:
+async def test_bidi(
+    async_client: Client, url: str, http_version: HTTPVersion | None
+) -> None:
+    client = async_client
     queue = asyncio.Queue()
 
     async def request_body() -> AsyncIterator[bytes]:
@@ -171,14 +216,12 @@ async def test_bidi(client: Client, url: str, http_version: HTTPVersion | None) 
                 return
             yield item
 
-    req = Request(
+    resp = await client.execute(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
         content=request_body(),
     )
-
-    resp = await client.execute(req)
     assert resp.status == 200
     content = resp.content
     await queue.put(b"Hello!")
@@ -198,9 +241,10 @@ async def test_bidi(client: Client, url: str, http_version: HTTPVersion | None) 
 
 
 @pytest.mark.asyncio
-async def test_bidi_sync_iter(
-    client: Client, url: str, http_version: HTTPVersion | None
+async def test_bidi_sync(
+    sync_client: SyncClient, url: str, http_version: HTTPVersion | None
 ) -> None:
+    client = sync_client
     queue = Queue()
 
     def request_body() -> Iterator[bytes]:
@@ -210,24 +254,22 @@ async def test_bidi_sync_iter(
                 return
             yield item
 
-    req = Request(
+    resp = client.execute(
         "POST",
         f"{url}/echo",
         headers=Headers({"content-type": "text/plain", "te": "trailers"}),
         content=request_body(),
     )
-
-    resp = await client.execute(req)
     assert resp.status == 200
     content = resp.content
     await asyncio.to_thread(queue.put, b"Hello!")
-    chunk = await anext(content)
+    chunk = next(content)
     assert chunk == b"Hello!"
     await asyncio.to_thread(queue.put, b" World!")
-    chunk = await anext(content)
+    chunk = next(content)
     assert chunk == b" World!"
     await asyncio.to_thread(queue.put, None)
-    chunk = await anext(content, None)
+    chunk = next(content, None)
     assert chunk is None
     if supports_trailers(http_version, url):
         assert resp.trailers is not None
