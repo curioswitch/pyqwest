@@ -86,7 +86,7 @@ impl SyncClient {
                 req_builder = req_builder.header(key, value_str);
             }
         }
-        if let Some(content) = request.content_into_reqwest() {
+        if let Some(content) = request.content_into_reqwest(py) {
             req_builder = req_builder.body(content);
         }
         let (tx, rx) = oneshot::channel::<PyResult<reqwest::Response>>();

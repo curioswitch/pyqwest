@@ -1,12 +1,14 @@
 use bytes::Bytes;
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
-    intern, pyclass, pyfunction, pymethods,
+    intern,
+    pybacked::PyBackedBytes,
+    pyclass, pyfunction, pymethods,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyModule},
-    Borrowed, Bound, FromPyObject, Py, PyAny, PyErr, PyResult, Python,
+    Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
-use pyo3_async_runtimes::{tokio::into_stream_with_locals_v2, TaskLocals};
+use pyo3_async_runtimes::tokio::into_stream_v2;
 use tokio_stream::StreamExt;
 
 use crate::headers::Headers;
@@ -61,10 +63,18 @@ impl Request {
         &mut self,
         py: Python<'py>,
     ) -> PyResult<Option<reqwest::Body>> {
-        match self.content.take() {
-            Some(Content::Bytes(bytes)) => Ok(Some(reqwest::Body::from(bytes))),
-            Some(Content::AsyncIter { iter, locals }) => {
-                let res = into_stream_with_locals_v2(locals, iter.into_bound(py))?
+        match &self.content {
+            Some(Content::Bytes(bytes)) => {
+                // TODO: Replace this dance with clone_ref when released.
+                // https://github.com/PyO3/pyo3/pull/5654
+                // SAFETY: Implementation known never to error, we unwrap to easily
+                // switch to clone_ref later.
+                let bytes = bytes.into_pyobject(py).unwrap();
+                let bytes = PyBackedBytes::from(bytes);
+                Ok(Some(reqwest::Body::from(Bytes::from_owner(bytes))))
+            }
+            Some(Content::AsyncIter(iter)) => {
+                let res = into_stream_v2(iter.bind(py).clone())?
                     .map(|item| Ok::<_, PyErr>(bytes_from_chunk(item)));
                 Ok(Some(reqwest::Body::wrap_stream(res)))
             }
@@ -74,15 +84,15 @@ impl Request {
 }
 
 enum Content {
-    Bytes(Bytes),
-    AsyncIter { iter: Py<PyAny>, locals: TaskLocals },
+    Bytes(PyBackedBytes),
+    AsyncIter(Py<PyAny>),
 }
 
 impl FromPyObject<'_, '_> for Content {
     type Error = PyErr;
 
     fn extract(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        if let Ok(bytes) = obj.extract::<Bytes>() {
+        if let Ok(bytes) = obj.extract::<PyBackedBytes>() {
             return Ok(Self::Bytes(bytes));
         }
 
@@ -90,12 +100,8 @@ impl FromPyObject<'_, '_> for Content {
         let aiter = obj.call_method0(intern!(py, "__aiter__")).map_err(|_| {
             PyTypeError::new_err("Content must be bytes or an async iterator of bytes")
         })?;
-        let locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
         let wrapped = wrap_async_iter(py, aiter.unbind())?;
-        Ok(Self::AsyncIter {
-            iter: wrapped,
-            locals,
-        })
+        Ok(Self::AsyncIter(wrapped))
     }
 }
 

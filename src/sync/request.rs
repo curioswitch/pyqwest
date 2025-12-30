@@ -1,9 +1,10 @@
 use bytes::Bytes;
 use pyo3::{
     exceptions::PyValueError,
+    pybacked::PyBackedBytes,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyIterator},
-    Borrowed, Bound, FromPyObject, Py, PyAny, PyErr, PyResult, Python,
+    Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::mpsc;
@@ -57,11 +58,20 @@ impl SyncRequest {
 }
 
 impl SyncRequest {
-    pub(crate) fn content_into_reqwest(&mut self) -> Option<reqwest::Body> {
-        match self.content.take() {
-            Some(Content::Bytes(bytes)) => Some(reqwest::Body::from(bytes)),
+    pub(crate) fn content_into_reqwest<'py>(&mut self, py: Python<'py>) -> Option<reqwest::Body> {
+        match &self.content {
+            Some(Content::Bytes(bytes)) => {
+                // TODO: Replace this dance with clone_ref when released.
+                // https://github.com/PyO3/pyo3/pull/5654
+                // SAFETY: Implementation known never to error, we unwrap to easily
+                // switch to clone_ref later.
+                let bytes = bytes.into_pyobject(py).unwrap();
+                let bytes = PyBackedBytes::from(bytes);
+                Some(reqwest::Body::from(Bytes::from_owner(bytes)))
+            }
             Some(Content::Iter(iter)) => {
                 let (tx, rx) = mpsc::channel::<PyResult<Bytes>>(1);
+                let iter = iter.clone_ref(py);
                 get_runtime().spawn_blocking(move || {
                     Python::attach(|py| {
                         let mut iter = iter.into_bound(py);
@@ -87,7 +97,7 @@ impl SyncRequest {
 }
 
 enum Content {
-    Bytes(Bytes),
+    Bytes(PyBackedBytes),
     Iter(Py<PyIterator>),
 }
 
@@ -95,7 +105,7 @@ impl FromPyObject<'_, '_> for Content {
     type Error = PyErr;
 
     fn extract(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        if let Ok(bytes) = obj.extract::<Bytes>() {
+        if let Ok(bytes) = obj.extract::<PyBackedBytes>() {
             return Ok(Self::Bytes(bytes));
         }
 
