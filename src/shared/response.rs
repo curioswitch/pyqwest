@@ -38,16 +38,13 @@ impl ResponseHead {
 
     pub(crate) fn http_version(&self) -> HTTPVersion {
         match self.version {
-            http::Version::HTTP_09 => HTTPVersion::HTTP1,
-            http::Version::HTTP_10 => HTTPVersion::HTTP1,
-            http::Version::HTTP_11 => HTTPVersion::HTTP1,
             http::Version::HTTP_2 => HTTPVersion::HTTP2,
             http::Version::HTTP_3 => HTTPVersion::HTTP3,
             _ => HTTPVersion::HTTP1,
         }
     }
 
-    pub(crate) fn headers<'py>(&mut self, py: Python<'py>) -> PyResult<Py<Headers>> {
+    pub(crate) fn headers(&mut self, py: Python<'_>) -> PyResult<Py<Headers>> {
         match &self.headers {
             ResponseHeaders::Py(headers) => Ok(headers.clone_ref(py)),
             ResponseHeaders::Http(headers) => {
@@ -96,7 +93,7 @@ impl ResponseBody {
         loop {
             if let Some(res) = inner.body.frame().await {
                 let frame = res.map_err(|e| {
-                    PyRuntimeError::new_err(format!("Error reading HTTP body frame: {}", e))
+                    PyRuntimeError::new_err(format!("Error reading HTTP body frame: {e}"))
                 })?;
                 // A frame is either data or trailers.
                 match frame.into_data().map_err(Frame::into_trailers) {
@@ -114,7 +111,7 @@ impl ResponseBody {
         }
     }
 
-    pub(crate) fn trailers<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<Headers>>> {
+    pub(crate) fn trailers(&mut self, py: Python<'_>) -> PyResult<Option<Py<Headers>>> {
         let mut inner = py.detach(|| self.inner.blocking_lock());
         match &inner.trailers {
             Trailers::Py(trailers) => Ok(Some(trailers.clone_ref(py))),

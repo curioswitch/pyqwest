@@ -45,23 +45,22 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn headers<'py>(&mut self, py: Python<'py>) -> PyResult<Py<Headers>> {
+    fn headers(&mut self, py: Python<'_>) -> PyResult<Py<Headers>> {
         self.head.headers(py)
     }
 
     #[getter]
-    fn trailers<'py>(&self, py: Python<'py>) -> PyResult<Option<Py<Headers>>> {
-        match &self.content {
-            Content::Py(generator) => {
-                let content = generator.get();
-                content.body.clone().trailers(py)
-            }
-            _ => Ok(None),
+    fn trailers(&self, py: Python<'_>) -> PyResult<Option<Py<Headers>>> {
+        if let Content::Py(generator) = &self.content {
+            let content = generator.get();
+            content.body.clone().trailers(py)
+        } else {
+            Ok(None)
         }
     }
 
     #[getter]
-    fn content<'py>(&mut self, py: Python<'py>) -> PyResult<Py<SyncContentGenerator>> {
+    fn content(&mut self, py: Python<'_>) -> PyResult<Py<SyncContentGenerator>> {
         match &mut self.content {
             Content::Http(body) => {
                 let generator = Py::new(
@@ -89,7 +88,7 @@ impl SyncContentGenerator {
         slf
     }
 
-    fn __next__<'py>(&self, py: Python<'py>) -> PyResult<Option<Bytes>> {
+    fn __next__(&self, py: Python<'_>) -> PyResult<Option<Bytes>> {
         py.detach(|| {
             let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
             let mut body = self.body.clone();
@@ -98,7 +97,7 @@ impl SyncContentGenerator {
                 tx.send(chunk).unwrap();
             });
             rx.blocking_recv()
-                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {}", e)))
+                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
         })?
     }
 }

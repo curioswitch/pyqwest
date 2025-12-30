@@ -4,7 +4,7 @@ use pyo3::{
     pybacked::PyBackedBytes,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyIterator},
-    Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python,
+    Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::mpsc;
@@ -32,9 +32,9 @@ impl SyncRequest {
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
         let method = http::Method::try_from(method)
-            .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
         let url = reqwest::Url::parse(url)
-            .map_err(|e| PyValueError::new_err(format!("Invalid URL: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
         let headers = if let Some(headers) = headers {
             if let Ok(hdrs) = headers.cast::<Headers>() {
                 Some(hdrs.clone().unbind())
@@ -58,7 +58,7 @@ impl SyncRequest {
 }
 
 impl SyncRequest {
-    pub(crate) fn content_into_reqwest<'py>(&mut self, py: Python<'py>) -> Option<reqwest::Body> {
+    pub(crate) fn content_into_reqwest(&mut self, py: Python<'_>) -> Option<reqwest::Body> {
         match &self.content {
             Some(Content::Bytes(bytes)) => {
                 // TODO: Replace this dance with clone_ref when released.
@@ -78,7 +78,7 @@ impl SyncRequest {
                         loop {
                             let res = match iter.next() {
                                 Some(Ok(item)) => item.extract::<Bytes>().map_err(|e| {
-                                    PyValueError::new_err(format!("Invalid bytes item: {}", e))
+                                    PyValueError::new_err(format!("Invalid bytes item: {e}"))
                                 }),
                                 Some(Err(e)) => Err(e),
                                 None => break,
@@ -87,7 +87,7 @@ impl SyncRequest {
                                 break;
                             }
                         }
-                    })
+                    });
                 });
                 Some(reqwest::Body::wrap_stream(ReceiverStream::new(rx)))
             }
