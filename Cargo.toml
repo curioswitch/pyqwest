@@ -13,6 +13,8 @@ bytes = "1"
 errors = "0.1.0"
 futures-core = "0.3"
 http = "1.4.0"
+http-body = "1.0.1"
+http-body-util = "0.1.3"
 pyo3 = { version = "0.27.2", features = ["bytes"] }
 reqwest = { features = [
     "brotli",
