@@ -9,7 +9,7 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::into_stream_v2;
-use tokio_stream::StreamExt;
+use tokio_stream::StreamExt as _;
 
 use crate::headers::Headers;
 
@@ -33,9 +33,9 @@ impl Request {
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
         let method = http::Method::try_from(method)
-            .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
         let url = reqwest::Url::parse(url)
-            .map_err(|e| PyValueError::new_err(format!("Invalid URL: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
         let headers = if let Some(headers) = headers {
             if let Ok(hdrs) = headers.cast::<Headers>() {
                 Some(hdrs.clone().unbind())
@@ -59,9 +59,9 @@ impl Request {
 }
 
 impl Request {
-    pub(crate) fn content_into_reqwest<'py>(
+    pub(crate) fn content_into_reqwest(
         &mut self,
-        py: Python<'py>,
+        py: Python<'_>,
     ) -> PyResult<Option<reqwest::Body>> {
         match &self.content {
             Some(Content::Bytes(bytes)) => {
@@ -131,7 +131,7 @@ struct BodyChunk {
 }
 
 #[pyfunction]
-fn wrap_body_chunk(py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<Py<BodyChunk>> {
+fn wrap_body_chunk(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<Py<BodyChunk>> {
     let bytes = data.extract::<Bytes>()?;
     Py::new(py, BodyChunk { bytes })
 }

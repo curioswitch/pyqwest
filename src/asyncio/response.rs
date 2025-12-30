@@ -45,23 +45,22 @@ impl Response {
     }
 
     #[getter]
-    fn headers<'py>(&mut self, py: Python<'py>) -> PyResult<Py<Headers>> {
+    fn headers(&mut self, py: Python<'_>) -> PyResult<Py<Headers>> {
         self.head.headers(py)
     }
 
     #[getter]
-    fn trailers<'py>(&self, py: Python<'py>) -> PyResult<Option<Py<Headers>>> {
-        match &self.content {
-            Content::Py(generator) => {
-                let content = generator.get();
-                content.body.clone().trailers(py)
-            }
-            _ => Ok(None),
+    fn trailers(&self, py: Python<'_>) -> PyResult<Option<Py<Headers>>> {
+        if let Content::Py(generator) = &self.content {
+            let content = generator.get();
+            content.body.clone().trailers(py)
+        } else {
+            Ok(None)
         }
     }
 
     #[getter]
-    fn content<'py>(&mut self, py: Python<'py>) -> PyResult<Py<ContentGenerator>> {
+    fn content(&mut self, py: Python<'_>) -> PyResult<Py<ContentGenerator>> {
         match &mut self.content {
             Content::Http(body) => {
                 let generator = Py::new(

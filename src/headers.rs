@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use http::{header, HeaderMap, HeaderName};
 use pyo3::exceptions::{PyKeyError, PyTypeError};
@@ -7,7 +7,8 @@ use pyo3::types::{
     PyAnyMethods as _, PyDict, PyIterator, PyList, PyListMethods as _, PyMapping, PyString,
     PyStringMethods as _, PyTuple,
 };
-use pyo3::{prelude::*, IntoPyObjectExt};
+use pyo3::{prelude::*, IntoPyObjectExt as _};
+use std::fmt::Write as _;
 
 #[pyclass(mapping)]
 pub(crate) struct Headers {
@@ -18,7 +19,7 @@ impl Headers {
     pub(crate) fn from_response_headers(headers: &HeaderMap) -> Self {
         Python::attach(|py| {
             let mut store: HeaderMap<Py<PyString>> = HeaderMap::with_capacity(headers.len());
-            for (key, value) in headers.iter() {
+            for (key, value) in headers {
                 if let Ok(value_str) = value.to_str() {
                     store.append(key.clone(), PyString::new(py, value_str).unbind());
                 }
@@ -32,7 +33,7 @@ impl Headers {
 impl Headers {
     #[new]
     #[pyo3(signature = (items=None))]
-    pub(crate) fn py_new<'py>(items: Option<Bound<'py, PyAny>>) -> PyResult<Self> {
+    pub(crate) fn py_new(items: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
         let mut store: HeaderMap<Py<PyString>> = HeaderMap::default();
         let Some(items) = items else {
             return Ok(Headers { store });
@@ -83,7 +84,7 @@ impl Headers {
         Ok(())
     }
 
-    fn __delitem__<'py>(&mut self, key: &Bound<'py, PyString>) -> PyResult<()> {
+    fn __delitem__(&mut self, key: &Bound<'_, PyString>) -> PyResult<()> {
         if self.store.remove(normalize_key(key)?).is_none() {
             Err(PyKeyError::new_err(format!(
                 "KeyError: '{}'",
@@ -110,7 +111,7 @@ impl Headers {
         self.store.keys_len()
     }
 
-    fn __contains__<'py>(&self, key: &Bound<'py, PyAny>) -> PyResult<bool> {
+    fn __contains__(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
         let Ok(key) = key.cast::<PyString>() else {
             return Ok(false);
         };
@@ -118,18 +119,18 @@ impl Headers {
         Ok(self.store.contains_key(key))
     }
 
-    fn __repr__<'py>(&self, py: Python<'py>) -> String {
+    fn __repr__(&self, py: Python<'_>) -> String {
         if self.store.is_empty() {
             return "Headers()".to_string();
         }
         let mut res = "Headers(".to_string();
         let mut first = true;
-        for (key, value) in self.store.iter() {
+        for (key, value) in &self.store {
             if !first {
                 res.push_str(", ");
             }
             let value_str = value.to_str(py).unwrap_or_default();
-            res.push_str(&format!("('{}', '{}')", key.as_str(), value_str));
+            let _ = write!(res, "('{}', '{}')", key.as_str(), value_str);
             first = false;
         }
         res.push(')');
@@ -200,7 +201,7 @@ impl Headers {
         }
     }
 
-    fn popitem<'py>(&mut self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+    fn popitem(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let store = &mut self.store;
         let Some(key) = store.keys().next() else {
             return Err(PyKeyError::new_err("Headers is empty"));
@@ -213,18 +214,18 @@ impl Headers {
                 // we remove them all and add back.
                 let (name, mut values) = occ.remove_entry_mult();
 
-                let mut ret = values.next().unwrap();
+                let mut result = values.next().unwrap();
                 let mut rest: Vec<Py<PyString>> = Vec::new();
                 for value in values {
-                    rest.push(ret);
-                    ret = value;
+                    rest.push(result);
+                    result = value;
                 }
 
                 for value in rest {
                     store.append(name.clone(), value);
                 }
                 let key_py = names.header_name_to_py(py, &name);
-                let tuple = PyTuple::new(py, &[key_py, ret])?;
+                let tuple = PyTuple::new(py, &[key_py, result])?;
                 Ok(tuple.into())
             }
             header::Entry::Vacant(_) => unreachable!(),
@@ -357,7 +358,7 @@ impl KeysView {
         PyIterator::from_object(&list)
     }
 
-    fn __len__<'py>(&self, py: Python<'py>) -> usize {
+    fn __len__(&self, py: Python<'_>) -> usize {
         let headers = self.headers.bind(py).borrow();
         headers.store.keys_len()
     }
@@ -402,7 +403,7 @@ impl ItemsView {
         PyIterator::from_object(&list)
     }
 
-    fn __len__<'py>(&self, py: Python<'py>) -> usize {
+    fn __len__(&self, py: Python<'_>) -> usize {
         let headers = self.headers.bind(py).borrow();
         headers.store.len()
     }
@@ -453,7 +454,7 @@ impl ValuesView {
         PyIterator::from_object(&list)
     }
 
-    fn __len__<'py>(&self, py: Python<'py>) -> usize {
+    fn __len__(&self, py: Python<'_>) -> usize {
         let headers = self.headers.bind(py).borrow();
         headers.store.len()
     }
@@ -493,10 +494,10 @@ impl<I: Iterator> ExactSizeIterator for ExactIter<I> {
     }
 }
 
-fn normalize_key<'py>(key: &Bound<'py, PyString>) -> PyResult<HeaderName> {
+fn normalize_key(key: &Bound<'_, PyString>) -> PyResult<HeaderName> {
     let key_str = key.to_str()?;
     HeaderName::from_str(key.to_str()?).map_err(|_| {
-        pyo3::exceptions::PyValueError::new_err(format!("Invalid header name: '{}'", key_str))
+        pyo3::exceptions::PyValueError::new_err(format!("Invalid header name: '{key_str}'"))
     })
 }
 
@@ -669,7 +670,7 @@ struct HeaderNames {
 }
 
 impl HeaderNames {
-    fn new<'py>(py: Python<'py>) -> Self {
+    fn new(py: Python<'_>) -> Self {
         Self {
             accept: PyString::new(py, "accept").unbind(),
             accept_charset: PyString::new(py, "accept-charset").unbind(),
@@ -765,11 +766,11 @@ impl HeaderNames {
         }
     }
 
-    fn get<'py>(py: Python<'py>) -> &'py HeaderNames {
+    fn get(py: Python<'_>) -> &HeaderNames {
         HEADER_NAMES.get_or_init(py, || HeaderNames::new(py))
     }
 
-    fn header_name_to_py<'py>(&self, py: Python<'py>, name: &HeaderName) -> Py<PyString> {
+    fn header_name_to_py(&self, py: Python<'_>, name: &HeaderName) -> Py<PyString> {
         match *name {
             header::ACCEPT => self.accept.clone_ref(py),
             header::ACCEPT_CHARSET => self.accept_charset.clone_ref(py),

@@ -17,9 +17,9 @@ pub struct SyncClient {
 impl SyncClient {
     #[new]
     #[pyo3(signature = (*, tls_ca_cert = None, http_version = None))]
-    fn new<'py>(
+    fn new(
         tls_ca_cert: Option<&[u8]>,
-        http_version: Option<Bound<'py, HTTPVersion>>,
+        http_version: Option<Bound<'_, HTTPVersion>>,
     ) -> PyResult<Self> {
         let mut builder = reqwest::Client::builder();
         let mut http3 = false;
@@ -36,11 +36,11 @@ impl SyncClient {
                     http3 = true;
                     builder = builder.http3_prior_knowledge();
                 }
-            };
+            }
         }
         if let Some(ca_cert) = tls_ca_cert {
             let cert = reqwest::Certificate::from_pem(ca_cert).map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to parse CA certificate: {}", e))
+                PyRuntimeError::new_err(format!("Failed to parse CA certificate: {e}"))
             })?;
             builder = builder.tls_certs_only([cert]);
         }
@@ -81,7 +81,7 @@ impl SyncClient {
         }
         if let Some(hdrs) = &request.headers {
             let hdrs = hdrs.bind(py).borrow();
-            for (key, value) in hdrs.store.iter() {
+            for (key, value) in &hdrs.store {
                 let value_str = value.extract::<&str>(py)?;
                 req_builder = req_builder.header(key, value_str);
             }
@@ -98,7 +98,7 @@ impl SyncClient {
         });
         let res = py.detach(|| {
             rx.blocking_recv()
-                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {}", e)))
+                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
         })??;
         Ok(SyncResponse::new(res))
     }
