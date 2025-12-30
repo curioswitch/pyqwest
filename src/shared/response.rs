@@ -9,28 +9,35 @@ use tokio::sync::Mutex;
 
 use crate::{common::HTTPVersion, headers::Headers};
 
+enum ResponseHeaders {
+    Http(HeaderMap),
+    Py(Py<Headers>),
+}
+
 pub(crate) struct ResponseHead {
-    head: Parts,
+    status: http::StatusCode,
+    version: http::Version,
 
     /// The response headers. We convert from Rust to Python lazily mainly to make sure
     /// it happens on a Python thread instead of Tokio.
-    headers: Option<Py<Headers>>,
+    headers: ResponseHeaders,
 }
 
 impl ResponseHead {
     pub(crate) fn new(head: Parts) -> Self {
         ResponseHead {
-            head,
-            headers: None,
+            status: head.status,
+            version: head.version,
+            headers: ResponseHeaders::Http(head.headers),
         }
     }
 
     pub(crate) fn status(&self) -> u16 {
-        self.head.status.as_u16()
+        self.status.as_u16()
     }
 
     pub(crate) fn http_version(&self) -> HTTPVersion {
-        match self.head.version {
+        match self.version {
             http::Version::HTTP_09 => HTTPVersion::HTTP1,
             http::Version::HTTP_10 => HTTPVersion::HTTP1,
             http::Version::HTTP_11 => HTTPVersion::HTTP1,
@@ -41,12 +48,13 @@ impl ResponseHead {
     }
 
     pub(crate) fn headers<'py>(&mut self, py: Python<'py>) -> PyResult<Py<Headers>> {
-        if let Some(headers) = &self.headers {
-            Ok(headers.clone_ref(py))
-        } else {
-            let headers = Py::new(py, Headers::from_response_headers(&self.head.headers))?;
-            self.headers = Some(headers.clone_ref(py));
-            Ok(headers)
+        match &self.headers {
+            ResponseHeaders::Py(headers) => Ok(headers.clone_ref(py)),
+            ResponseHeaders::Http(headers) => {
+                let headers = Py::new(py, Headers::from_response_headers(headers))?;
+                self.headers = ResponseHeaders::Py(headers.clone_ref(py));
+                Ok(headers)
+            }
         }
     }
 }
