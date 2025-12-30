@@ -3,6 +3,9 @@ use pyo3::prelude::*;
 mod asyncio;
 mod common;
 mod headers;
+/// Shared utilities between asyncio and sync modules.
+/// Code exposed to Python should be in common instead.
+pub(crate) mod shared;
 mod sync;
 
 /// Entrypoint to pyqwest extension module.

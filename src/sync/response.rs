@@ -1,49 +1,33 @@
-use std::sync::Arc;
-
 use bytes::Bytes;
-use pyo3::{exceptions::PyRuntimeError, pyclass, pymethods, Bound, Py, PyResult, Python};
+use pyo3::{exceptions::PyRuntimeError, pyclass, pymethods, Py, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 
-use crate::{common::HTTPVersion, headers::Headers};
+use crate::{
+    common::HTTPVersion,
+    headers::Headers,
+    shared::response::{ResponseBody, ResponseHead},
+};
+
+enum Content {
+    Http(Option<ResponseBody>),
+    Py(Py<SyncContentGenerator>),
+}
 
 #[pyclass]
 pub(crate) struct SyncResponse {
-    /// The HTTP status code of the response.
-    status: u16,
-
-    /// The HTTP version of the response.
-    http_version: HTTPVersion,
-
-    /// The response headers. We convert from Rust to Python lazily mainly to make sure
-    /// it happens on a Python thread instead of Tokio.
-    headers: Option<Py<Headers>>,
-
-    /// The response trailers. Will only be present after consuming the response content.
-    /// If after consumption, it is still None, it means there were no trailers.
-    trailers: Option<Py<Headers>>,
-
-    /// The underlying reqwest response.
-    response: Arc<Mutex<reqwest::Response>>,
+    head: ResponseHead,
+    content: Content,
 }
 
 impl SyncResponse {
     pub(crate) fn new(response: reqwest::Response) -> SyncResponse {
-        let status = response.status().as_u16();
-        let http_version = match response.version() {
-            reqwest::Version::HTTP_09 => HTTPVersion::HTTP1,
-            reqwest::Version::HTTP_10 => HTTPVersion::HTTP1,
-            reqwest::Version::HTTP_11 => HTTPVersion::HTTP1,
-            reqwest::Version::HTTP_2 => HTTPVersion::HTTP2,
-            reqwest::Version::HTTP_3 => HTTPVersion::HTTP3,
-            _ => HTTPVersion::HTTP1,
-        };
+        let response: http::Response<_> = response.into();
+        let (head, body) = response.into_parts();
+
         SyncResponse {
-            status,
-            http_version,
-            headers: None,
-            trailers: None,
-            response: Arc::new(Mutex::new(response)),
+            head: ResponseHead::new(head),
+            content: Content::Http(Some(ResponseBody::new(body))),
         }
     }
 }
@@ -52,72 +36,51 @@ impl SyncResponse {
 impl SyncResponse {
     #[getter]
     fn status(&self) -> u16 {
-        self.status
+        self.head.status()
     }
 
     #[getter]
     fn http_version(&self) -> HTTPVersion {
-        self.http_version.clone()
+        self.head.http_version()
     }
 
     #[getter]
     fn headers<'py>(&mut self, py: Python<'py>) -> PyResult<Py<Headers>> {
-        if let Some(headers) = &self.headers {
-            Ok(headers.clone_ref(py))
-        } else {
-            // For the response to be locked, we would need to be concurrently consuming response body
-            // and accessing headers. It is so rare, we go ahead and optimize for it at the expense of code
-            // complexity.
-            let headers = if let Ok(response) = self.response.try_lock() {
-                Headers::from_response_headers(response.headers())
-            } else {
-                py.detach(|| {
-                    Headers::from_response_headers(self.response.blocking_lock().headers())
-                })
-            };
-            let headers = Py::new(py, headers)?;
-            self.headers = Some(headers.clone_ref(py));
-            Ok(headers)
-        }
+        self.head.headers(py)
     }
 
     #[getter]
-    fn trailers<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Py<Headers>>> {
-        if let Some(trailers) = &self.trailers {
-            Ok(Some(trailers.clone_ref(py)))
-        } else {
-            let trailers = if let Ok(mut response) = self.response.try_lock() {
-                response.trailers().map(Headers::from_response_headers)
-            } else {
-                py.detach(|| {
-                    let mut response = self.response.blocking_lock();
-                    response.trailers().map(Headers::from_response_headers)
-                })
-            };
-            if let Some(trailers) = trailers {
-                let trailers = Py::new(py, trailers)?;
-                self.trailers = Some(trailers.clone_ref(py));
-                Ok(Some(trailers))
-            } else {
-                Ok(None)
+    fn trailers<'py>(&self, py: Python<'py>) -> PyResult<Option<Py<Headers>>> {
+        match &self.content {
+            Content::Py(generator) => {
+                let content = generator.get();
+                content.body.clone().trailers(py)
             }
+            _ => Ok(None),
         }
     }
 
     #[getter]
-    fn content<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, SyncContentGenerator>> {
-        Bound::new(
-            py,
-            SyncContentGenerator {
-                response: self.response.clone(),
-            },
-        )
+    fn content<'py>(&mut self, py: Python<'py>) -> PyResult<Py<SyncContentGenerator>> {
+        match &mut self.content {
+            Content::Http(body) => {
+                let generator = Py::new(
+                    py,
+                    SyncContentGenerator {
+                        body: body.take().unwrap(),
+                    },
+                )?;
+                self.content = Content::Py(generator.clone_ref(py));
+                Ok(generator)
+            }
+            Content::Py(generator) => Ok(generator.clone_ref(py)),
+        }
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct SyncContentGenerator {
-    response: Arc<Mutex<reqwest::Response>>,
+    body: ResponseBody,
 }
 
 #[pymethods]
@@ -128,14 +91,10 @@ impl SyncContentGenerator {
 
     fn __next__<'py>(&self, py: Python<'py>) -> PyResult<Option<Bytes>> {
         py.detach(|| {
-            let response = self.response.clone();
             let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
+            let mut body = self.body.clone();
             get_runtime().spawn(async move {
-                let mut response = response.lock().await;
-                let chunk = response
-                    .chunk()
-                    .await
-                    .map_err(|e| PyRuntimeError::new_err(format!("Error reading chunk: {}", e)));
+                let chunk = body.chunk().await;
                 tx.send(chunk).unwrap();
             });
             rx.blocking_recv()
