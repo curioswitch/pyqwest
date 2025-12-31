@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use pyo3::{
-    exceptions::{PyTypeError, PyValueError},
+    exceptions::PyTypeError,
     intern,
     pybacked::PyBackedBytes,
     pyclass, pyfunction, pymethods,
@@ -11,13 +11,11 @@ use pyo3::{
 use pyo3_async_runtimes::tokio::into_stream_v2;
 use tokio_stream::StreamExt as _;
 
-use crate::headers::Headers;
+use crate::shared::request::RequestHead;
 
 #[pyclass]
 pub struct Request {
-    pub(crate) method: http::Method,
-    pub(crate) url: reqwest::Url,
-    pub(crate) headers: Option<Py<Headers>>,
+    head: RequestHead,
     content: Option<Content>,
 }
 
@@ -32,37 +30,30 @@ impl Request {
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
-        let method = http::Method::try_from(method)
-            .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
-        let url = reqwest::Url::parse(url)
-            .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
-        let headers = if let Some(headers) = headers {
-            if let Ok(hdrs) = headers.cast::<Headers>() {
-                Some(hdrs.clone().unbind())
-            } else {
-                Some(Py::new(py, Headers::py_new(Some(headers))?)?)
-            }
-        } else {
-            None
-        };
+        let head = RequestHead::new(py, method, url, headers)?;
         let content: Option<Content> = match content {
             Some(content) => Some(content.extract()?),
             None => None,
         };
-        Ok(Self {
-            method,
-            url,
-            headers,
-            content,
-        })
+        Ok(Self { head, content })
     }
 }
 
 impl Request {
-    pub(crate) fn content_into_reqwest(
-        &mut self,
+    pub(crate) fn as_reqwest_builder(
+        &self,
         py: Python<'_>,
-    ) -> PyResult<Option<reqwest::Body>> {
+        client: &reqwest::Client,
+        http3: bool,
+    ) -> PyResult<reqwest::RequestBuilder> {
+        let mut req_builder = self.head.new_request_builder(py, client, http3)?;
+        if let Some(body) = self.content_into_reqwest(py)? {
+            req_builder = req_builder.body(body);
+        }
+        Ok(req_builder)
+    }
+
+    fn content_into_reqwest(&self, py: Python<'_>) -> PyResult<Option<reqwest::Body>> {
         match &self.content {
             Some(Content::Bytes(bytes)) => {
                 // TODO: Replace this dance with clone_ref when released.
