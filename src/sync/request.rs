@@ -12,7 +12,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::shared::request::RequestHead;
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct SyncRequest {
     head: RequestHead,
     content: Option<Content>,

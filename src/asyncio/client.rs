@@ -1,31 +1,32 @@
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::prelude::*;
-use pyo3_async_runtimes::tokio::future_into_py;
+use pyo3::{intern, prelude::*};
 
 use crate::asyncio::request::Request;
-use crate::asyncio::response::Response;
-use crate::common::HTTPVersion;
-use crate::shared::transport::{new_reqwest_client, ClientParams};
+use crate::asyncio::transport::HttpTransport;
 
-#[pyclass(module = "pyqwest")]
+enum Transport {
+    Http(HttpTransport),
+    Custom(Py<PyAny>),
+}
+
+#[pyclass(module = "pyqwest", frozen)]
 pub struct Client {
-    client: reqwest::Client,
-    http3: bool,
+    transport: Transport,
 }
 
 #[pymethods]
 impl Client {
     #[new]
-    #[pyo3(signature = (*, tls_ca_cert = None, http_version = None))]
-    fn new(
-        tls_ca_cert: Option<&[u8]>,
-        http_version: Option<Bound<'_, HTTPVersion>>,
-    ) -> PyResult<Self> {
-        let (client, http3) = new_reqwest_client(ClientParams {
-            tls_ca_cert,
-            http_version,
-        })?;
-        Ok(Self { client, http3 })
+    fn new(transport: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
+        let transport = if let Some(transport) = transport {
+            if let Ok(transport) = transport.extract::<HttpTransport>() {
+                Transport::Http(transport)
+            } else {
+                Transport::Custom(transport.unbind())
+            }
+        } else {
+            Transport::Http(HttpTransport::new(None, None)?)
+        };
+        Ok(Self { transport })
     }
 
     #[pyo3(signature = (method, url, headers=None, content=None))]
@@ -38,12 +39,11 @@ impl Client {
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let request = Request::new(py, method, url, headers, content)?;
-        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3)?;
-        future_into_py(py, async move {
-            let res = req_builder.send().await.map_err(|e| {
-                PyRuntimeError::new_err(format!("Request failed: {:+}", errors::fmt(&e)))
-            })?;
-            Ok(Response::new(res))
-        })
+        match &self.transport {
+            Transport::Http(transport) => transport.do_execute(py, &request),
+            Transport::Custom(transport) => transport
+                .bind(py)
+                .call_method1(intern!(py, "execute"), (request,)),
+        }
     }
 }

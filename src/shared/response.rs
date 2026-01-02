@@ -32,6 +32,27 @@ impl ResponseHead {
         }
     }
 
+    pub(crate) fn from_py(
+        status: u16,
+        http_version: &HTTPVersion,
+        headers: Option<Py<Headers>>,
+    ) -> PyResult<Self> {
+        let version = match http_version {
+            HTTPVersion::HTTP1 => http::Version::HTTP_11,
+            HTTPVersion::HTTP2 => http::Version::HTTP_2,
+            HTTPVersion::HTTP3 => http::Version::HTTP_3,
+        };
+        Ok(ResponseHead {
+            status: http::StatusCode::from_u16(status)
+                .map_err(|e| PyRuntimeError::new_err(format!("Invalid status code: {e}")))?,
+            version,
+            headers: match headers {
+                Some(hdrs) => ResponseHeaders::Py(hdrs),
+                None => ResponseHeaders::Http(HeaderMap::new()),
+            },
+        })
+    }
+
     pub(crate) fn status(&self) -> u16 {
         self.status.as_u16()
     }

@@ -13,7 +13,7 @@ use tokio_stream::StreamExt as _;
 
 use crate::shared::request::RequestHead;
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Request {
     head: RequestHead,
     content: Option<Content>,
