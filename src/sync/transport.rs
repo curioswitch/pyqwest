@@ -33,7 +33,7 @@ impl SyncHttpTransport {
     fn execute<'py>(
         &self,
         py: Python<'py>,
-        request: Bound<'py, SyncRequest>,
+        request: &Bound<'py, SyncRequest>,
     ) -> PyResult<Bound<'py, PyAny>> {
         self.do_execute(py, request.get())
     }

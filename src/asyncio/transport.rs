@@ -18,7 +18,7 @@ pub struct HttpTransport {
 impl HttpTransport {
     #[new]
     #[pyo3(signature = (*, tls_ca_cert = None, http_version = None))]
-    pub fn new(
+    pub(crate) fn new(
         tls_ca_cert: Option<&[u8]>,
         http_version: Option<Bound<'_, HTTPVersion>>,
     ) -> PyResult<Self> {
@@ -32,7 +32,7 @@ impl HttpTransport {
     fn execute<'py>(
         &self,
         py: Python<'py>,
-        request: Bound<'py, Request>,
+        request: &Bound<'py, Request>,
     ) -> PyResult<Bound<'py, PyAny>> {
         self.do_execute(py, request.get())
     }
