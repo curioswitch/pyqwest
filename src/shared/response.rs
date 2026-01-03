@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http::{response::Parts, HeaderMap};
+use http::response::Parts;
 use http_body::Frame;
 use http_body_util::BodyExt as _;
 use pyo3::{exceptions::PyRuntimeError, Py, PyResult, Python};
@@ -9,30 +9,29 @@ use tokio::sync::Mutex;
 
 use crate::{common::HTTPVersion, headers::Headers};
 
-enum ResponseHeaders {
-    Http(HeaderMap),
-    Py(Py<Headers>),
-}
-
 pub(crate) struct ResponseHead {
     status: http::StatusCode,
     version: http::Version,
-
-    /// The response headers. We convert from Rust to Python lazily mainly to make sure
-    /// it happens on a Python thread instead of Tokio.
-    headers: ResponseHeaders,
+    headers: Py<Headers>,
 }
 
 impl ResponseHead {
-    pub(crate) fn new(head: Parts) -> Self {
+    pub(crate) fn pending(py: Python<'_>) -> Self {
         ResponseHead {
-            status: head.status,
-            version: head.version,
-            headers: ResponseHeaders::Http(head.headers),
+            status: http::StatusCode::INTERNAL_SERVER_ERROR,
+            version: http::Version::HTTP_11,
+            headers: Py::new(py, Headers::empty()).unwrap(),
         }
     }
 
+    pub(crate) fn fill(&mut self, parts: Parts) {
+        self.status = parts.status;
+        self.version = parts.version;
+        self.headers.get().fill(parts.headers);
+    }
+
     pub(crate) fn from_py(
+        py: Python<'_>,
         status: u16,
         http_version: &HTTPVersion,
         headers: Option<Py<Headers>>,
@@ -47,8 +46,8 @@ impl ResponseHead {
                 .map_err(|e| PyRuntimeError::new_err(format!("Invalid status code: {e}")))?,
             version,
             headers: match headers {
-                Some(hdrs) => ResponseHeaders::Py(hdrs),
-                None => ResponseHeaders::Http(HeaderMap::new()),
+                Some(hdrs) => hdrs,
+                None => Py::new(py, Headers::empty())?,
             },
         })
     }
@@ -65,32 +64,14 @@ impl ResponseHead {
         }
     }
 
-    pub(crate) fn headers(&mut self, py: Python<'_>) -> PyResult<Py<Headers>> {
-        match &self.headers {
-            ResponseHeaders::Py(headers) => Ok(headers.clone_ref(py)),
-            ResponseHeaders::Http(headers) => {
-                let headers = Py::new(py, Headers::from_response_headers(headers))?;
-                self.headers = ResponseHeaders::Py(headers.clone_ref(py));
-                Ok(headers)
-            }
-        }
+    pub(crate) fn headers(&mut self, py: Python<'_>) -> Py<Headers> {
+        self.headers.clone_ref(py)
     }
-}
-
-enum Trailers {
-    Http(HeaderMap),
-    Py(Py<Headers>),
-    None,
 }
 
 struct ResponseBodyInner {
     body: reqwest::Body,
-
-    /// The response trailers. Will only be present after consuming the response content.
-    /// If after consumption, it is still None, it means there were no trailers. We
-    /// store the trailers as-is before converting to Python to allow the conversion to
-    /// happen on a Python thread.
-    trailers: Trailers,
+    trailers: Py<Headers>,
 }
 
 #[derive(Clone)]
@@ -99,18 +80,22 @@ pub(crate) struct ResponseBody {
 }
 
 impl ResponseBody {
-    pub(crate) fn new(body: reqwest::Body) -> Self {
+    pub(crate) fn pending(py: Python<'_>) -> Self {
         ResponseBody {
             inner: Arc::new(Mutex::new(ResponseBodyInner {
-                body,
-                trailers: Trailers::None,
+                body: reqwest::Body::from(Bytes::new()),
+                trailers: Py::new(py, Headers::empty()).unwrap(),
             })),
         }
     }
 
-    pub(crate) async fn chunk(&mut self) -> PyResult<Option<Bytes>> {
+    pub(crate) async fn fill(&self, body: reqwest::Body) {
         let mut inner = self.inner.lock().await;
-        // loop to ignore unrecognized frames
+        inner.body = body;
+    }
+
+    pub(crate) async fn chunk(&self) -> PyResult<Option<Bytes>> {
+        let mut inner = self.inner.lock().await;
         loop {
             if let Some(res) = inner.body.frame().await {
                 let frame = res.map_err(|e| {
@@ -122,7 +107,7 @@ impl ResponseBody {
                         return Ok(Some(buf));
                     }
                     Err(Ok(trailers)) => {
-                        inner.trailers = Trailers::Http(trailers);
+                        inner.trailers.get().fill(trailers);
                     }
                     Err(Err(_)) => (),
                 }
@@ -132,16 +117,8 @@ impl ResponseBody {
         }
     }
 
-    pub(crate) fn trailers(&mut self, py: Python<'_>) -> PyResult<Option<Py<Headers>>> {
-        let mut inner = py.detach(|| self.inner.blocking_lock());
-        match &inner.trailers {
-            Trailers::Py(trailers) => Ok(Some(trailers.clone_ref(py))),
-            Trailers::Http(trailers) => {
-                let headers = Py::new(py, Headers::from_response_headers(trailers))?;
-                inner.trailers = Trailers::Py(headers.clone_ref(py));
-                Ok(Some(headers))
-            }
-            Trailers::None => Ok(None),
-        }
+    pub(crate) fn trailers(&self, py: Python<'_>) -> Py<Headers> {
+        let inner = py.detach(|| self.inner.blocking_lock());
+        inner.trailers.clone_ref(py)
     }
 }

@@ -9,26 +9,30 @@ use crate::{
     shared::response::{ResponseBody, ResponseHead},
 };
 
-enum Content {
-    Http(Option<ResponseBody>),
-    Py(Py<SyncContentGenerator>),
-}
-
 #[pyclass]
 pub(crate) struct SyncResponse {
     head: ResponseHead,
-    content: Content,
+    content: Py<SyncContentGenerator>,
 }
 
 impl SyncResponse {
-    pub(crate) fn new(response: reqwest::Response) -> SyncResponse {
+    pub(super) fn pending(py: Python<'_>) -> PyResult<SyncResponse> {
+        Ok(SyncResponse {
+            head: ResponseHead::pending(py),
+            content: Py::new(
+                py,
+                SyncContentGenerator {
+                    body: ResponseBody::pending(py),
+                },
+            )?,
+        })
+    }
+
+    pub(super) async fn fill(&mut self, response: reqwest::Response) {
         let response: http::Response<_> = response.into();
         let (head, body) = response.into_parts();
-
-        SyncResponse {
-            head: ResponseHead::new(head),
-            content: Content::Http(Some(ResponseBody::new(body))),
-        }
+        self.head.fill(head);
+        self.content.get().body.fill(body).await;
     }
 }
 
@@ -45,35 +49,18 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn headers(&mut self, py: Python<'_>) -> PyResult<Py<Headers>> {
+    fn headers(&mut self, py: Python<'_>) -> Py<Headers> {
         self.head.headers(py)
     }
 
     #[getter]
-    fn trailers(&self, py: Python<'_>) -> PyResult<Option<Py<Headers>>> {
-        if let Content::Py(generator) = &self.content {
-            let content = generator.get();
-            content.body.clone().trailers(py)
-        } else {
-            Ok(None)
-        }
+    fn trailers(&self, py: Python<'_>) -> Py<Headers> {
+        self.content.get().body.trailers(py)
     }
 
     #[getter]
-    fn content(&mut self, py: Python<'_>) -> PyResult<Py<SyncContentGenerator>> {
-        match &mut self.content {
-            Content::Http(body) => {
-                let generator = Py::new(
-                    py,
-                    SyncContentGenerator {
-                        body: body.take().unwrap(),
-                    },
-                )?;
-                self.content = Content::Py(generator.clone_ref(py));
-                Ok(generator)
-            }
-            Content::Py(generator) => Ok(generator.clone_ref(py)),
-        }
+    fn content(&mut self, py: Python<'_>) -> Py<SyncContentGenerator> {
+        self.content.clone_ref(py)
     }
 }
 
@@ -91,7 +78,7 @@ impl SyncContentGenerator {
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Bytes>> {
         py.detach(|| {
             let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
-            let mut body = self.body.clone();
+            let body = self.body.clone();
             get_runtime().spawn(async move {
                 let chunk = body.chunk().await;
                 tx.send(chunk).unwrap();

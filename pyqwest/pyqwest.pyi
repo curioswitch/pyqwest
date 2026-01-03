@@ -215,7 +215,7 @@ class Response:
     http_version: HTTPVersion
     headers: Headers
     content: AsyncIterator[bytes]
-    trailers: Headers | None
+    trailers: Headers
 
 class SyncClient:
     def __init__(self, transport: SyncTransport | None = None) -> None: ...
@@ -253,4 +253,4 @@ class SyncResponse:
     http_version: HTTPVersion
     headers: Headers
     content: Iterator[bytes]
-    trailers: Headers | None
+    trailers: Headers
