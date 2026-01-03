@@ -64,7 +64,7 @@ impl ResponseHead {
         }
     }
 
-    pub(crate) fn headers(&mut self, py: Python<'_>) -> Py<Headers> {
+    pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.headers.clone_ref(py)
     }
 }

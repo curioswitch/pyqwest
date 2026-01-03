@@ -9,7 +9,7 @@ use crate::{
     shared::response::{ResponseBody, ResponseHead},
 };
 
-#[pyclass]
+#[pyclass(frozen)]
 pub(crate) struct SyncResponse {
     head: ResponseHead,
     content: Py<SyncContentGenerator>,
@@ -49,7 +49,7 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn headers(&mut self, py: Python<'_>) -> Py<Headers> {
+    fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.head.headers(py)
     }
 
@@ -59,7 +59,7 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn content(&mut self, py: Python<'_>) -> Py<SyncContentGenerator> {
+    fn content(&self, py: Python<'_>) -> Py<SyncContentGenerator> {
         self.content.clone_ref(py)
     }
 }
