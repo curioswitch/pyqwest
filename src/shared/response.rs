@@ -70,34 +70,34 @@ impl ResponseHead {
 }
 
 struct ResponseBodyInner {
-    body: reqwest::Body,
+    body: Mutex<reqwest::Body>,
     trailers: Py<Headers>,
 }
 
 #[derive(Clone)]
 pub(crate) struct ResponseBody {
-    inner: Arc<Mutex<ResponseBodyInner>>,
+    inner: Arc<ResponseBodyInner>,
 }
 
 impl ResponseBody {
     pub(crate) fn pending(py: Python<'_>) -> Self {
         ResponseBody {
-            inner: Arc::new(Mutex::new(ResponseBodyInner {
-                body: reqwest::Body::from(Bytes::new()),
+            inner: Arc::new(ResponseBodyInner {
+                body: Mutex::new(reqwest::Body::from(Bytes::new())),
                 trailers: Py::new(py, Headers::empty()).unwrap(),
-            })),
+            }),
         }
     }
 
     pub(crate) async fn fill(&self, body: reqwest::Body) {
-        let mut inner = self.inner.lock().await;
-        inner.body = body;
+        let mut self_body = self.inner.body.lock().await;
+        *self_body = body;
     }
 
     pub(crate) async fn chunk(&self) -> PyResult<Option<Bytes>> {
-        let mut inner = self.inner.lock().await;
+        let mut body = self.inner.body.lock().await;
         loop {
-            if let Some(res) = inner.body.frame().await {
+            if let Some(res) = body.frame().await {
                 let frame = res.map_err(|e| {
                     PyRuntimeError::new_err(format!("Error reading HTTP body frame: {e}"))
                 })?;
@@ -107,7 +107,7 @@ impl ResponseBody {
                         return Ok(Some(buf));
                     }
                     Err(Ok(trailers)) => {
-                        inner.trailers.get().fill(trailers);
+                        self.inner.trailers.get().fill(trailers);
                     }
                     Err(Err(_)) => (),
                 }
@@ -118,7 +118,6 @@ impl ResponseBody {
     }
 
     pub(crate) fn trailers(&self, py: Python<'_>) -> Py<Headers> {
-        let inner = py.detach(|| self.inner.blocking_lock());
-        inner.trailers.clone_ref(py)
+        self.inner.trailers.clone_ref(py)
     }
 }
