@@ -160,7 +160,7 @@ async def test_basic(
     assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
     assert content == b"Hello, World!"
     # Didn't send te so should be no trailers
-    assert resp.trailers is None
+    assert len(resp.trailers) == 0
     if http_version is not None:
         assert resp.http_version == http_version
     else:
@@ -243,10 +243,9 @@ async def test_bidi(
     chunk = await anext(content, None)
     assert chunk is None
     if supports_trailers(http_version, url):
-        assert resp.trailers is not None
         assert resp.trailers["x-echo-trailer"] == "last info"
     else:
-        assert resp.trailers is None
+        assert len(resp.trailers) == 0
 
 
 @pytest.mark.asyncio
@@ -281,7 +280,6 @@ async def test_bidi_sync(
     chunk = next(content, None)
     assert chunk is None
     if supports_trailers(http_version, url):
-        assert resp.trailers is not None
         assert resp.trailers["x-echo-trailer"] == "last info"
     else:
-        assert resp.trailers is None
+        assert len(resp.trailers) == 0

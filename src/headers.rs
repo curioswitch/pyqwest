@@ -17,13 +17,26 @@ pub(crate) struct Headers {
 }
 
 impl Headers {
-    pub(crate) fn from_response_headers(headers: &HeaderMap) -> Self {
-        let mut store: HeaderMap<PyHeaderValue> = HeaderMap::with_capacity(headers.len());
-        for (key, value) in headers {
-            store.append(key.clone(), PyHeaderValue::from_http(value.clone()));
-        }
+    pub(crate) fn empty() -> Self {
         Headers {
-            store: Mutex::new(store),
+            store: Mutex::new(HeaderMap::default()),
+        }
+    }
+
+    pub(crate) fn fill(&self, headers: HeaderMap) {
+        let mut store = self.store.lock().unwrap();
+        store.reserve(headers.len());
+        let mut current_key: Option<HeaderName> = None;
+        for (key, value) in headers {
+            if let Some(key) = key {
+                current_key = Some(key);
+            }
+
+            store.append(
+                // SAFETY: A key is guaranteed to be present on the first iteration.
+                current_key.as_ref().unwrap(),
+                PyHeaderValue::from_http(value),
+            );
         }
     }
 }
