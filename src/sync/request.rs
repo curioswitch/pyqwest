@@ -44,12 +44,12 @@ impl SyncRequest {
         py: Python<'_>,
         client: &reqwest::Client,
         http3: bool,
-    ) -> PyResult<reqwest::RequestBuilder> {
-        let mut req_builder = self.head.new_request_builder(py, client, http3)?;
+    ) -> reqwest::RequestBuilder {
+        let mut req_builder = self.head.new_request_builder(py, client, http3);
         if let Some(body) = self.content_into_reqwest(py) {
             req_builder = req_builder.body(body);
         }
-        Ok(req_builder)
+        req_builder
     }
 
     fn content_into_reqwest(&self, py: Python<'_>) -> Option<reqwest::Body> {

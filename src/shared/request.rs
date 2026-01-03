@@ -41,7 +41,7 @@ impl RequestHead {
         py: Python<'_>,
         client: &reqwest::Client,
         http3: bool,
-    ) -> PyResult<reqwest::RequestBuilder> {
+    ) -> reqwest::RequestBuilder {
         let mut req_builder = client.request(self.method.clone(), self.url.clone());
         if http3 {
             req_builder = req_builder.version(http::Version::HTTP_3);
@@ -49,10 +49,9 @@ impl RequestHead {
         if let Some(hdrs) = &self.headers {
             let hdrs = hdrs.bind(py).borrow();
             for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
-                let value_str = value.extract::<&str>(py)?;
-                req_builder = req_builder.header(name, value_str);
+                req_builder = req_builder.header(name, value);
             }
         }
-        Ok(req_builder)
+        req_builder
     }
 }
