@@ -593,6 +593,17 @@ impl PyHeaderValue {
     }
 
     fn from_py(s: &Bound<'_, PyString>) -> PyResult<Self> {
+        // Validation copied from HeaderValue
+        let s_str = s.to_str()?;
+        if s_str
+            .as_bytes()
+            .iter()
+            .any(|&b| b != b'\t' && (b < 32 || b == 127))
+        {
+            return Err(PyValueError::new_err(format!(
+                "Invalid header value '{s_str}')"
+            )));
+        }
         Ok(Self {
             kind: PyHeaderValueKind::Py(s.clone().unbind()),
         })
