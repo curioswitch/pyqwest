@@ -1,8 +1,8 @@
 use std::str::FromStr as _;
 use std::sync::Mutex;
 
-use http::{header, HeaderMap, HeaderName};
-use pyo3::exceptions::{PyKeyError, PyTypeError};
+use http::{header, HeaderMap, HeaderName, HeaderValue};
+use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::sync::{MutexExt as _, PyOnceLock};
 use pyo3::types::{
     PyAnyMethods as _, PyDict, PyIterator, PyList, PyListMethods as _, PyMapping, PyString,
@@ -13,22 +13,18 @@ use std::fmt::Write as _;
 
 #[pyclass(mapping, frozen)]
 pub(crate) struct Headers {
-    pub(crate) store: Mutex<HeaderMap<Py<PyString>>>,
+    pub(crate) store: Mutex<HeaderMap<PyHeaderValue>>,
 }
 
 impl Headers {
     pub(crate) fn from_response_headers(headers: &HeaderMap) -> Self {
-        Python::attach(|py| {
-            let mut store: HeaderMap<Py<PyString>> = HeaderMap::with_capacity(headers.len());
-            for (key, value) in headers {
-                if let Ok(value_str) = value.to_str() {
-                    store.append(key.clone(), PyString::new(py, value_str).unbind());
-                }
-            }
-            Headers {
-                store: Mutex::new(store),
-            }
-        })
+        let mut store: HeaderMap<PyHeaderValue> = HeaderMap::with_capacity(headers.len());
+        for (key, value) in headers {
+            store.append(key.clone(), PyHeaderValue::from_http(value.clone()));
+        }
+        Headers {
+            store: Mutex::new(store),
+        }
     }
 }
 
@@ -50,14 +46,14 @@ impl Headers {
         &self,
         py: Python<'py>,
         key: &Bound<'py, PyString>,
-    ) -> PyResult<Py<PyString>> {
+    ) -> PyResult<Bound<'py, PyString>> {
         if let Some(value) = self
             .store
             .lock_py_attached(py)
             .unwrap()
-            .get(normalize_key(key)?)
+            .get_mut(normalize_key(key)?)
         {
-            Ok(value.clone_ref(py))
+            Ok(value.as_py(py))
         } else {
             Err(PyKeyError::new_err(format!(
                 "KeyError: '{}'",
@@ -74,7 +70,7 @@ impl Headers {
         self.store
             .lock_py_attached(key.py())
             .unwrap()
-            .insert(normalize_key(key)?, value.clone().unbind());
+            .insert(normalize_key(key)?, PyHeaderValue::from_py(value)?);
         Ok(())
     }
 
@@ -132,7 +128,7 @@ impl Headers {
             if !first {
                 res.push_str(", ");
             }
-            let value_str = value.to_str(py).unwrap_or_default();
+            let value_str = value.http.to_str().unwrap_or_default();
             let _ = write!(res, "('{}', '{}')", key.as_str(), value_str);
             first = false;
         }
@@ -148,11 +144,11 @@ impl Headers {
             }
             let store = self.store.lock_py_attached(py).unwrap();
             let other_store = other.store.lock_py_attached(py).unwrap();
-            stores_equal(py, &store, &other_store)
+            Ok(stores_equal(&store, &other_store))
         } else {
             let store = self.store.lock_py_attached(py).unwrap();
             let other_store = store_from_py(other)?;
-            stores_equal(py, &store, &other_store)
+            Ok(stores_equal(&store, &other_store))
         }
     }
 
@@ -161,8 +157,8 @@ impl Headers {
         &self,
         py: Python<'py>,
         key: &Bound<'py, PyAny>,
-        default: Option<Py<PyAny>>,
-    ) -> PyResult<Option<Py<PyAny>>> {
+        default: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<Option<Bound<'py, PyAny>>> {
         let Ok(key) = key.cast::<PyString>() else {
             return Ok(default);
         };
@@ -170,21 +166,21 @@ impl Headers {
             .store
             .lock_py_attached(py)
             .unwrap()
-            .get(normalize_key(key)?)
+            .get_mut(normalize_key(key)?)
         {
-            Ok(Some(value.clone_ref(py).into_any()))
+            Ok(Some(value.as_py(py).into_any()))
         } else {
             Ok(default)
         }
     }
 
     #[pyo3(signature = (key, *args))]
-    fn pop(
+    fn pop<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         key: &Bound<PyString>,
-        args: &Bound<'_, PyTuple>,
-    ) -> PyResult<Py<PyAny>> {
+        args: &Bound<'py, PyTuple>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         if args.len() > 1 {
             return Err(PyTypeError::new_err(format!(
                 "pop expected at most 2 arguments, got {}",
@@ -192,11 +188,11 @@ impl Headers {
             )));
         }
         let key = normalize_key(key)?;
-        if let Some(value) = self.store.lock_py_attached(py).unwrap().remove(&key) {
-            Ok(value.into_any())
+        if let Some(mut value) = self.store.lock_py_attached(py).unwrap().remove(&key) {
+            Ok(value.as_py(py).into_any())
         } else if args.len() == 1 {
             let default = args.get_item(0)?;
-            Ok(default.clone().unbind())
+            Ok(default.clone())
         } else {
             Err(PyKeyError::new_err(format!("KeyError: '{}'", key.as_str())))
         }
@@ -216,7 +212,7 @@ impl Headers {
                 let (name, mut values) = occ.remove_entry_mult();
 
                 let mut result = values.next().unwrap();
-                let mut rest: Vec<Py<PyString>> = Vec::new();
+                let mut rest: Vec<PyHeaderValue> = Vec::new();
                 for value in values {
                     rest.push(result);
                     result = value;
@@ -226,7 +222,7 @@ impl Headers {
                     store.append(name.clone(), value);
                 }
                 let key_py = names.header_name_to_py(py, &name);
-                let tuple = PyTuple::new(py, &[key_py, result])?;
+                let tuple = PyTuple::new(py, [key_py.bind(py), &result.as_py(py)])?;
                 Ok(tuple.into())
             }
             header::Entry::Vacant(_) => unreachable!(),
@@ -242,10 +238,10 @@ impl Headers {
     ) -> PyResult<Option<Bound<'py, PyString>>> {
         let key = normalize_key(key)?;
         let mut store = self.store.lock_py_attached(py).unwrap();
-        if let Some(value) = store.get(&key) {
-            Ok(Some(value.bind(py).clone()))
+        if let Some(value) = store.get_mut(&key) {
+            Ok(Some(value.as_py(py)))
         } else if let Some(default) = default {
-            store.insert(key, default.clone().unbind());
+            store.insert(key, PyHeaderValue::from_py(default)?);
             Ok(Some(default.clone()))
         } else {
             Ok(None)
@@ -261,7 +257,7 @@ impl Headers {
         self.store
             .lock_py_attached(py)
             .unwrap()
-            .append(normalize_key(key)?, value.clone().unbind());
+            .append(normalize_key(key)?, PyHeaderValue::from_py(value)?);
         Ok(())
     }
 
@@ -280,7 +276,7 @@ impl Headers {
                     let key = key_py.cast::<PyString>()?;
                     let value_py = item.get_item(1)?;
                     let value = value_py.cast::<PyString>()?;
-                    store.insert(normalize_key(key)?, value.clone().unbind());
+                    store.insert(normalize_key(key)?, PyHeaderValue::from_py(value)?);
                 }
             } else {
                 for item in items.try_iter()? {
@@ -289,7 +285,7 @@ impl Headers {
                     let key = key_py.cast::<PyString>()?;
                     let value_py = item.get_item(1)?;
                     let value = value_py.cast::<PyString>()?;
-                    store.insert(normalize_key(key)?, value.clone().unbind());
+                    store.insert(normalize_key(key)?, PyHeaderValue::from_py(value)?);
                 }
             }
         }
@@ -297,7 +293,7 @@ impl Headers {
             for (key_py, value_py) in kwargs.iter() {
                 let key = key_py.cast::<PyString>()?;
                 let value = value_py.cast::<PyString>()?;
-                store.insert(normalize_key(key)?, value.clone().unbind());
+                store.insert(normalize_key(key)?, PyHeaderValue::from_py(value)?);
             }
         }
         Ok(())
@@ -312,13 +308,19 @@ impl Headers {
         py: Python<'py>,
         key: &Bound<'py, PyString>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let store = self.store.lock_py_attached(py).unwrap();
-        let values = store.get_all(normalize_key(key)?);
+        let mut store = self.store.lock_py_attached(py).unwrap();
+        let entry = store.entry(normalize_key(key)?);
+
         let res = PyList::empty(py);
-        for value in values {
-            res.append(value.clone_ref(py))?;
+        match entry {
+            header::Entry::Vacant(_) => Ok(res),
+            header::Entry::Occupied(mut entry) => {
+                for value in entry.iter_mut() {
+                    res.append(value.as_py(py))?;
+                }
+                Ok(res)
+            }
         }
-        Ok(res)
     }
 
     fn items<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -396,15 +398,15 @@ impl ItemsView {
 
         let names = HeaderNames::get(py);
 
-        let store = headers.store.lock_py_attached(py).unwrap();
+        let mut store = headers.store.lock_py_attached(py).unwrap();
 
-        let iter = store.iter().map(|(key, value)| {
+        let remaining = store.len();
+        let iter = store.iter_mut().map(|(key, value)| {
             let key_py = names.header_name_to_py(py, key);
             // PyTuple::new can't return Err for a known-sized slice with less than 2 billion elements.
-            let tuple = PyTuple::new(py, &[key_py, value.clone_ref(py)]).unwrap();
+            let tuple = PyTuple::new(py, [key_py.bind(py), &value.as_py(py)]).unwrap();
             tuple
         });
-        let remaining = store.len();
         let list = PyList::new(
             py,
             ExactIter {
@@ -437,8 +439,7 @@ impl ItemsView {
         };
         let key = normalize_key(key)?;
         for stored_value in headers.store.lock_py_attached(py).unwrap().get_all(&key) {
-            let stored_value = stored_value.bind(py).as_any();
-            if stored_value.eq(value)? {
+            if stored_value.http.to_str().unwrap_or_default() == value.to_str()? {
                 return Ok(true);
             }
         }
@@ -455,9 +456,9 @@ struct ValuesView {
 impl ValuesView {
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
         let headers = self.headers.get();
-        let store = headers.store.lock_py_attached(py).unwrap();
-        let iter = store.values();
+        let mut store = headers.store.lock_py_attached(py).unwrap();
         let remaining = store.len();
+        let iter = store.values_mut().map(|value| value.as_py(py));
         let list = PyList::new(
             py,
             ExactIter {
@@ -474,10 +475,12 @@ impl ValuesView {
     }
 
     fn __contains__<'py>(&self, py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<bool> {
+        let Ok(value_str) = value.cast::<PyString>() else {
+            return Ok(false);
+        };
         let headers = self.headers.get();
         for stored_value in headers.store.lock_py_attached(py).unwrap().values() {
-            let stored_value = stored_value.bind(py).as_any();
-            if stored_value.eq(value)? {
+            if stored_value.http.to_str().unwrap_or_default() == value_str.to_str()? {
                 return Ok(true);
             }
         }
@@ -508,15 +511,15 @@ impl<I: Iterator> ExactSizeIterator for ExactIter<I> {
     }
 }
 
-fn store_from_py(items: &Bound<'_, PyAny>) -> PyResult<HeaderMap<Py<PyString>>> {
-    let mut store: HeaderMap<Py<PyString>> = HeaderMap::default();
+fn store_from_py(items: &Bound<'_, PyAny>) -> PyResult<HeaderMap<PyHeaderValue>> {
+    let mut store: HeaderMap<PyHeaderValue> = HeaderMap::default();
     if let Ok(mapping) = items.cast::<PyMapping>() {
         for item in mapping.items()?.iter() {
             let key_py = item.get_item(0)?;
             let key = key_py.cast::<PyString>()?;
             let value_py = item.get_item(1)?;
             let value = value_py.cast::<PyString>()?;
-            store.insert(normalize_key(key)?, value.clone().unbind());
+            store.insert(normalize_key(key)?, PyHeaderValue::from_py(value)?);
         }
     } else {
         for item in items.try_iter()? {
@@ -525,7 +528,7 @@ fn store_from_py(items: &Bound<'_, PyAny>) -> PyResult<HeaderMap<Py<PyString>>> 
             let key = key_py.cast::<PyString>()?;
             let value_py = item.get_item(1)?;
             let value = value_py.cast::<PyString>()?;
-            store.append(normalize_key(key)?, value.clone().unbind());
+            store.append(normalize_key(key)?, PyHeaderValue::from_py(value)?);
         }
     }
     Ok(store)
@@ -533,13 +536,9 @@ fn store_from_py(items: &Bound<'_, PyAny>) -> PyResult<HeaderMap<Py<PyString>>> 
 
 // We need to redefine equality since the values are Py<PyString> which can't be compared without
 // binding.
-fn stores_equal(
-    py: Python<'_>,
-    a: &HeaderMap<Py<PyString>>,
-    b: &HeaderMap<Py<PyString>>,
-) -> PyResult<bool> {
+fn stores_equal(a: &HeaderMap<PyHeaderValue>, b: &HeaderMap<PyHeaderValue>) -> bool {
     if a.len() != b.len() {
-        return Ok(false);
+        return false;
     }
     for key in a.keys() {
         let a_values = a.get_all(key).iter();
@@ -547,17 +546,55 @@ fn stores_equal(
 
         for a in a_values {
             let Some(b) = b_values.next() else {
-                return Ok(false);
+                return false;
             };
-            if a.to_str(py)? != b.to_str(py)? {
-                return Ok(false);
+            if a.http != b.http {
+                return false;
             }
         }
         if b_values.next().is_some() {
-            return Ok(false);
+            return false;
         }
     }
-    Ok(true)
+    true
+}
+
+pub(crate) struct PyHeaderValue {
+    pub(crate) http: HeaderValue,
+    py: Option<Py<PyString>>,
+}
+
+impl PyHeaderValue {
+    fn from_http(http: HeaderValue) -> Self {
+        Self { http, py: None }
+    }
+
+    fn from_py(s: &Bound<'_, PyString>) -> PyResult<Self> {
+        let s_str = s.to_str()?;
+        let http = HeaderValue::from_str(s_str)
+            .map_err(|_| PyValueError::new_err(format!("Invalid header value: '{s_str}'")))?;
+        Ok(Self {
+            http,
+            py: Some(s.clone().unbind()),
+        })
+    }
+
+    fn as_py<'py>(&mut self, py: Python<'py>) -> Bound<'py, PyString> {
+        if let Some(py_str) = &self.py {
+            py_str.bind(py).clone()
+        } else {
+            let s = self.http.to_str().unwrap_or_default();
+            let py_str = PyString::new(py, s);
+            self.py = Some(py_str.clone().unbind());
+            py_str
+        }
+    }
+}
+
+impl From<&PyHeaderValue> for HeaderValue {
+    fn from(value: &PyHeaderValue) -> Self {
+        value.http.clone()
+    }
 }
 
 fn normalize_key(key: &Bound<'_, PyString>) -> PyResult<HeaderName> {
