@@ -1,3 +1,4 @@
+use pyo3::sync::MutexExt as _;
 use pyo3::{exceptions::PyValueError, Bound, Py, PyAny, PyResult, Python};
 
 use crate::headers::Headers;
@@ -47,7 +48,7 @@ impl RequestHead {
         }
         if let Some(hdrs) = &self.headers {
             let hdrs = hdrs.bind(py).borrow();
-            for (name, value) in &hdrs.store {
+            for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
                 let value_str = value.extract::<&str>(py)?;
                 req_builder = req_builder.header(name, value_str);
             }
