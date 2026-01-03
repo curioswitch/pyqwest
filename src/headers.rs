@@ -128,7 +128,10 @@ impl Headers {
             if !first {
                 res.push_str(", ");
             }
-            let value_str = value.http.to_str().unwrap_or_default();
+            let value_str = match &value.kind {
+                PyHeaderValueKind::Http(http) => http.to_str().unwrap_or_default(),
+                PyHeaderValueKind::Py(py_str) => py_str.bind(py).to_str().unwrap_or_default(),
+            };
             let _ = write!(res, "('{}', '{}')", key.as_str(), value_str);
             first = false;
         }
@@ -144,11 +147,11 @@ impl Headers {
             }
             let store = self.store.lock_py_attached(py).unwrap();
             let other_store = other.store.lock_py_attached(py).unwrap();
-            Ok(stores_equal(&store, &other_store))
+            Ok(stores_equal(py, &store, &other_store))
         } else {
             let store = self.store.lock_py_attached(py).unwrap();
             let other_store = store_from_py(other)?;
-            Ok(stores_equal(&store, &other_store))
+            Ok(stores_equal(py, &store, &other_store))
         }
     }
 
@@ -439,7 +442,7 @@ impl ItemsView {
         };
         let key = normalize_key(key)?;
         for stored_value in headers.store.lock_py_attached(py).unwrap().get_all(&key) {
-            if stored_value.http.to_str().unwrap_or_default() == value.to_str()? {
+            if stored_value.eq_str(py, value.to_str()?)? {
                 return Ok(true);
             }
         }
@@ -480,7 +483,7 @@ impl ValuesView {
         };
         let headers = self.headers.get();
         for stored_value in headers.store.lock_py_attached(py).unwrap().values() {
-            if stored_value.http.to_str().unwrap_or_default() == value_str.to_str()? {
+            if stored_value.eq_str(py, value_str.to_str()?)? {
                 return Ok(true);
             }
         }
@@ -536,7 +539,11 @@ fn store_from_py(items: &Bound<'_, PyAny>) -> PyResult<HeaderMap<PyHeaderValue>>
 
 // We need to redefine equality since the values are Py<PyString> which can't be compared without
 // binding.
-fn stores_equal(a: &HeaderMap<PyHeaderValue>, b: &HeaderMap<PyHeaderValue>) -> bool {
+fn stores_equal(
+    py: Python<'_>,
+    a: &HeaderMap<PyHeaderValue>,
+    b: &HeaderMap<PyHeaderValue>,
+) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -548,7 +555,7 @@ fn stores_equal(a: &HeaderMap<PyHeaderValue>, b: &HeaderMap<PyHeaderValue>) -> b
             let Some(b) = b_values.next() else {
                 return false;
             };
-            if a.http != b.http {
+            if !a.eq(py, b) {
                 return false;
             }
         }
@@ -559,41 +566,81 @@ fn stores_equal(a: &HeaderMap<PyHeaderValue>, b: &HeaderMap<PyHeaderValue>) -> b
     true
 }
 
+enum PyHeaderValueKind {
+    Py(Py<PyString>),
+    Http(HeaderValue),
+}
+
+/// The string value type for headers. We know there are two sources of values,
+/// the user for request headers or the HTTP response for response headers.
+///
+/// For request headers, we know we only convert to HTTP once when sending the request,
+/// so we can store as Python from the start and never store the HTTP representation.
+///
+/// For response headers, we want to allow setting response headers from HTTP threads
+/// but need to return them as Python strings to the user when the GIL is available.
+/// We know we won't need the HTTP representation after this, so we convert once on read
+/// and replace the stored value.
 pub(crate) struct PyHeaderValue {
-    pub(crate) http: HeaderValue,
-    py: Option<Py<PyString>>,
+    kind: PyHeaderValueKind,
 }
 
 impl PyHeaderValue {
     fn from_http(http: HeaderValue) -> Self {
-        Self { http, py: None }
+        Self {
+            kind: PyHeaderValueKind::Http(http),
+        }
     }
 
     fn from_py(s: &Bound<'_, PyString>) -> PyResult<Self> {
-        let s_str = s.to_str()?;
-        let http = HeaderValue::from_str(s_str)
-            .map_err(|_| PyValueError::new_err(format!("Invalid header value: '{s_str}'")))?;
         Ok(Self {
-            http,
-            py: Some(s.clone().unbind()),
+            kind: PyHeaderValueKind::Py(s.clone().unbind()),
         })
     }
 
     fn as_py<'py>(&mut self, py: Python<'py>) -> Bound<'py, PyString> {
-        if let Some(py_str) = &self.py {
-            py_str.bind(py).clone()
-        } else {
-            let s = self.http.to_str().unwrap_or_default();
-            let py_str = PyString::new(py, s);
-            self.py = Some(py_str.clone().unbind());
-            py_str
+        match &mut self.kind {
+            PyHeaderValueKind::Py(py_str) => py_str.bind(py).clone(),
+            PyHeaderValueKind::Http(http) => {
+                let s = http.to_str().unwrap_or_default();
+                let py_str = PyString::new(py, s);
+                self.kind = PyHeaderValueKind::Py(py_str.clone().unbind());
+                py_str
+            }
         }
     }
-}
 
-impl From<&PyHeaderValue> for HeaderValue {
-    fn from(value: &PyHeaderValue) -> Self {
-        value.http.clone()
+    pub(crate) fn as_http(&self, py: Python<'_>) -> PyResult<HeaderValue> {
+        match &self.kind {
+            PyHeaderValueKind::Http(http) => Ok(http.clone()),
+            PyHeaderValueKind::Py(py_str) => {
+                let s = py_str.bind(py);
+                let s_str = s.to_str()?;
+                let http = HeaderValue::from_str(s_str).map_err(|e| {
+                    PyValueError::new_err(format!("Invalid header value '{s_str}': {e}"))
+                })?;
+                Ok(http)
+            }
+        }
+    }
+
+    fn eq_str(&self, py: Python<'_>, other: &str) -> PyResult<bool> {
+        match &self.kind {
+            PyHeaderValueKind::Http(http) => Ok(http.to_str().unwrap_or_default() == other),
+            PyHeaderValueKind::Py(py_str) => Ok(py_str.bind(py).to_str()? == other),
+        }
+    }
+
+    fn eq(&self, py: Python<'_>, other: &Self) -> bool {
+        let self_str = match &self.kind {
+            PyHeaderValueKind::Http(http) => http.to_str().unwrap_or_default(),
+            PyHeaderValueKind::Py(py_str) => py_str.bind(py).to_str().unwrap_or_default(),
+        };
+        let other_str = match &other.kind {
+            PyHeaderValueKind::Http(http) => http.to_str().unwrap_or_default(),
+            PyHeaderValueKind::Py(py_str) => py_str.bind(py).to_str().unwrap_or_default(),
+        };
+        self_str == other_str
     }
 }
 

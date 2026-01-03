@@ -45,7 +45,7 @@ impl SyncHttpTransport {
         py: Python<'py>,
         request: &SyncRequest,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3);
+        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3)?;
         let (tx, rx) = oneshot::channel::<PyResult<reqwest::Response>>();
         get_runtime().spawn(async move {
             let res = req_builder.send().await.map_err(|e| {
