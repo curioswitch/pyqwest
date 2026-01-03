@@ -8,7 +8,7 @@ from collections.abc import (
     Sequence,
     ValuesView,
 )
-from typing import TypeVar, overload
+from typing import Protocol, TypeVar, overload
 
 _T = TypeVar("_T")
 
@@ -180,9 +180,7 @@ class HTTPVersion:
     HTTP3: HTTPVersion
 
 class Client:
-    def __init__(
-        self, tls_ca_cert: bytes | None = None, http_version: HTTPVersion | None = None
-    ) -> None: ...
+    def __init__(self, transport: Transport | None = None) -> None: ...
     async def execute(
         self,
         method: str,
@@ -190,6 +188,18 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
     ) -> Response: ...
+
+class Transport(Protocol):
+    async def execute(self, request: Request) -> Response: ...
+
+class HTTPTransport:
+    def __init__(
+        self,
+        *,
+        tls_ca_cert: bytes | None = None,
+        http_version: HTTPVersion | None = None,
+    ) -> None: ...
+    async def execute(self, request: Request) -> Response: ...
 
 class Request:
     def __init__(
@@ -208,9 +218,7 @@ class Response:
     trailers: Headers | None
 
 class SyncClient:
-    def __init__(
-        self, tls_ca_cert: bytes | None = None, http_version: HTTPVersion | None = None
-    ) -> None: ...
+    def __init__(self, transport: SyncTransport | None = None) -> None: ...
     def execute(
         self,
         method: str,
@@ -218,6 +226,18 @@ class SyncClient:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
     ) -> SyncResponse: ...
+
+class SyncTransport(Protocol):
+    def execute(self, request: SyncRequest) -> SyncResponse: ...
+
+class SyncHTTPTransport:
+    def __init__(
+        self,
+        *,
+        tls_ca_cert: bytes | None = None,
+        http_version: HTTPVersion | None = None,
+    ) -> None: ...
+    def execute(self, request: SyncRequest) -> SyncResponse: ...
 
 class SyncRequest:
     def __init__(

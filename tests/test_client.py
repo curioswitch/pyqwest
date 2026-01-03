@@ -11,7 +11,14 @@ import pytest_asyncio
 import trustme
 from pyvoy import PyvoyServer
 
-from pyqwest import Client, Headers, HTTPVersion, SyncClient
+from pyqwest import (
+    Client,
+    Headers,
+    HTTPTransport,
+    HTTPVersion,
+    SyncClient,
+    SyncHTTPTransport,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -93,12 +100,14 @@ def url(
 
 @pytest.fixture(scope="module")
 def async_client(certs: Certs, http_version: HTTPVersion | None) -> Client:
-    return Client(tls_ca_cert=certs.ca, http_version=http_version)
+    return Client(HTTPTransport(tls_ca_cert=certs.ca, http_version=http_version))
 
 
 @pytest.fixture(scope="module")
 def sync_client(certs: Certs, http_version: HTTPVersion | None) -> SyncClient:
-    return SyncClient(tls_ca_cert=certs.ca, http_version=http_version)
+    return SyncClient(
+        SyncHTTPTransport(tls_ca_cert=certs.ca, http_version=http_version)
+    )
 
 
 @pytest.fixture(scope="module", params=["async", "sync"])
