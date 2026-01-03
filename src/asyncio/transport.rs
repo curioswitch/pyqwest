@@ -44,12 +44,13 @@ impl HttpTransport {
         py: Python<'py>,
         request: &Request,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3)?;
+        let request = request.as_reqwest(py, self.http3)?;
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let res = req_builder.send().await.map_err(|e| {
+            let response = client.execute(request).await.map_err(|e| {
                 PyRuntimeError::new_err(format!("Request failed: {:+}", errors::fmt(&e)))
             })?;
-            Ok(Response::new(res))
+            Ok(Response::new(response))
         })
     }
 }

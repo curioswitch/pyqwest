@@ -45,18 +45,19 @@ impl SyncHttpTransport {
         py: Python<'py>,
         request: &SyncRequest,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3)?;
+        let request = request.as_reqwest(py, self.http3)?;
         let (tx, rx) = oneshot::channel::<PyResult<reqwest::Response>>();
+        let client = self.client.clone();
         get_runtime().spawn(async move {
-            let res = req_builder.send().await.map_err(|e| {
+            let response = client.execute(request).await.map_err(|e| {
                 PyRuntimeError::new_err(format!("Request failed: {:+}", errors::fmt(&e)))
             });
-            tx.send(res).unwrap();
+            tx.send(response).unwrap();
         });
-        let res = py.detach(|| {
+        let response = py.detach(|| {
             rx.blocking_recv()
                 .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
         })??;
-        SyncResponse::new(res).into_bound_py_any(py)
+        SyncResponse::new(response).into_bound_py_any(py)
     }
 }

@@ -1,3 +1,4 @@
+use http::HeaderValue;
 use pyo3::{exceptions::PyValueError, Bound, Py, PyAny, PyResult, Python};
 
 use crate::headers::Headers;
@@ -35,23 +36,27 @@ impl RequestHead {
         })
     }
 
-    pub(crate) fn new_request_builder(
-        &self,
-        py: Python<'_>,
-        client: &reqwest::Client,
-        http3: bool,
-    ) -> PyResult<reqwest::RequestBuilder> {
-        let mut req_builder = client.request(self.method.clone(), self.url.clone());
+    pub(crate) fn new_request(&self, py: Python<'_>, http3: bool) -> PyResult<reqwest::Request> {
+        let mut req = reqwest::Request::new(self.method.clone(), self.url.clone());
         if http3 {
-            req_builder = req_builder.version(http::Version::HTTP_3);
+            *req.version_mut() = http::Version::HTTP_3;
         }
         if let Some(hdrs) = &self.headers {
             let hdrs = hdrs.bind(py).borrow();
-            for (name, value) in &hdrs.store {
-                let value_str = value.extract::<&str>(py)?;
-                req_builder = req_builder.header(name, value_str);
-            }
+            let hdrs_map = req.headers_mut();
+            hdrs.with_store(py, |store| -> PyResult<()> {
+                for (name, value) in store {
+                    let value_str = value.extract::<&str>(py)?;
+                    hdrs_map.append(
+                        name.clone(),
+                        HeaderValue::from_str(value_str).map_err(|e| {
+                            PyValueError::new_err(format!("Invalid header value for '{name}': {e}"))
+                        })?,
+                    );
+                }
+                Ok(())
+            })?;
         }
-        Ok(req_builder)
+        Ok(req)
     }
 }

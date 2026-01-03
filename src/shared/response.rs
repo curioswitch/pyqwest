@@ -69,7 +69,7 @@ impl ResponseHead {
         match &self.headers {
             ResponseHeaders::Py(headers) => Ok(headers.clone_ref(py)),
             ResponseHeaders::Http(headers) => {
-                let headers = Py::new(py, Headers::from_response_headers(headers))?;
+                let headers = Py::new(py, Headers::from_response_headers(py, headers))?;
                 self.headers = ResponseHeaders::Py(headers.clone_ref(py));
                 Ok(headers)
             }
@@ -137,7 +137,7 @@ impl ResponseBody {
         match &inner.trailers {
             Trailers::Py(trailers) => Ok(Some(trailers.clone_ref(py))),
             Trailers::Http(trailers) => {
-                let headers = Py::new(py, Headers::from_response_headers(trailers))?;
+                let headers = Py::new(py, Headers::from_response_headers(py, trailers))?;
                 inner.trailers = Trailers::Py(headers.clone_ref(py));
                 Ok(Some(headers))
             }

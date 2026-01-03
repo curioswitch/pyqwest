@@ -1,7 +1,9 @@
 use std::str::FromStr as _;
+use std::sync::Mutex;
 
 use http::{header, HeaderMap, HeaderName};
-use pyo3::exceptions::{PyKeyError, PyTypeError};
+use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyTypeError};
+use pyo3::sync::MutexExt as _;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyAnyMethods as _, PyDict, PyIterator, PyList, PyListMethods as _, PyMapping, PyString,
@@ -10,22 +12,29 @@ use pyo3::types::{
 use pyo3::{prelude::*, IntoPyObjectExt as _};
 use std::fmt::Write as _;
 
-#[pyclass(mapping)]
+#[pyclass(mapping, frozen)]
 pub(crate) struct Headers {
-    pub(crate) store: HeaderMap<Py<PyString>>,
+    pub(crate) store: Mutex<Option<HeaderMap<Py<PyString>>>>,
 }
 
 impl Headers {
-    pub(crate) fn from_response_headers(headers: &HeaderMap) -> Self {
-        Python::attach(|py| {
-            let mut store: HeaderMap<Py<PyString>> = HeaderMap::with_capacity(headers.len());
-            for (key, value) in headers {
-                if let Ok(value_str) = value.to_str() {
-                    store.append(key.clone(), PyString::new(py, value_str).unbind());
-                }
-            }
-            Headers { store }
-        })
+    pub(crate) fn from_response_headers(py: Python<'_>, headers: &HeaderMap) -> Self {
+        let store = store_from_http(py, headers);
+        Headers {
+            store: Mutex::new(Some(store)),
+        }
+    }
+
+    pub(crate) fn with_store<R>(
+        &self,
+        py: Python<'_>,
+        f: impl FnOnce(&mut HeaderMap<Py<PyString>>) -> PyResult<R>,
+    ) -> PyResult<R> {
+        let mut lock = self.store.lock_py_attached(py).unwrap();
+        let Some(store) = &mut *lock else {
+            return Err(PyRuntimeError::new_err("Trailers not received yet"));
+        };
+        f(store)
     }
 }
 
@@ -34,29 +43,13 @@ impl Headers {
     #[new]
     #[pyo3(signature = (items=None))]
     pub(crate) fn py_new(items: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
-        let mut store: HeaderMap<Py<PyString>> = HeaderMap::default();
-        let Some(items) = items else {
-            return Ok(Headers { store });
+        let store = match items {
+            Some(items) => store_from_py(&items)?,
+            None => HeaderMap::default(),
         };
-        if let Ok(mapping) = items.cast::<PyMapping>() {
-            for item in mapping.items()?.iter() {
-                let key_py = item.get_item(0)?;
-                let key = key_py.cast::<PyString>()?;
-                let value_py = item.get_item(1)?;
-                let value = value_py.cast::<PyString>()?;
-                store.insert(normalize_key(key)?, value.clone().unbind());
-            }
-            return Ok(Headers { store });
-        }
-        for item in items.try_iter()? {
-            let item = item?;
-            let key_py = item.get_item(0)?;
-            let key = key_py.cast::<PyString>()?;
-            let value_py = item.get_item(1)?;
-            let value = value_py.cast::<PyString>()?;
-            store.append(normalize_key(key)?, value.clone().unbind());
-        }
-        Ok(Headers { store })
+        Ok(Headers {
+            store: Mutex::new(Some(store)),
+        })
     }
 
     fn __getitem__<'py>(
@@ -64,32 +57,38 @@ impl Headers {
         py: Python<'py>,
         key: &Bound<'py, PyString>,
     ) -> PyResult<Py<PyString>> {
-        if let Some(value) = self.store.get(normalize_key(key)?) {
-            Ok(value.clone_ref(py))
-        } else {
-            Err(PyKeyError::new_err(format!(
-                "KeyError: '{}'",
-                key.to_str()?
-            )))
-        }
+        let key_name = normalize_key(key)?;
+        self.with_store(py, |store| {
+            if let Some(value) = store.get(&key_name) {
+                Ok(value.clone_ref(py))
+            } else {
+                Err(PyKeyError::new_err(format!(
+                    "KeyError: '{}'",
+                    key.to_str()?
+                )))
+            }
+        })
     }
 
     fn __setitem__<'py>(
-        &mut self,
+        &self,
+        py: Python<'py>,
         key: &Bound<'py, PyString>,
         value: &Bound<'py, PyString>,
     ) -> PyResult<()> {
-        self.store
-            .insert(normalize_key(key)?, value.clone().unbind());
-        Ok(())
+        let key = normalize_key(key)?;
+        self.with_store(py, |store| {
+            store.insert(key, value.clone().unbind());
+            Ok(())
+        })
     }
 
-    fn __delitem__(&mut self, key: &Bound<'_, PyString>) -> PyResult<()> {
-        if self.store.remove(normalize_key(key)?).is_none() {
-            Err(PyKeyError::new_err(format!(
-                "KeyError: '{}'",
-                key.to_str()?
-            )))
+    fn __delitem__<'py>(&self, py: Python<'py>, key: &Bound<'py, PyString>) -> PyResult<()> {
+        let key_name = normalize_key(key)?;
+        let key_str = key.to_str()?.to_string();
+        let removed = self.with_store(py, |store| Ok(store.remove(&key_name)))?;
+        if removed.is_none() {
+            Err(PyKeyError::new_err(format!("KeyError: '{key_str}'")))
         } else {
             Ok(())
         }
@@ -97,72 +96,61 @@ impl Headers {
 
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
         let names = HeaderNames::get(py);
-        let keys = PyList::new(
-            py,
-            self.store
-                .keys()
-                .map(|name| names.header_name_to_py(py, name)),
-        )?;
+        self.with_store(py, |store| {
+            let keys = PyList::new(
+                py,
+                store.keys().map(|name| names.header_name_to_py(py, name)),
+            )?;
 
-        PyIterator::from_object(&keys)
+            PyIterator::from_object(&keys)
+        })
     }
 
-    fn __len__(&self) -> usize {
-        self.store.keys_len()
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.with_store(py, |store| Ok(store.keys_len()))
     }
 
-    fn __contains__(&self, key: &Bound<'_, PyAny>) -> PyResult<bool> {
+    fn __contains__<'py>(&self, py: Python<'py>, key: &Bound<'py, PyAny>) -> PyResult<bool> {
         let Ok(key) = key.cast::<PyString>() else {
             return Ok(false);
         };
         let key = normalize_key(key)?;
-        Ok(self.store.contains_key(key))
+        self.with_store(py, |store| Ok(store.contains_key(&key)))
     }
 
-    fn __repr__(&self, py: Python<'_>) -> String {
-        if self.store.is_empty() {
-            return "Headers()".to_string();
-        }
-        let mut res = "Headers(".to_string();
-        let mut first = true;
-        for (key, value) in &self.store {
-            if !first {
-                res.push_str(", ");
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        self.with_store(py, |store| {
+            if store.is_empty() {
+                return Ok("Headers()".to_string());
             }
-            let value_str = value.to_str(py).unwrap_or_default();
-            let _ = write!(res, "('{}', '{}')", key.as_str(), value_str);
-            first = false;
-        }
-        res.push(')');
-        res
+            let mut res = "Headers(".to_string();
+            let mut first = true;
+            for (key, value) in store {
+                if !first {
+                    res.push_str(", ");
+                }
+                let value_str = value.to_str(py)?;
+                let _ = write!(res, "('{}', '{}')", key.as_str(), value_str);
+                first = false;
+            }
+            res.push(')');
+            Ok(res)
+        })
     }
 
     fn __eq__<'py>(&self, py: Python<'py>, other: &Bound<'py, PyAny>) -> PyResult<bool> {
-        let store = if let Ok(other_headers) = other.cast::<Headers>() {
-            &other_headers.borrow().store
-        } else {
-            &Headers::py_new(Some(other.clone()))?.store
-        };
-
-        // We need to redefine equality since the values are Py<PyString> which can't be compared without
-        // binding.
-        if self.store.len() != store.len() {
-            return Ok(false);
-        }
-        Ok(self.store.keys().all(|key| {
-            let self_values = self.store.get_all(key).iter();
-            let mut other_values = store.get_all(key).iter();
-
-            for a in self_values {
-                let Some(b) = other_values.next() else {
-                    return false;
-                };
-                if a.to_str(py).unwrap_or_default() != b.to_str(py).unwrap_or_default() {
-                    return false;
-                }
+        if let Ok(other) = other.cast::<Headers>() {
+            let other = other.get();
+            if std::ptr::eq(self, &raw const *other) {
+                return Ok(true);
             }
-            other_values.next().is_none()
-        }))
+            self.with_store(py, |self_store| {
+                other.with_store(py, |other_store| stores_equal(py, self_store, other_store))
+            })
+        } else {
+            let other_store = store_from_py(other)?;
+            self.with_store(py, |self_store| stores_equal(py, self_store, &other_store))
+        }
     }
 
     #[pyo3(signature = (key, default=None))]
@@ -175,15 +163,23 @@ impl Headers {
         let Ok(key) = key.cast::<PyString>() else {
             return Ok(default);
         };
-        if let Some(value) = self.store.get(normalize_key(key)?) {
-            Ok(Some(value.clone_ref(py).into_any()))
-        } else {
-            Ok(default)
-        }
+        let key = normalize_key(key)?;
+        self.with_store(py, |store| {
+            if let Some(value) = store.get(&key) {
+                Ok(Some(value.clone_ref(py).into_any()))
+            } else {
+                Ok(default)
+            }
+        })
     }
 
     #[pyo3(signature = (key, *args))]
-    fn pop(&mut self, key: &Bound<PyString>, args: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+    fn pop<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyString>,
+        args: &Bound<'py, PyTuple>,
+    ) -> PyResult<Py<PyAny>> {
         if args.len() > 1 {
             return Err(PyTypeError::new_err(format!(
                 "pop expected at most 2 arguments, got {}",
@@ -191,7 +187,8 @@ impl Headers {
             )));
         }
         let key = normalize_key(key)?;
-        if let Some(value) = self.store.remove(&key) {
+        let removed = self.with_store(py, |store| Ok(store.remove(&key)))?;
+        if let Some(value) = removed {
             Ok(value.into_any())
         } else if args.len() == 1 {
             let default = args.get_item(0)?;
@@ -201,106 +198,115 @@ impl Headers {
         }
     }
 
-    fn popitem(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let store = &mut self.store;
-        let Some(key) = store.keys().next() else {
-            return Err(PyKeyError::new_err("Headers is empty"));
-        };
-        let key = key.clone();
-        let names = HeaderNames::get(py);
-        match store.entry(key) {
-            header::Entry::Occupied(occ) => {
-                // We only want to pop off the last value, but HeaderMap's implementation means
-                // we remove them all and add back.
-                let (name, mut values) = occ.remove_entry_mult();
+    fn popitem(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.with_store(py, |store| {
+            let Some(key) = store.keys().next() else {
+                return Err(PyKeyError::new_err("Headers is empty"));
+            };
+            let key = key.clone();
+            let names = HeaderNames::get(py);
+            match store.entry(key) {
+                header::Entry::Occupied(occ) => {
+                    // We only want to pop off the last value, but HeaderMap's implementation means
+                    // we remove them all and add back.
+                    let (name, mut values) = occ.remove_entry_mult();
 
-                let mut result = values.next().unwrap();
-                let mut rest: Vec<Py<PyString>> = Vec::new();
-                for value in values {
-                    rest.push(result);
-                    result = value;
-                }
+                    let mut result = values.next().unwrap();
+                    let mut rest: Vec<Py<PyString>> = Vec::new();
+                    for value in values {
+                        rest.push(result);
+                        result = value;
+                    }
 
-                for value in rest {
-                    store.append(name.clone(), value);
+                    for value in rest {
+                        store.append(name.clone(), value);
+                    }
+                    let key_py = names.header_name_to_py(py, &name);
+                    let tuple = PyTuple::new(py, &[key_py, result])?;
+                    Ok(tuple.into())
                 }
-                let key_py = names.header_name_to_py(py, &name);
-                let tuple = PyTuple::new(py, &[key_py, result])?;
-                Ok(tuple.into())
+                header::Entry::Vacant(_) => unreachable!(),
             }
-            header::Entry::Vacant(_) => unreachable!(),
-        }
+        })
     }
 
     #[pyo3(signature = (key, default=None))]
     fn setdefault<'py>(
-        &mut self,
+        &self,
         py: Python<'py>,
         key: &Bound<'py, PyString>,
         default: Option<&Bound<'py, PyString>>,
     ) -> PyResult<Option<Bound<'py, PyString>>> {
         let key = normalize_key(key)?;
-        if let Some(value) = self.store.get(&key) {
-            Ok(Some(value.bind(py).clone()))
-        } else if let Some(default) = default {
-            self.store.insert(key, default.clone().unbind());
-            Ok(Some(default.clone()))
-        } else {
-            Ok(None)
-        }
+        self.with_store(py, |store| {
+            if let Some(value) = store.get(&key) {
+                Ok(Some(value.bind(py).clone()))
+            } else if let Some(default) = default {
+                store.insert(key.clone(), default.clone().unbind());
+                Ok(Some(default.clone()))
+            } else {
+                Ok(None)
+            }
+        })
     }
 
     fn add<'py>(
-        &mut self,
+        &self,
+        py: Python<'py>,
         key: &Bound<'py, PyString>,
         value: &Bound<'py, PyString>,
     ) -> PyResult<()> {
-        self.store
-            .append(normalize_key(key)?, value.clone().unbind());
-        Ok(())
+        let key = normalize_key(key)?;
+        self.with_store(py, |store| {
+            store.append(key, value.clone().unbind());
+            Ok(())
+        })
     }
 
     #[pyo3(signature = (items=None, **kwargs))]
     fn update<'py>(
-        &mut self,
+        &self,
+        py: Python<'py>,
         items: Option<Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<()> {
-        if let Some(items) = items {
-            if let Ok(mapping) = items.cast::<PyMapping>() {
-                for item in mapping.items()?.iter() {
-                    let key_py = item.get_item(0)?;
-                    let key = key_py.cast::<PyString>()?;
-                    let value_py = item.get_item(1)?;
-                    let value = value_py.cast::<PyString>()?;
-                    self.store
-                        .insert(normalize_key(key)?, value.clone().unbind());
-                }
-            } else {
-                for item in items.try_iter()? {
-                    let item = item?;
-                    let key_py = item.get_item(0)?;
-                    let key = key_py.cast::<PyString>()?;
-                    let value_py = item.get_item(1)?;
-                    let value = value_py.cast::<PyString>()?;
-                    self.store
-                        .insert(normalize_key(key)?, value.clone().unbind());
+        self.with_store(py, |store| {
+            if let Some(items) = items {
+                if let Ok(mapping) = items.cast::<PyMapping>() {
+                    for item in mapping.items()?.iter() {
+                        let key_py = item.get_item(0)?;
+                        let key = key_py.cast::<PyString>()?;
+                        let value_py = item.get_item(1)?;
+                        let value = value_py.cast::<PyString>()?;
+                        store.insert(normalize_key(key)?, value.clone().unbind());
+                    }
+                } else {
+                    for item in items.try_iter()? {
+                        let item = item?;
+                        let key_py = item.get_item(0)?;
+                        let key = key_py.cast::<PyString>()?;
+                        let value_py = item.get_item(1)?;
+                        let value = value_py.cast::<PyString>()?;
+                        store.insert(normalize_key(key)?, value.clone().unbind());
+                    }
                 }
             }
-        }
-        if let Some(kwargs) = kwargs {
-            for (key_py, value_py) in kwargs.iter() {
-                let key = key_py.cast::<PyString>()?;
-                let value = value_py.cast::<PyString>()?;
-                self.store
-                    .insert(normalize_key(key)?, value.clone().unbind());
+            if let Some(kwargs) = kwargs {
+                for (key_py, value_py) in kwargs.iter() {
+                    let key = key_py.cast::<PyString>()?;
+                    let value = value_py.cast::<PyString>()?;
+                    store.insert(normalize_key(key)?, value.clone().unbind());
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
-    fn clear(&mut self) {
-        self.store.clear();
+    fn clear(&self, py: Python<'_>) -> PyResult<()> {
+        self.with_store(py, |store| {
+            store.clear();
+            Ok(())
+        })
     }
 
     fn getall<'py>(
@@ -308,12 +314,15 @@ impl Headers {
         py: Python<'py>,
         key: &Bound<'py, PyString>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let values = self.store.get_all(normalize_key(key)?);
-        let res = PyList::empty(py);
-        for value in values {
-            res.append(value.clone_ref(py))?;
-        }
-        Ok(res)
+        let key = normalize_key(key)?;
+        self.with_store(py, |store| {
+            let values = store.get_all(&key);
+            let res = PyList::empty(py);
+            for value in values {
+                res.append(value.clone_ref(py))?;
+            }
+            Ok(res)
+        })
     }
 
     fn items<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -338,7 +347,7 @@ impl Headers {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct KeysView {
     headers: Py<Headers>,
 }
@@ -346,34 +355,30 @@ struct KeysView {
 #[pymethods]
 impl KeysView {
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
-        let headers = self.headers.bind(py).borrow();
+        let headers = self.headers.get();
         let names = HeaderNames::get(py);
-        let list = PyList::new(
-            py,
-            headers
-                .store
-                .keys()
-                .map(|key| names.header_name_to_py(py, key)),
-        )?;
-        PyIterator::from_object(&list)
+        headers.with_store(py, |store| {
+            let list = PyList::new(py, store.keys().map(|key| names.header_name_to_py(py, key)))?;
+            PyIterator::from_object(&list)
+        })
     }
 
-    fn __len__(&self, py: Python<'_>) -> usize {
-        let headers = self.headers.bind(py).borrow();
-        headers.store.keys_len()
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        let headers = self.headers.get();
+        headers.with_store(py, |store| Ok(store.keys_len()))
     }
 
     fn __contains__<'py>(&self, py: Python<'py>, key: &Bound<'py, PyAny>) -> PyResult<bool> {
-        let headers = self.headers.bind(py).borrow();
+        let headers = self.headers.get();
         let Ok(key) = key.cast::<PyString>() else {
             return Ok(false);
         };
         let key = normalize_key(key)?;
-        Ok(headers.store.contains_key(&key))
+        headers.with_store(py, |store| Ok(store.contains_key(&key)))
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct ItemsView {
     headers: Py<Headers>,
 }
@@ -381,35 +386,37 @@ struct ItemsView {
 #[pymethods]
 impl ItemsView {
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
-        let headers = self.headers.bind(py).borrow();
+        let headers = self.headers.get();
 
         let names = HeaderNames::get(py);
 
-        let iter = headers.store.iter().map(|(key, value)| {
-            let key_py = names.header_name_to_py(py, key);
-            // PyTuple::new can't return Err for a known-sized slice with less than 2 billion elements.
-            let tuple = PyTuple::new(py, &[key_py, value.clone_ref(py)]).unwrap();
-            tuple
-        });
-        let remaining = headers.store.len();
-        let list = PyList::new(
-            py,
-            ExactIter {
-                inner: iter,
-                remaining,
-            },
-        )?;
+        headers.with_store(py, |store| {
+            let iter = store.iter().map(|(key, value)| {
+                let key_py = names.header_name_to_py(py, key);
+                // PyTuple::new can't return Err for a known-sized slice with less than 2 billion elements.
+                let tuple = PyTuple::new(py, &[key_py, value.clone_ref(py)]).unwrap();
+                tuple
+            });
+            let remaining = store.len();
+            let list = PyList::new(
+                py,
+                ExactIter {
+                    inner: iter,
+                    remaining,
+                },
+            )?;
 
-        PyIterator::from_object(&list)
+            PyIterator::from_object(&list)
+        })
     }
 
-    fn __len__(&self, py: Python<'_>) -> usize {
-        let headers = self.headers.bind(py).borrow();
-        headers.store.len()
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        let headers = self.headers.get();
+        headers.with_store(py, |store| Ok(store.len()))
     }
 
     fn __contains__<'py>(&self, py: Python<'py>, item: &Bound<'py, PyAny>) -> PyResult<bool> {
-        let headers = self.headers.bind(py).borrow();
+        let headers = self.headers.get();
         let tuple = item.cast::<PyTuple>()?;
         if tuple.len() != 2 {
             return Ok(false);
@@ -423,17 +430,19 @@ impl ItemsView {
             return Ok(false);
         };
         let key = normalize_key(key)?;
-        for stored_value in headers.store.get_all(&key) {
-            let stored_value = stored_value.bind(py).as_any();
-            if stored_value.eq(value)? {
-                return Ok(true);
+        headers.with_store(py, |store| {
+            for stored_value in store.get_all(&key) {
+                let stored_value = stored_value.bind(py).as_any();
+                if stored_value.eq(value)? {
+                    return Ok(true);
+                }
             }
-        }
-        Ok(false)
+            Ok(false)
+        })
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 struct ValuesView {
     headers: Py<Headers>,
 }
@@ -441,33 +450,37 @@ struct ValuesView {
 #[pymethods]
 impl ValuesView {
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
-        let headers = self.headers.bind(py).borrow();
-        let iter = headers.store.values();
-        let remaining = headers.store.len();
-        let list = PyList::new(
-            py,
-            ExactIter {
-                inner: iter,
-                remaining,
-            },
-        )?;
-        PyIterator::from_object(&list)
+        let headers = self.headers.get();
+        headers.with_store(py, |store| {
+            let iter = store.values();
+            let remaining = store.len();
+            let list = PyList::new(
+                py,
+                ExactIter {
+                    inner: iter,
+                    remaining,
+                },
+            )?;
+            PyIterator::from_object(&list)
+        })
     }
 
-    fn __len__(&self, py: Python<'_>) -> usize {
-        let headers = self.headers.bind(py).borrow();
-        headers.store.len()
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        let headers = self.headers.get();
+        headers.with_store(py, |store| Ok(store.len()))
     }
 
     fn __contains__<'py>(&self, py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<bool> {
-        let headers = self.headers.bind(py).borrow();
-        for stored_value in headers.store.values() {
-            let stored_value = stored_value.bind(py).as_any();
-            if stored_value.eq(value)? {
-                return Ok(true);
+        let headers = self.headers.get();
+        headers.with_store(py, |store| {
+            for stored_value in store.values() {
+                let stored_value = stored_value.bind(py).as_any();
+                if stored_value.eq(value)? {
+                    return Ok(true);
+                }
             }
-        }
-        Ok(false)
+            Ok(false)
+        })
     }
 }
 
@@ -492,6 +505,68 @@ impl<I: Iterator> ExactSizeIterator for ExactIter<I> {
     fn len(&self) -> usize {
         self.remaining
     }
+}
+
+fn store_from_http(py: Python<'_>, headers: &HeaderMap) -> HeaderMap<Py<PyString>> {
+    let mut store: HeaderMap<Py<PyString>> = HeaderMap::with_capacity(headers.len());
+    for (key, value) in headers {
+        if let Ok(value_str) = value.to_str() {
+            store.append(key.clone(), PyString::new(py, value_str).unbind());
+        }
+    }
+    store
+}
+
+fn store_from_py(items: &Bound<'_, PyAny>) -> PyResult<HeaderMap<Py<PyString>>> {
+    let mut store: HeaderMap<Py<PyString>> = HeaderMap::default();
+    if let Ok(mapping) = items.cast::<PyMapping>() {
+        for item in mapping.items()?.iter() {
+            let key_py = item.get_item(0)?;
+            let key = key_py.cast::<PyString>()?;
+            let value_py = item.get_item(1)?;
+            let value = value_py.cast::<PyString>()?;
+            store.insert(normalize_key(key)?, value.clone().unbind());
+        }
+    } else {
+        for item in items.try_iter()? {
+            let item = item?;
+            let key_py = item.get_item(0)?;
+            let key = key_py.cast::<PyString>()?;
+            let value_py = item.get_item(1)?;
+            let value = value_py.cast::<PyString>()?;
+            store.append(normalize_key(key)?, value.clone().unbind());
+        }
+    }
+    Ok(store)
+}
+
+// We need to redefine equality since the values are Py<PyString> which can't be compared without
+// binding.
+fn stores_equal(
+    py: Python<'_>,
+    a: &HeaderMap<Py<PyString>>,
+    b: &HeaderMap<Py<PyString>>,
+) -> PyResult<bool> {
+    if a.len() != b.len() {
+        return Ok(false);
+    }
+    for key in a.keys() {
+        let a_values = a.get_all(key).iter();
+        let mut b_values = b.get_all(key).iter();
+
+        for a in a_values {
+            let Some(b) = b_values.next() else {
+                return Ok(false);
+            };
+            if a.to_str(py)? != b.to_str(py)? {
+                return Ok(false);
+            }
+        }
+        if b_values.next().is_some() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn normalize_key(key: &Bound<'_, PyString>) -> PyResult<HeaderName> {

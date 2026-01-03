@@ -58,6 +58,7 @@ def test_headers_no_duplicates() -> None:
     assert "bar" not in values
     assert 10 not in values
     assert list(items) == [("content-type", "application/json"), ("x-test", "foo")]
+    assert h == h
     assert h == Headers({"Content-Type": "application/json", "X-Test": "foo"})
     assert h == {("content-type", "application/json"), ("x-test", "foo")}
     assert h == [("Content-Type", "application/json"), ("X-Test", "foo")]
