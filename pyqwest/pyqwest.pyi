@@ -295,7 +295,7 @@ class SyncResponse:
         content: Iterable[bytes] | None = None,
         trailers: Headers | None = None,
     ) -> None:
-        """Creates a new [`Response`][] object.
+        """Creates a new [`SyncResponse`][] object.
 
         Args:
             status: The HTTP status code of the response.
