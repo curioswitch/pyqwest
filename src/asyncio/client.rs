@@ -2,6 +2,7 @@ use pyo3::{intern, prelude::*};
 
 use crate::asyncio::request::Request;
 use crate::asyncio::transport::HttpTransport;
+use crate::headers::Headers;
 
 enum Transport {
     Http(HttpTransport),
@@ -38,6 +39,15 @@ impl Client {
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let headers = if let Some(headers) = headers {
+            if let Ok(headers) = headers.cast::<Headers>() {
+                Some(headers.clone())
+            } else {
+                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
+            }
+        } else {
+            None
+        };
         let request = Request::new(py, method, url, headers, content)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),

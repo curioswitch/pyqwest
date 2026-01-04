@@ -4,7 +4,7 @@ use bytes::Bytes;
 use http::response::Parts;
 use http_body::Frame;
 use http_body_util::BodyExt as _;
-use pyo3::{exceptions::PyRuntimeError, Py, PyResult, Python};
+use pyo3::{exceptions::PyRuntimeError, Bound, Py, PyResult, Python};
 use tokio::sync::Mutex;
 
 use crate::{common::HTTPVersion, headers::Headers};
@@ -30,25 +30,23 @@ impl ResponseHead {
         self.headers.get().fill(parts.headers);
     }
 
-    pub(crate) fn from_py(
+    pub(crate) fn new(
         py: Python<'_>,
         status: u16,
         http_version: &HTTPVersion,
-        headers: Option<Py<Headers>>,
+        headers: Option<Bound<'_, Headers>>,
     ) -> PyResult<Self> {
         let version = match http_version {
             HTTPVersion::HTTP1 => http::Version::HTTP_11,
             HTTPVersion::HTTP2 => http::Version::HTTP_2,
             HTTPVersion::HTTP3 => http::Version::HTTP_3,
         };
+        let headers = Headers::from_option(py, headers)?;
         Ok(ResponseHead {
             status: http::StatusCode::from_u16(status)
                 .map_err(|e| PyRuntimeError::new_err(format!("Invalid status code: {e}")))?,
             version,
-            headers: match headers {
-                Some(hdrs) => hdrs,
-                None => Py::new(py, Headers::empty())?,
-            },
+            headers,
         })
     }
 
