@@ -149,7 +149,8 @@ impl SyncEmptyContentGenerator {
         slf
     }
 
-    fn __next__<'py>(&self) -> Option<Bytes> {
+    #[allow(clippy::unused_self)]
+    fn __next__(&self) -> Option<Bytes> {
         None
     }
 }

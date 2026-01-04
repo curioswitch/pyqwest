@@ -146,7 +146,8 @@ impl EmptyContentGenerator {
         slf
     }
 
-    fn __anext__<'py>(&self) -> PyResult<Bound<'py, PyAny>> {
+    #[allow(clippy::unused_self)]
+    fn __anext__(&self) -> PyResult<Bound<'_, PyAny>> {
         Err(PyStopAsyncIteration::new_err(()))
     }
 }
