@@ -1,34 +1,20 @@
 use pyo3::sync::MutexExt as _;
-use pyo3::{exceptions::PyValueError, Bound, Py, PyAny, PyResult, Python};
+use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 
 use crate::headers::Headers;
 
 pub(crate) struct RequestHead {
     method: http::Method,
     url: reqwest::Url,
-    headers: Option<Py<Headers>>,
+    headers: Py<Headers>,
 }
 
 impl RequestHead {
-    pub(crate) fn new(
-        py: Python<'_>,
-        method: &str,
-        url: &str,
-        headers: Option<Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
+    pub(crate) fn new(method: &str, url: &str, headers: Py<Headers>) -> PyResult<Self> {
         let method = http::Method::try_from(method)
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
         let url = reqwest::Url::parse(url)
             .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
-        let headers = if let Some(headers) = headers {
-            if let Ok(hdrs) = headers.cast::<Headers>() {
-                Some(hdrs.clone().unbind())
-            } else {
-                Some(Py::new(py, Headers::py_new(Some(headers))?)?)
-            }
-        } else {
-            None
-        };
         Ok(Self {
             method,
             url,
@@ -46,12 +32,22 @@ impl RequestHead {
         if http3 {
             req_builder = req_builder.version(http::Version::HTTP_3);
         }
-        if let Some(hdrs) = &self.headers {
-            let hdrs = hdrs.bind(py).borrow();
-            for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
-                req_builder = req_builder.header(name, value.as_http(py)?);
-            }
+        let hdrs = self.headers.bind(py).borrow();
+        for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
+            req_builder = req_builder.header(name, value.as_http(py)?);
         }
         Ok(req_builder)
+    }
+
+    pub(crate) fn method(&self) -> &str {
+        self.method.as_str()
+    }
+
+    pub(crate) fn url(&self) -> &str {
+        self.url.as_str()
+    }
+
+    pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
+        self.headers.clone_ref(py)
     }
 }

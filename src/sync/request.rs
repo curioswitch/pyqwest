@@ -10,7 +10,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::shared::request::RequestHead;
+use crate::{headers::Headers, shared::request::RequestHead};
 
 #[pyclass(frozen)]
 pub struct SyncRequest {
@@ -26,15 +26,30 @@ impl SyncRequest {
         py: Python<'py>,
         method: &str,
         url: &str,
-        headers: Option<Bound<'py, PyAny>>,
+        headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
-        let head = RequestHead::new(py, method, url, headers)?;
+        let headers = Headers::from_option(py, headers)?;
         let content: Option<Content> = match content {
             Some(content) => Some(content.extract()?),
             None => None,
         };
-        Ok(Self { head, content })
+        Ok(Self {
+            head: RequestHead::new(method, url, headers)?,
+            content,
+        })
+    }
+
+    fn method(&self) -> &str {
+        self.head.method()
+    }
+
+    fn url(&self) -> &str {
+        self.head.url()
+    }
+
+    fn headers(&self, py: Python<'_>) -> Py<Headers> {
+        self.head.headers(py)
     }
 }
 

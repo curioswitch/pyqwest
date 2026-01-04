@@ -211,11 +211,48 @@ class Request:
     ) -> None: ...
 
 class Response:
-    status: int
-    http_version: HTTPVersion
-    headers: Headers
-    content: AsyncIterator[bytes]
-    trailers: Headers
+    def __init__(
+        self,
+        *,
+        status: int,
+        http_version: HTTPVersion | None = None,
+        headers: Headers | None = None,
+        content: AsyncIterator[bytes] | None = None,
+        trailers: Headers | None = None,
+    ) -> None:
+        """Creates a new [`Response`][] object.
+
+        Args:
+            status: The HTTP status code of the response.
+            http_version: The HTTP version of the response.
+            headers: The response headers.
+            content: An asynchronous iterator over the response content.
+            trailers: The response trailers.
+        """
+
+    @property
+    def status(self) -> int:
+        """Returns the HTTP status code of the response."""
+
+    @property
+    def http_version(self) -> HTTPVersion:
+        """Returns the HTTP version of the response."""
+
+    @property
+    def headers(self) -> Headers:
+        """Returns the response headers."""
+
+    @property
+    def content(self) -> AsyncIterator[bytes]:
+        """Returns an asynchronous iterator over the response content."""
+
+    @property
+    def trailers(self) -> Headers:
+        """Returns the response trailers.
+
+        Because trailers complete the response, this will only be filled after fully
+        consuming the [`content`][] iterator.
+        """
 
 class SyncClient:
     def __init__(self, transport: SyncTransport | None = None) -> None: ...
@@ -249,8 +286,44 @@ class SyncRequest:
     ) -> None: ...
 
 class SyncResponse:
-    status: int
-    http_version: HTTPVersion
-    headers: Headers
-    content: Iterator[bytes]
-    trailers: Headers
+    def __init__(
+        self,
+        *,
+        status: int,
+        http_version: HTTPVersion | None = None,
+        headers: Headers | None = None,
+        content: Iterable[bytes] | None = None,
+        trailers: Headers | None = None,
+    ) -> None:
+        """Creates a new [`SyncResponse`][] object.
+
+        Args:
+            status: The HTTP status code of the response.
+            http_version: The HTTP version of the response.
+            headers: The response headers.
+            content: An asynchronous iterator over the response content.
+            trailers: The response trailers.
+        """
+
+    @property
+    def status(self) -> int:
+        """Returns the HTTP status code of the response."""
+
+    @property
+    def http_version(self) -> HTTPVersion:
+        """Returns the HTTP version of the response."""
+
+    @property
+    def headers(self) -> Headers:
+        """Returns the response headers."""
+
+    @property
+    def content(self) -> Iterator[bytes]:
+        """Returns an iterator over the response content."""
+    @property
+    def trailers(self) -> Headers:
+        """Returns the response trailers.
+
+        Because trailers complete the response, this will only be filled after fully
+        consuming the [`content`][] iterator.
+        """

@@ -23,6 +23,17 @@ impl Headers {
         }
     }
 
+    pub(crate) fn from_option(
+        py: Python<'_>,
+        hdrs: Option<Bound<'_, Headers>>,
+    ) -> PyResult<Py<Self>> {
+        if let Some(hdrs) = hdrs {
+            Ok(hdrs.unbind())
+        } else {
+            Py::new(py, Headers::empty())
+        }
+    }
+
     pub(crate) fn fill(&self, headers: HeaderMap) {
         let mut store = self.store.lock().unwrap();
         store.reserve(headers.len());

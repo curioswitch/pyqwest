@@ -1,5 +1,6 @@
 use pyo3::{
-    exceptions::PyStopAsyncIteration, pyclass, pymethods, Bound, Py, PyAny, PyResult, Python,
+    exceptions::PyStopAsyncIteration, pyclass, pymethods, Bound, IntoPyObjectExt as _, Py, PyAny,
+    PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::future_into_py;
 
@@ -9,22 +10,30 @@ use crate::{
     shared::response::{ResponseBody, ResponseHead},
 };
 
+enum Content {
+    Http(Py<ContentGenerator>),
+    Custom {
+        content: Py<PyAny>,
+        trailers: Py<Headers>,
+    },
+}
+
 #[pyclass(frozen)]
 pub(crate) struct Response {
     head: ResponseHead,
-    content: Py<ContentGenerator>,
+    content: Content,
 }
 
 impl Response {
     pub(super) fn pending(py: Python<'_>) -> PyResult<Response> {
         Ok(Response {
             head: ResponseHead::pending(py),
-            content: Py::new(
+            content: Content::Http(Py::new(
                 py,
                 ContentGenerator {
                     body: ResponseBody::pending(py),
                 },
-            )?,
+            )?),
         })
     }
 
@@ -32,12 +41,46 @@ impl Response {
         let response: http::Response<_> = response.into();
         let (head, body) = response.into_parts();
         self.head.fill(head);
-        self.content.get().body.fill(body).await;
+        if let Content::Http(content) = &self.content {
+            content.get().body.fill(body).await;
+        } else {
+            unreachable!("fill is only called on HTTP responses");
+        }
     }
 }
 
 #[pymethods]
 impl Response {
+    #[new]
+    #[pyo3(signature = (*, status, http_version = None, headers = None, content = None, trailers = None))]
+    fn py_new(
+        py: Python<'_>,
+        status: u16,
+        http_version: Option<&Bound<'_, HTTPVersion>>,
+        headers: Option<Bound<'_, Headers>>,
+        content: Option<Bound<'_, PyAny>>,
+        trailers: Option<Bound<'_, Headers>>,
+    ) -> PyResult<Self> {
+        let http_version = if let Some(http_version) = http_version {
+            http_version.get()
+        } else {
+            &HTTPVersion::HTTP1
+        };
+        let content = if let Some(content) = content {
+            content
+        } else {
+            EmptyContentGenerator.into_bound_py_any(py)?
+        };
+        let trailers = Headers::from_option(py, trailers)?;
+        Ok(Self {
+            head: ResponseHead::new(py, status, http_version, headers)?,
+            content: Content::Custom {
+                content: content.unbind(),
+                trailers,
+            },
+        })
+    }
+
     #[getter]
     fn status(&self) -> u16 {
         self.head.status()
@@ -55,16 +98,22 @@ impl Response {
 
     #[getter]
     fn trailers(&self, py: Python<'_>) -> Py<Headers> {
-        self.content.get().body.trailers(py)
+        match &self.content {
+            Content::Http(content) => content.get().body.trailers(py),
+            Content::Custom { trailers, .. } => trailers.clone_ref(py),
+        }
     }
 
     #[getter]
-    fn content(&self, py: Python<'_>) -> Py<ContentGenerator> {
-        self.content.clone_ref(py)
+    fn content(&self, py: Python<'_>) -> Py<PyAny> {
+        match &self.content {
+            Content::Http(content) => content.clone_ref(py).into_any(),
+            Content::Custom { content, .. } => content.clone_ref(py),
+        }
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest", frozen)]
 struct ContentGenerator {
     body: ResponseBody,
 }
@@ -85,5 +134,20 @@ impl ContentGenerator {
                 Err(PyStopAsyncIteration::new_err(()))
             }
         })
+    }
+}
+
+#[pyclass(module = "pyqwest._async", frozen)]
+struct EmptyContentGenerator;
+
+#[pymethods]
+impl EmptyContentGenerator {
+    fn __aiter__(slf: Py<EmptyContentGenerator>) -> Py<EmptyContentGenerator> {
+        slf
+    }
+
+    #[allow(clippy::unused_self)]
+    fn __anext__(&self) -> PyResult<Bound<'_, PyAny>> {
+        Err(PyStopAsyncIteration::new_err(()))
     }
 }

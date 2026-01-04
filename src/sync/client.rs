@@ -1,5 +1,6 @@
 use pyo3::{intern, prelude::*};
 
+use crate::headers::Headers;
 use crate::sync::request::SyncRequest;
 use crate::sync::transport::SyncHttpTransport;
 
@@ -38,6 +39,15 @@ impl SyncClient {
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let headers = if let Some(headers) = headers {
+            if let Ok(headers) = headers.cast::<Headers>() {
+                Some(headers.clone())
+            } else {
+                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
+            }
+        } else {
+            None
+        };
         let request = SyncRequest::new(py, method, url, headers, content)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),
