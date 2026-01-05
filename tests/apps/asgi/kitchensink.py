@@ -24,18 +24,21 @@ async def _echo(
     await send({"type": "http.response.body", "body": b"", "more_body": True})
     while True:
         message = await receive()
-        if message["type"] == "http.request":
-            body = message["body"]
-            if body:
-                await send(
-                    {
-                        "type": "http.response.body",
-                        "body": message["body"],
-                        "more_body": True,
-                    }
-                )
-            if not message["more_body"]:
-                break
+        match message["type"]:
+            case "http.disconnect":
+                return
+            case "http.request":
+                body = message["body"]
+                if body:
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": message["body"],
+                            "more_body": True,
+                        }
+                    )
+                if not message["more_body"]:
+                    break
     await send({"type": "http.response.body", "body": b"", "more_body": False})
     await send(
         {

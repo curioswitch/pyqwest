@@ -8,6 +8,7 @@ from collections.abc import (
     Sequence,
     ValuesView,
 )
+from types import TracebackType
 from typing import Protocol, TypeVar, overload
 
 _T = TypeVar("_T")
@@ -230,6 +231,22 @@ class Response:
             trailers: The response trailers.
         """
 
+    async def __aenter__(self) -> Response:
+        """Enters the context manager for the response to automatically close it when
+        leaving.
+
+        Note that if your code is guaranteed to fully consume the response content,
+        it is not necessary to explicitly close the response.
+        """
+
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        """Exits the context manager for the response, closing it."""
+
     @property
     def status(self) -> int:
         """Returns the HTTP status code of the response."""
@@ -252,6 +269,13 @@ class Response:
 
         Because trailers complete the response, this will only be filled after fully
         consuming the [`content`][] iterator.
+        """
+
+    async def close(self) -> None:
+        """Closes the response, releasing any underlying resources.
+
+        Note that if your code is guaranteed to fully consume the response content,
+        it is not necessary to explicitly close the response.
         """
 
 class SyncClient:
@@ -305,6 +329,22 @@ class SyncResponse:
             trailers: The response trailers.
         """
 
+    def __enter__(self) -> SyncResponse:
+        """Enters the context manager for the response to automatically
+        close it when leaving.
+
+        Note that if your code is guaranteed to fully consume the response content,
+        it is not necessary to explicitly close the response.
+        """
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        """Exits the context manager for the response, closing it."""
+
     @property
     def status(self) -> int:
         """Returns the HTTP status code of the response."""
@@ -326,4 +366,11 @@ class SyncResponse:
 
         Because trailers complete the response, this will only be filled after fully
         consuming the [`content`][] iterator.
+        """
+
+    def close(self) -> None:
+        """Closes the response, releasing any underlying resources.
+
+        Note that if your code is guaranteed to fully consume the response content,
+        it is not necessary to explicitly close the response.
         """
