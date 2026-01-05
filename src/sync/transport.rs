@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::{prelude::*, IntoPyObjectExt as _};
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -11,7 +14,7 @@ use crate::sync::response::SyncResponse;
 #[pyclass(module = "pyqwest", name = "SyncHTTPTransport", frozen)]
 #[derive(Clone)]
 pub struct SyncHttpTransport {
-    client: reqwest::Client,
+    client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
 }
 
@@ -27,7 +30,18 @@ impl SyncHttpTransport {
             tls_ca_cert,
             http_version,
         })?;
-        Ok(Self { client, http3 })
+        Ok(Self {
+            client: Arc::new(ArcSwapOption::from_pointee(client)),
+            http3,
+        })
+    }
+
+    fn __enter__(slf: Py<SyncHttpTransport>) -> Py<SyncHttpTransport> {
+        slf
+    }
+
+    fn __exit__(&self, _exc_type: Py<PyAny>, _exc_value: Py<PyAny>, _traceback: Py<PyAny>) {
+        self.close();
     }
 
     fn execute<'py>(
@@ -37,6 +51,10 @@ impl SyncHttpTransport {
     ) -> PyResult<Bound<'py, PyAny>> {
         self.do_execute(py, request.get())
     }
+
+    fn close(&self) {
+        self.client.store(None);
+    }
 }
 
 impl SyncHttpTransport {
@@ -45,7 +63,13 @@ impl SyncHttpTransport {
         py: Python<'py>,
         request: &SyncRequest,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3)?;
+        let client_guard = self.client.load();
+        let Some(client) = client_guard.as_ref() else {
+            return Err(PyRuntimeError::new_err(
+                "Executing request on already closed transport",
+            ));
+        };
+        let req_builder = request.as_reqwest_builder(py, client, self.http3)?;
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
         let mut response = SyncResponse::pending(py)?;
         get_runtime().spawn(async move {

@@ -200,7 +200,22 @@ class HTTPTransport:
         tls_ca_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
     ) -> None: ...
+    async def __aenter__(self) -> HTTPTransport:
+        """Enters the context manager for the transport to automatically close it when
+        leaving.
+        """
+
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        """Exits the context manager for the transport, closing it."""
+
     async def execute(self, request: Request) -> Response: ...
+    async def close(self) -> None:
+        """Closes the transport, releasing any underlying resources."""
 
 class Request:
     def __init__(
@@ -298,7 +313,22 @@ class SyncHTTPTransport:
         tls_ca_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
     ) -> None: ...
+    def __enter__(self) -> SyncHTTPTransport:
+        """Enters the context manager for the transport to automatically
+        close it when leaving.
+        """
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        """Exits the context manager for the transport, closing it."""
+
     def execute(self, request: SyncRequest) -> SyncResponse: ...
+    def close(self) -> None:
+        """Closes the transport, releasing any underlying resources."""
 
 class SyncRequest:
     def __init__(

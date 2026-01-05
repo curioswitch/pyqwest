@@ -1,128 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 import threading
-from dataclasses import dataclass
 from queue import Queue
 from typing import TYPE_CHECKING
 
 import pytest
-import pytest_asyncio
-import trustme
-from pyvoy import PyvoyServer
 
-from pyqwest import (
-    Client,
-    Headers,
-    HTTPTransport,
-    HTTPVersion,
-    SyncClient,
-    SyncHTTPTransport,
-)
+from pyqwest import Client, Headers, HTTPVersion, SyncClient
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
-
-
-@dataclass
-class Certs:
-    ca: bytes
-    server_cert: bytes
-    server_key: bytes
-
-
-@pytest.fixture(scope="module")
-def certs() -> Certs:
-    ca = trustme.CA()
-    # Workaround https://github.com/seanmonstar/reqwest/issues/2911
-    server = ca.issue_cert("127.0.0.1")
-    return Certs(
-        ca=ca.cert_pem.bytes(),
-        server_cert=server.cert_chain_pems[0].bytes(),
-        server_key=server.private_key_pem.bytes(),
-    )
-
-
-@pytest_asyncio.fixture(scope="module")
-async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
-    # TODO: Fix issue in pyvoy where if tls_port is 0, separate ports are picked for
-    # TLS and QUIC and we cannot find the latter.
-    tls_port = 0
-    while tls_port <= 0:
-        with socket.socket() as s:
-            s.bind(("", 0))
-            tls_port = s.getsockname()[1]
-    async with PyvoyServer(
-        "tests.apps.asgi.kitchensink",
-        tls_port=tls_port,
-        tls_key=certs.server_key,
-        tls_cert=certs.server_cert,
-        lifespan=False,
-        stdout=None,
-        stderr=None,
-    ) as server:
-        yield server
-
-
-@pytest.fixture(params=["h1", "h2", "h3", "auto"], scope="module")
-def http_version(request: pytest.FixtureRequest) -> HTTPVersion | None:
-    match request.param:
-        case "h1":
-            return HTTPVersion.HTTP1
-        case "h2":
-            return HTTPVersion.HTTP2
-        case "h3":
-            return HTTPVersion.HTTP3
-        case "auto":
-            return None
-        case _:
-            msg = "Invalid HTTP version"
-            raise ValueError(msg)
-
-
-@pytest.fixture(params=["http", "https"])
-def url(
-    server: PyvoyServer,
-    http_version: HTTPVersion | None,
-    request: pytest.FixtureRequest,
-) -> str:
-    match request.param:
-        case "http":
-            if http_version == HTTPVersion.HTTP3:
-                pytest.skip("HTTP/3 over plain HTTP is not supported")
-            return f"http://127.0.0.1:{server.listener_port}"
-        case "https":
-            return f"https://127.0.0.1:{server.listener_port_tls}"
-        case _:
-            msg = "Invalid scheme"
-            raise ValueError(msg)
-
-
-@pytest.fixture(scope="module")
-def async_client(certs: Certs, http_version: HTTPVersion | None) -> Client:
-    return Client(HTTPTransport(tls_ca_cert=certs.ca, http_version=http_version))
-
-
-@pytest.fixture(scope="module")
-def sync_client(certs: Certs, http_version: HTTPVersion | None) -> SyncClient:
-    return SyncClient(
-        SyncHTTPTransport(tls_ca_cert=certs.ca, http_version=http_version)
-    )
-
-
-@pytest.fixture(scope="module", params=["async", "sync"])
-def client(
-    async_client: Client, sync_client: SyncClient, request: pytest.FixtureRequest
-) -> Client | SyncClient:
-    match request.param:
-        case "async":
-            return async_client
-        case "sync":
-            return sync_client
-        case _:
-            msg = "Invalid client type"
-            raise ValueError(msg)
 
 
 def supports_trailers(http_version: HTTPVersion | None, url: str) -> bool:

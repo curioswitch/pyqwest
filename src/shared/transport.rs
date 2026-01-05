@@ -1,4 +1,5 @@
-use pyo3::{exceptions::PyRuntimeError, Bound, PyErr, PyResult};
+use pyo3::{exceptions::PyRuntimeError, Bound, PyResult};
+use pyo3_async_runtimes::tokio::get_runtime;
 
 use crate::common::HTTPVersion;
 
@@ -32,16 +33,14 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     }
 
     let client = if http3 {
-        pyo3_async_runtimes::tokio::get_runtime().block_on(async move {
-            let client = builder.build().map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to create client: {:+}", errors::fmt(&e)))
-            })?;
-            Ok::<_, PyErr>(client)
-        })?
+        // Workaround https://github.com/seanmonstar/reqwest/issues/2910
+        let _guard = get_runtime().enter();
+        builder.build()
     } else {
-        builder.build().map_err(|e| {
-            PyRuntimeError::new_err(format!("Failed to create client: {:+}", errors::fmt(&e)))
-        })?
-    };
+        builder.build()
+    }
+    .map_err(|e| {
+        PyRuntimeError::new_err(format!("Failed to create client: {:+}", errors::fmt(&e)))
+    })?;
     Ok((client, http3))
 }
