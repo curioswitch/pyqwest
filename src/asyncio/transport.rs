@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, IntoPyObjectExt as _};
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use crate::asyncio::awaitable::{EmptyAwaitable, ValueAwaitable};
 use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
 use crate::common::HTTPVersion;
@@ -10,7 +14,7 @@ use crate::shared::transport::{new_reqwest_client, ClientParams};
 #[pyclass(module = "pyqwest", name = "HTTPTransport", frozen)]
 #[derive(Clone)]
 pub struct HttpTransport {
-    client: reqwest::Client,
+    client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
 }
 
@@ -26,7 +30,28 @@ impl HttpTransport {
             tls_ca_cert,
             http_version,
         })?;
-        Ok(Self { client, http3 })
+        Ok(Self {
+            client: Arc::new(ArcSwapOption::from_pointee(client)),
+            http3,
+        })
+    }
+
+    fn __aenter__(slf: Py<HttpTransport>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        ValueAwaitable {
+            value: Some(slf.into_any()),
+        }
+        .into_py_any(py)
+    }
+
+    fn __aexit__(
+        &self,
+        py: Python<'_>,
+        _exc_type: Py<PyAny>,
+        _exc_value: Py<PyAny>,
+        _traceback: Py<PyAny>,
+    ) -> PyResult<Py<PyAny>> {
+        self.close();
+        EmptyAwaitable.into_py_any(py)
     }
 
     fn execute<'py>(
@@ -36,6 +61,10 @@ impl HttpTransport {
     ) -> PyResult<Bound<'py, PyAny>> {
         self.do_execute(py, request.get())
     }
+
+    fn close(&self) {
+        self.client.store(None);
+    }
 }
 
 impl HttpTransport {
@@ -44,7 +73,13 @@ impl HttpTransport {
         py: Python<'py>,
         request: &Request,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let req_builder = request.as_reqwest_builder(py, &self.client, self.http3)?;
+        let client_guard = self.client.load();
+        let Some(client) = client_guard.as_ref() else {
+            return Err(PyRuntimeError::new_err(
+                "Executing request on already closed transport",
+            ));
+        };
+        let req_builder = request.as_reqwest_builder(py, client, self.http3)?;
         let mut response = Response::pending(py)?;
         future_into_py(py, async move {
             let res = req_builder.send().await.map_err(|e| {
