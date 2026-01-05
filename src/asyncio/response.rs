@@ -5,6 +5,7 @@ use pyo3::{
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::{
+    asyncio::awaitable::{EmptyAwaitable, ValueAwaitable},
     common::HTTPVersion,
     headers::Headers,
     shared::response::{ResponseBody, ResponseHead},
@@ -81,6 +82,23 @@ impl Response {
         })
     }
 
+    fn __aenter__(slf: Py<Response>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        ValueAwaitable {
+            value: Some(slf.into_any()),
+        }
+        .into_py_any(py)
+    }
+
+    fn __aexit__<'py>(
+        &self,
+        py: Python<'py>,
+        _exc_type: Py<PyAny>,
+        _exc_value: Py<PyAny>,
+        _traceback: Py<PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.close(py)
+    }
+
     #[getter]
     fn status(&self) -> u16 {
         self.head.status()
@@ -109,6 +127,21 @@ impl Response {
         match &self.content {
             Content::Http(content) => content.clone_ref(py).into_any(),
             Content::Custom { content, .. } => content.clone_ref(py),
+        }
+    }
+
+    fn close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        if let Content::Http(content) = &self.content {
+            if content.get().body.try_close() {
+                return EmptyAwaitable.into_bound_py_any(py);
+            }
+            let body = content.get().body.clone();
+            future_into_py(py, async move {
+                body.close().await;
+                Ok(())
+            })
+        } else {
+            EmptyAwaitable.into_bound_py_any(py)
         }
     }
 }

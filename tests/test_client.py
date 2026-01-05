@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import threading
 from dataclasses import dataclass
 from queue import Queue
 from typing import TYPE_CHECKING
@@ -131,6 +132,22 @@ def supports_trailers(http_version: HTTPVersion | None, url: str) -> bool:
     )
 
 
+async def request_body(queue: asyncio.Queue) -> AsyncIterator[bytes]:
+    while True:
+        item: bytes | None = await queue.get()
+        if item is None:
+            return
+        yield item
+
+
+def sync_request_body(queue: Queue) -> Iterator[bytes]:
+    while True:
+        item: bytes | None = queue.get()
+        if item is None:
+            return
+        yield item
+
+
 @pytest.mark.asyncio
 async def test_basic(
     client: Client | SyncClient, url: str, http_version: HTTPVersion
@@ -218,34 +235,27 @@ async def test_bidi(
     client = async_client
     queue = asyncio.Queue()
 
-    async def request_body() -> AsyncIterator[bytes]:
-        while True:
-            item: bytes | None = await queue.get()
-            if item is None:
-                return
-            yield item
-
-    resp = await client.execute(
+    async with await client.execute(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
-        content=request_body(),
-    )
-    assert resp.status == 200
-    content = resp.content
-    await queue.put(b"Hello!")
-    chunk = await anext(content)
-    assert chunk == b"Hello!"
-    await queue.put(b" World!")
-    chunk = await anext(content)
-    assert chunk == b" World!"
-    await queue.put(None)
-    chunk = await anext(content, None)
-    assert chunk is None
-    if supports_trailers(http_version, url):
-        assert resp.trailers["x-echo-trailer"] == "last info"
-    else:
-        assert len(resp.trailers) == 0
+        content=request_body(queue),
+    ) as resp:
+        assert resp.status == 200
+        content = resp.content
+        await queue.put(b"Hello!")
+        chunk = await anext(content)
+        assert chunk == b"Hello!"
+        await queue.put(b" World!")
+        chunk = await anext(content)
+        assert chunk == b" World!"
+        await queue.put(None)
+        chunk = await anext(content, None)
+        assert chunk is None
+        if supports_trailers(http_version, url):
+            assert resp.trailers["x-echo-trailer"] == "last info"
+        else:
+            assert len(resp.trailers) == 0
 
 
 @pytest.mark.asyncio
@@ -255,31 +265,123 @@ async def test_bidi_sync(
     client = sync_client
     queue = Queue()
 
-    def request_body() -> Iterator[bytes]:
-        while True:
-            item: bytes | None = queue.get()
-            if item is None:
-                return
-            yield item
+    def run():
+        with client.execute(
+            "POST",
+            f"{url}/echo",
+            headers=Headers({"content-type": "text/plain", "te": "trailers"}),
+            content=sync_request_body(queue),
+        ) as resp:
+            assert resp.status == 200
+            content = resp.content
+            queue.put(b"Hello!")
+            chunk = next(content)
+            assert chunk == b"Hello!"
+            queue.put(b" World!")
+            chunk = next(content)
+            assert chunk == b" World!"
+            queue.put(None)
+            chunk = next(content, None)
+            assert chunk is None
+            if supports_trailers(http_version, url):
+                assert resp.trailers["x-echo-trailer"] == "last info"
+            else:
+                assert len(resp.trailers) == 0
 
-    resp = client.execute(
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+async def test_close_no_read(async_client: Client, url: str) -> None:
+    client = async_client
+    queue = asyncio.Queue()
+
+    resp = await client.execute(
         "POST",
         f"{url}/echo",
-        headers=Headers({"content-type": "text/plain", "te": "trailers"}),
-        content=request_body(),
+        headers={"content-type": "text/plain", "te": "trailers"},
+        content=request_body(queue),
     )
     assert resp.status == 200
     content = resp.content
-    await asyncio.to_thread(queue.put, b"Hello!")
-    chunk = next(content)
-    assert chunk == b"Hello!"
-    await asyncio.to_thread(queue.put, b" World!")
-    chunk = next(content)
-    assert chunk == b" World!"
-    await asyncio.to_thread(queue.put, None)
-    chunk = next(content, None)
+
+    await resp.close()
+    chunk = await anext(content, None)
     assert chunk is None
-    if supports_trailers(http_version, url):
-        assert resp.trailers["x-echo-trailer"] == "last info"
-    else:
-        assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_close_no_read_sync(sync_client: SyncClient, url: str) -> None:
+    client = sync_client
+    queue = Queue()
+
+    def run():
+        resp = client.execute(
+            "POST",
+            f"{url}/echo",
+            headers=Headers({"content-type": "text/plain", "te": "trailers"}),
+            content=sync_request_body(queue),
+        )
+        assert resp.status == 200
+        content = resp.content
+
+        resp.close()
+        chunk = next(content, None)
+        assert chunk is None
+
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+async def test_close_pending_read(async_client: Client, url: str) -> None:
+    client = async_client
+    queue = asyncio.Queue()
+
+    resp = await client.execute(
+        "POST",
+        f"{url}/echo",
+        headers={"content-type": "text/plain", "te": "trailers"},
+        content=request_body(queue),
+    )
+    assert resp.status == 200
+    content = resp.content
+
+    async def read_content() -> bytes | None:
+        return await anext(content, None)
+
+    read_task = asyncio.create_task(read_content())
+
+    await resp.close()
+    chunk = await read_task
+    assert chunk is None
+
+
+@pytest.mark.asyncio
+async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> None:
+    client = sync_client
+    queue = Queue()
+
+    def run():
+        resp = client.execute(
+            "POST",
+            f"{url}/echo",
+            headers=Headers({"content-type": "text/plain", "te": "trailers"}),
+            content=sync_request_body(queue),
+        )
+        assert resp.status == 200
+        content = resp.content
+
+        last_read: bytes | None = b"init"
+
+        def read_content() -> bytes | None:
+            nonlocal last_read
+            last_read = next(content, None)
+
+        read_thread = threading.Thread(target=read_content)
+        read_thread.start()
+
+        resp.close()
+        read_thread.join()
+        assert last_read is None
+
+    await asyncio.to_thread(run)

@@ -83,6 +83,20 @@ impl SyncResponse {
         })
     }
 
+    fn __enter__(slf: Py<SyncResponse>) -> Py<SyncResponse> {
+        slf
+    }
+
+    fn __exit__(
+        &self,
+        py: Python<'_>,
+        _exc_type: Py<PyAny>,
+        _exc_value: Py<PyAny>,
+        _traceback: Py<PyAny>,
+    ) {
+        self.close(py);
+    }
+
     #[getter]
     fn status(&self) -> u16 {
         self.head.status()
@@ -111,6 +125,23 @@ impl SyncResponse {
         match &self.content {
             Content::Http(content) => content.clone_ref(py).into_any(),
             Content::Custom { content, .. } => content.clone_ref(py),
+        }
+    }
+
+    fn close(&self, py: Python<'_>) {
+        if let Content::Http(content) = &self.content {
+            if content.get().body.try_close() {
+                return;
+            }
+            let (tx, rx) = oneshot::channel::<()>();
+            let body = content.get().body.clone();
+            get_runtime().spawn(async move {
+                body.close().await;
+                tx.send(()).unwrap();
+            });
+            py.detach(|| {
+                let _ = rx.blocking_recv();
+            });
         }
     }
 }

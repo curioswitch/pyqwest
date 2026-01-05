@@ -5,7 +5,7 @@ use http::response::Parts;
 use http_body::Frame;
 use http_body_util::BodyExt as _;
 use pyo3::{exceptions::PyRuntimeError, Bound, Py, PyResult, Python};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 use crate::{common::HTTPVersion, headers::Headers};
 
@@ -68,8 +68,10 @@ impl ResponseHead {
 }
 
 struct ResponseBodyInner {
-    body: Mutex<reqwest::Body>,
+    body: Mutex<Option<reqwest::Body>>,
     trailers: Py<Headers>,
+    read_lock: Mutex<()>,
+    cancel_tx: watch::Sender<bool>,
 }
 
 #[derive(Clone)]
@@ -79,43 +81,83 @@ pub(crate) struct ResponseBody {
 
 impl ResponseBody {
     pub(crate) fn pending(py: Python<'_>) -> Self {
+        let (cancel_tx, _) = watch::channel(false);
         ResponseBody {
             inner: Arc::new(ResponseBodyInner {
-                body: Mutex::new(reqwest::Body::from(Bytes::new())),
+                body: Mutex::new(None),
                 trailers: Py::new(py, Headers::empty()).unwrap(),
+                read_lock: Mutex::new(()),
+                cancel_tx,
             }),
         }
     }
 
     pub(crate) async fn fill(&self, body: reqwest::Body) {
         let mut self_body = self.inner.body.lock().await;
-        *self_body = body;
+        *self_body = Some(body);
     }
 
     pub(crate) async fn chunk(&self) -> PyResult<Option<Bytes>> {
-        let mut body = self.inner.body.lock().await;
+        let _read_guard = self.inner.read_lock.lock().await;
+        let mut cancel_rx = self.inner.cancel_tx.subscribe();
+        if *cancel_rx.borrow() {
+            return Ok(None);
+        }
+        let Some(mut body) = ({
+            let mut body_guard = self.inner.body.lock().await;
+            body_guard.take()
+        }) else {
+            return Ok(None);
+        };
         loop {
-            if let Some(res) = body.frame().await {
-                let frame = res.map_err(|e| {
-                    PyRuntimeError::new_err(format!("Error reading HTTP body frame: {e}"))
-                })?;
-                // A frame is either data or trailers.
-                match frame.into_data().map_err(Frame::into_trailers) {
-                    Ok(buf) => {
-                        return Ok(Some(buf));
-                    }
-                    Err(Ok(trailers)) => {
-                        self.inner.trailers.get().fill(trailers);
-                    }
-                    Err(Err(_)) => (),
+            let res = tokio::select! {
+                _ = cancel_rx.changed() => {
+                    return Ok(None);
                 }
-            } else {
+                res = body.frame() => res,
+            };
+            let Some(res) = res else {
                 return Ok(None);
+            };
+            let frame = res.map_err(|e| {
+                PyRuntimeError::new_err(format!("Error reading HTTP body frame: {e}"))
+            })?;
+            // A frame is either data or trailers.
+            match frame.into_data().map_err(Frame::into_trailers) {
+                Ok(buf) => {
+                    let mut body_guard = self.inner.body.lock().await;
+                    *body_guard = Some(body);
+                    return Ok(Some(buf));
+                }
+                Err(Ok(trailers)) => {
+                    self.inner.trailers.get().fill(trailers);
+                }
+                Err(Err(_)) => (),
             }
         }
     }
 
     pub(crate) fn trailers(&self, py: Python<'_>) -> Py<Headers> {
         self.inner.trailers.clone_ref(py)
+    }
+
+    pub(crate) async fn close(&self) {
+        let _ = self.inner.cancel_tx.send(true);
+        let _read_guard = self.inner.read_lock.lock().await;
+        let mut body = self.inner.body.lock().await;
+        *body = None;
+    }
+
+    pub(crate) fn try_close(&self) -> bool {
+        let _ = self.inner.cancel_tx.send(true);
+        let Ok(_read_guard) = self.inner.read_lock.try_lock() else {
+            return false;
+        };
+        if let Ok(mut body) = self.inner.body.try_lock() {
+            *body = None;
+            true
+        } else {
+            false
+        }
     }
 }
