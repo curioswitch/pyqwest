@@ -6,12 +6,17 @@ use pyo3::{
     pyclass, pyfunction, pymethods,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyModule},
-    Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
+    Borrowed, Bound, FromPyObject, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyErr,
+    PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::into_stream_v2;
 use tokio_stream::StreamExt as _;
 
-use crate::{headers::Headers, shared::request::RequestHead};
+use crate::{
+    asyncio::awaitable::{EmptyAsyncIterator, ValueAsyncIterator},
+    headers::Headers,
+    shared::request::RequestHead,
+};
 
 #[pyclass(frozen)]
 pub struct Request {
@@ -41,16 +46,31 @@ impl Request {
         })
     }
 
+    #[getter]
     fn method(&self) -> &str {
         self.head.method()
     }
 
+    #[getter]
     fn url(&self) -> &str {
         self.head.url()
     }
 
+    #[getter]
     fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.head.headers(py)
+    }
+
+    #[getter]
+    fn content<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match &self.content {
+            Some(Content::Bytes(bytes)) => ValueAsyncIterator {
+                value: Some(bytes.into_py_any(py)?),
+            }
+            .into_bound_py_any(py),
+            Some(Content::AsyncIter(iter)) => Ok(iter.bind(py).clone().into_any()),
+            None => EmptyAsyncIterator.into_bound_py_any(py),
+        }
     }
 }
 
@@ -80,8 +100,8 @@ impl Request {
                 Ok(Some(reqwest::Body::from(Bytes::from_owner(bytes))))
             }
             Some(Content::AsyncIter(iter)) => {
-                let res = into_stream_v2(iter.bind(py).clone())?
-                    .map(|item| Ok::<_, PyErr>(bytes_from_chunk(item)));
+                let iter = wrap_async_iter(py, iter)?;
+                let res = into_stream_v2(iter)?.map(|item| Ok::<_, PyErr>(bytes_from_chunk(item)));
                 Ok(Some(reqwest::Body::wrap_stream(res)))
             }
             None => Ok(None),
@@ -106,12 +126,11 @@ impl FromPyObject<'_, '_> for Content {
         let aiter = obj.call_method0(intern!(py, "__aiter__")).map_err(|_| {
             PyTypeError::new_err("Content must be bytes or an async iterator of bytes")
         })?;
-        let wrapped = wrap_async_iter(py, aiter.unbind())?;
-        Ok(Self::AsyncIter(wrapped))
+        Ok(Self::AsyncIter(aiter.unbind()))
     }
 }
 
-fn wrap_async_iter(py: Python<'_>, iter: Py<PyAny>) -> PyResult<Py<PyAny>> {
+fn wrap_async_iter<'py>(py: Python<'py>, iter: &Py<PyAny>) -> PyResult<Bound<'py, PyAny>> {
     static WRAP_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     static GEN_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
@@ -119,16 +138,16 @@ fn wrap_async_iter(py: Python<'_>, iter: Py<PyAny>) -> PyResult<Py<PyAny>> {
         .get_or_try_init(py, || {
             pyo3::wrap_pyfunction!(wrap_body_chunk, py).map(|func| func.unbind().into())
         })?
-        .clone_ref(py);
+        .bind(py);
 
     let gen_fn = GEN_FN
         .get_or_try_init(py, || {
             let module = PyModule::import(py, "pyqwest._glue")?;
             module.getattr("wrap_body_gen").map(Bound::unbind)
         })?
-        .clone_ref(py);
+        .bind(py);
 
-    gen_fn.call1(py, (iter, wrap_fn))
+    gen_fn.call1((iter, wrap_fn))
 }
 
 #[pyclass(frozen)]

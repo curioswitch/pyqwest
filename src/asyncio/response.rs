@@ -1,11 +1,11 @@
 use pyo3::{
-    exceptions::PyStopAsyncIteration, pyclass, pymethods, Bound, IntoPyObjectExt as _, Py, PyAny,
-    PyResult, Python,
+    exceptions::PyStopAsyncIteration, pyclass, pymethods, types::PyBytes, Bound,
+    IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::{
-    asyncio::awaitable::{EmptyAwaitable, ValueAwaitable},
+    asyncio::awaitable::{EmptyAsyncIterator, EmptyAwaitable, ValueAsyncIterator, ValueAwaitable},
     common::HTTPVersion,
     headers::Headers,
     shared::response::{ResponseBody, ResponseHead},
@@ -70,7 +70,7 @@ impl Response {
         let content = if let Some(content) = content {
             content
         } else {
-            EmptyContentGenerator.into_bound_py_any(py)?
+            EmptyAsyncIterator.into_bound_py_any(py)?
         };
         let trailers = Headers::from_option(py, trailers)?;
         Ok(Self {
@@ -123,10 +123,20 @@ impl Response {
     }
 
     #[getter]
-    fn content(&self, py: Python<'_>) -> Py<PyAny> {
+    fn content(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.content {
-            Content::Http(content) => content.clone_ref(py).into_any(),
-            Content::Custom { content, .. } => content.clone_ref(py),
+            Content::Http(content) => Ok(content.clone_ref(py).into_any()),
+            Content::Custom { content, .. } => {
+                let content = content.bind(py);
+                if let Ok(bytes) = content.cast::<PyBytes>() {
+                    ValueAsyncIterator {
+                        value: Some(bytes.into_py_any(py)?),
+                    }
+                    .into_py_any(py)
+                } else {
+                    Ok(content.clone().into_any().unbind())
+                }
+            }
         }
     }
 
@@ -167,20 +177,5 @@ impl ContentGenerator {
                 Err(PyStopAsyncIteration::new_err(()))
             }
         })
-    }
-}
-
-#[pyclass(module = "pyqwest._async", frozen)]
-struct EmptyContentGenerator;
-
-#[pymethods]
-impl EmptyContentGenerator {
-    fn __aiter__(slf: Py<EmptyContentGenerator>) -> Py<EmptyContentGenerator> {
-        slf
-    }
-
-    #[allow(clippy::unused_self)]
-    fn __anext__(&self) -> PyResult<Bound<'_, PyAny>> {
-        Err(PyStopAsyncIteration::new_err(()))
     }
 }

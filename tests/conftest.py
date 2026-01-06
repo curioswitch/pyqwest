@@ -55,7 +55,12 @@ async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
         yield server
 
 
-@pytest.fixture(params=["h1", "h2", "h3", "auto"], scope="session")
+@pytest.fixture(scope="session")
+def http_scheme(request: pytest.FixtureRequest) -> str:
+    return request.param
+
+
+@pytest.fixture(scope="session")
 def http_version(request: pytest.FixtureRequest) -> HTTPVersion | None:
     match request.param:
         case "h1":
@@ -71,13 +76,9 @@ def http_version(request: pytest.FixtureRequest) -> HTTPVersion | None:
             raise ValueError(msg)
 
 
-@pytest.fixture(params=["http", "https"], scope="session")
-def url(
-    server: PyvoyServer,
-    http_version: HTTPVersion | None,
-    request: pytest.FixtureRequest,
-) -> str:
-    match request.param:
+@pytest.fixture
+def url(server: PyvoyServer, http_scheme: str, http_version: HTTPVersion | None) -> str:
+    match http_scheme:
         case "http":
             if http_version == HTTPVersion.HTTP3:
                 pytest.skip("HTTP/3 over plain HTTP is not supported")
@@ -119,11 +120,30 @@ def sync_client(sync_transport: SyncHTTPTransport) -> SyncClient:
     return SyncClient(sync_transport)
 
 
-@pytest.fixture(params=["async", "sync"], scope="session")
+@pytest.fixture(params=["async", "sync"])
+def client_type(request: pytest.FixtureRequest) -> str:
+    return request.param
+
+
+@pytest.fixture
+def transport(
+    async_transport: HTTPTransport, sync_transport: SyncHTTPTransport, client_type: str
+) -> HTTPTransport | SyncHTTPTransport:
+    match client_type:
+        case "async":
+            return async_transport
+        case "sync":
+            return sync_transport
+        case _:
+            msg = "Invalid client type"
+            raise ValueError(msg)
+
+
+@pytest.fixture
 def client(
-    async_client: Client, sync_client: SyncClient, request: pytest.FixtureRequest
+    async_client: Client, sync_client: SyncClient, client_type: str
 ) -> Client | SyncClient:
-    match request.param:
+    match client_type:
         case "async":
             return async_client
         case "sync":

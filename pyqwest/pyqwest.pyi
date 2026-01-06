@@ -222,9 +222,33 @@ class Request:
         self,
         method: str,
         url: str,
-        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | Iterable[bytes] | None = None,
-    ) -> None: ...
+        headers: Headers | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
+    ) -> None:
+        """Creates a new Request object.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL.
+            headers: The request headers.
+            content: The request content.
+        """
+
+    @property
+    def method(self) -> str:
+        """Returns the HTTP method of the request."""
+
+    @property
+    def url(self) -> str:
+        """Returns the request URL."""
+
+    @property
+    def headers(self) -> Headers:
+        """Returns the request headers."""
+
+    @property
+    def content(self) -> AsyncIterator[bytes]:
+        """Returns an async iterator over the request content."""
 
 class Response:
     def __init__(
@@ -233,10 +257,16 @@ class Response:
         status: int,
         http_version: HTTPVersion | None = None,
         headers: Headers | None = None,
-        content: AsyncIterator[bytes] | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
         trailers: Headers | None = None,
     ) -> None:
         """Creates a new [`Response`][] object.
+
+        Care must be taken if your service uses trailers and you override content.
+        Trailers will not be received without fully consuming the original response content.
+        Patterns that wrap the original response content should not have any issue but if
+        you replace it completely and need trailers, make sure to still read and discard
+        the original content.
 
         Args:
             status: The HTTP status code of the response.
@@ -335,9 +365,33 @@ class SyncRequest:
         self,
         method: str,
         url: str,
-        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        headers: Headers | None = None,
         content: bytes | Iterable[bytes] | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Creates a new SyncRequest object.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL.
+            headers: The request headers.
+            content: The request content.
+        """
+
+    @property
+    def method(self) -> str:
+        """Returns the HTTP method of the request."""
+
+    @property
+    def url(self) -> str:
+        """Returns the request URL."""
+
+    @property
+    def headers(self) -> Headers:
+        """Returns the request headers."""
+
+    @property
+    def content(self) -> Iterator[bytes]:
+        """Returns an iterator over the request content."""
 
 class SyncResponse:
     def __init__(
@@ -346,10 +400,16 @@ class SyncResponse:
         status: int,
         http_version: HTTPVersion | None = None,
         headers: Headers | None = None,
-        content: Iterable[bytes] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
         trailers: Headers | None = None,
     ) -> None:
         """Creates a new [`SyncResponse`][] object.
+
+        Care must be taken if your service uses trailers and you override content.
+        Trailers will not be received without fully consuming the original response content.
+        Patterns that wrap the original response content should not have any issue but if
+        you replace it completely and need trailers, make sure to still read and discard
+        the original content.
 
         Args:
             status: The HTTP status code of the response.

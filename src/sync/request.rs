@@ -3,7 +3,7 @@ use pyo3::{
     exceptions::PyValueError,
     pybacked::PyBackedBytes,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyIterator},
+    types::{PyAnyMethods as _, PyIterator, PyTuple},
     Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -40,16 +40,30 @@ impl SyncRequest {
         })
     }
 
+    #[getter]
     fn method(&self) -> &str {
         self.head.method()
     }
 
+    #[getter]
     fn url(&self) -> &str {
         self.head.url()
     }
 
+    #[getter]
     fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.head.headers(py)
+    }
+
+    #[getter]
+    fn content<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match &self.content {
+            Some(Content::Bytes(bytes)) => {
+                Ok(PyTuple::new(py, [bytes])?.into_any().try_iter()?.into_any())
+            }
+            Some(Content::Iter(iter)) => Ok(iter.bind(py).clone().into_any()),
+            None => Ok(PyTuple::empty(py).into_any().try_iter()?.into_any()),
+        }
     }
 }
 
@@ -118,7 +132,6 @@ impl FromPyObject<'_, '_> for Content {
             return Ok(Self::Bytes(bytes));
         }
 
-        let iter = PyIterator::from_object(&obj)?;
-        Ok(Self::Iter(iter.unbind()))
+        Ok(Self::Iter(obj.try_iter()?.unbind()))
     }
 }
