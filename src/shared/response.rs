@@ -120,7 +120,10 @@ impl ResponseBody {
                 return Ok(None);
             };
             let frame = res.map_err(|e| {
-                PyRuntimeError::new_err(format!("Error reading HTTP body frame: {e}"))
+                PyRuntimeError::new_err(format!(
+                    "Error reading HTTP body frame: {:+}",
+                    errors::fmt(&e)
+                ))
             })?;
             // A frame is either data or trailers.
             match frame.into_data().map_err(Frame::into_trailers) {

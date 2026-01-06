@@ -3,7 +3,7 @@ use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyBytes, PyTuple},
-    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
+    Bound, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
@@ -73,7 +73,7 @@ impl SyncResponse {
         let content = if let Some(content) = content {
             content
         } else {
-            SyncEmptyContentGenerator.into_bound_py_any(py)?
+            PyTuple::empty(py).into_any().try_iter()?.into_any()
         };
         let trailers: Py<Headers> = Headers::from_option(py, trailers)?;
         Ok(Self {
@@ -181,20 +181,5 @@ impl SyncContentGenerator {
             rx.blocking_recv()
                 .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
         })?
-    }
-}
-
-#[pyclass(module = "pyqwest._sync", frozen)]
-struct SyncEmptyContentGenerator;
-
-#[pymethods]
-impl SyncEmptyContentGenerator {
-    fn __iter__(slf: Py<SyncEmptyContentGenerator>) -> Py<SyncEmptyContentGenerator> {
-        slf
-    }
-
-    #[allow(clippy::unused_self)]
-    fn __next__(&self) -> Option<Bytes> {
-        None
     }
 }
