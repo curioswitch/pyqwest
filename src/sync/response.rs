@@ -141,6 +141,14 @@ impl SyncResponse {
         }
     }
 
+    #[getter]
+    fn _read_pending(&self) -> bool {
+        match &self.content {
+            Content::Http(content) => content.get().body.read_pending(),
+            Content::Custom { .. } => false,
+        }
+    }
+
     fn close(&self, py: Python<'_>) {
         if let Content::Http(content) = &self.content {
             if content.get().body.try_close() {

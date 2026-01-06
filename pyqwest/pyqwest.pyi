@@ -272,7 +272,7 @@ class Response:
             status: The HTTP status code of the response.
             http_version: The HTTP version of the response.
             headers: The response headers.
-            content: An asynchronous iterator over the response content.
+            content: The response content.
             trailers: The response trailers.
         """
 
@@ -415,7 +415,7 @@ class SyncResponse:
             status: The HTTP status code of the response.
             http_version: The HTTP version of the response.
             headers: The response headers.
-            content: An asynchronous iterator over the response content.
+            content: The response content.
             trailers: The response trailers.
         """
 

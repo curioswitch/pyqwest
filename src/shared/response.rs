@@ -152,7 +152,6 @@ impl ResponseBody {
     }
 
     pub(crate) fn try_close(&self) -> bool {
-        let _ = self.inner.cancel_tx.send(true);
         let Ok(_read_guard) = self.inner.read_lock.try_lock() else {
             return false;
         };
@@ -162,5 +161,9 @@ impl ResponseBody {
         } else {
             false
         }
+    }
+
+    pub(crate) fn read_pending(&self) -> bool {
+        self.inner.read_lock.try_lock().is_err()
     }
 }

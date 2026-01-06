@@ -154,6 +154,14 @@ impl Response {
             EmptyAwaitable.into_bound_py_any(py)
         }
     }
+
+    #[getter]
+    fn _read_pending(&self) -> bool {
+        match &self.content {
+            Content::Http(content) => content.get().body.read_pending(),
+            Content::Custom { .. } => false,
+        }
+    }
 }
 
 #[pyclass(module = "pyqwest", frozen)]
