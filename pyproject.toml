@@ -9,13 +9,17 @@ classifiers = [
 
 [dependency-groups]
 dev = [
+    "aiohttp[speedups]",
     "asgiref",
-    "httpx",
+    "httpx[http2]",
     "maturin",
+    "niquests[http3,speedups]",
     "poethepoet",
+    "psutil",
     "pyright[nodejs]",
     "pytest",
     "pytest-asyncio",
+    "pytest-benchmark",
     "pytest-cov",
     "pyvoy",
     "ruff",
@@ -164,6 +168,11 @@ split-on-trailing-comma = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--import-mode=importlib"]
+addopts = [
+    "--import-mode=importlib",
+    "--benchmark-disable",
+    "--benchmark-sort=name",
+    "--benchmark-group-by=param:http_scheme,param:http_version",
+]
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
