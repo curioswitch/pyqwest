@@ -131,7 +131,7 @@ async def test_bidi(
     async with await client.execute(
         "POST",
         f"{url}/echo",
-        headers={"content-type": "text/plain", "te": "trailers"},
+        headers=Headers({"content-type": "text/plain", "te": "trailers"}),
         content=request_body(queue),
     ) as resp:
         assert resp.status == 200
@@ -239,10 +239,14 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
     assert resp.status == 200
     content = resp.content
 
+    task_started = asyncio.Event()
+
     async def read_content() -> bytes | None:
+        task_started.set()
         return await anext(content, None)
 
     read_task = asyncio.create_task(read_content())
+    await task_started.wait()
 
     await resp.close()
     chunk = await read_task
@@ -266,12 +270,19 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
 
         last_read: bytes | None = b"init"
 
+        thread_started = threading.Event()
+
         def read_content() -> bytes | None:
             nonlocal last_read
+            thread_started.set()
             last_read = next(content, None)
 
         read_thread = threading.Thread(target=read_content)
         read_thread.start()
+
+        thread_started.wait()
+        # Reduce the chance of closing the response before the other thread proceeds to read
+        asyncio.run(asyncio.sleep(0.1))
 
         resp.close()
         read_thread.join()
