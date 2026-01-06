@@ -86,7 +86,7 @@ impl HttpTransport {
             let res = req_builder
                 .send()
                 .await
-                .map_err(|e| pyerrors::from_reqwest(e, "Request failed"))?;
+                .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
             response.fill(res).await;
             Ok(response)
         })

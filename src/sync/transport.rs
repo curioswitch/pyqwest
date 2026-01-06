@@ -80,7 +80,7 @@ impl SyncHttpTransport {
                     let _ = tx.send(Ok(response));
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(pyerrors::from_reqwest(e, "Request failed")));
+                    let _ = tx.send(Err(pyerrors::from_reqwest(&e, "Request failed")));
                 }
             }
         });
