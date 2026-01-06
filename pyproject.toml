@@ -13,7 +13,7 @@ dev = [
     "asgiref",
     "httpx[http2]",
     "maturin",
-    "niquests[http3,speedups]",
+    "niquests[http3]",
     "poethepoet",
     "psutil",
     "pyright[nodejs]",
