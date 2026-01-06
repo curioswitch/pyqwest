@@ -31,9 +31,10 @@ async def test_request_content_bytes():
     assert request.method == "DELETE"
     assert request.url == "https://example.com/resource?id=123"
     assert request.headers["authorization"] == "Bearer token"
-    content = request.content
-    assert await anext(content) == b"Sample body"
-    assert await anext(content, None) is None
+    chunks = []
+    async for chunk in request.content:
+        chunks.append(chunk)
+    assert chunks == [b"Sample body"]
 
 
 @pytest.mark.asyncio
@@ -86,9 +87,10 @@ def test_sync_request_content_bytes():
     assert request.method == "DELETE"
     assert request.url == "https://example.com/resource?id=123"
     assert request.headers["authorization"] == "Bearer token"
-    content = request.content
-    assert next(content) == b"Sample body"
-    assert next(content, None) is None
+    chunks = []
+    for chunk in request.content:
+        chunks.append(chunk)
+    assert chunks == [b"Sample body"]
 
 
 def test_sync_request_content_iterator():
