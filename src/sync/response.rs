@@ -1,7 +1,9 @@
 use bytes::Bytes;
 use pyo3::{
-    exceptions::PyRuntimeError, pyclass, pymethods, Bound, IntoPyObjectExt as _, Py, PyAny,
-    PyResult, Python,
+    exceptions::PyRuntimeError,
+    pyclass, pymethods,
+    types::{PyAnyMethods as _, PyBytes, PyTuple},
+    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
@@ -121,10 +123,21 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn content(&self, py: Python<'_>) -> Py<PyAny> {
+    fn content(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.content {
-            Content::Http(content) => content.clone_ref(py).into_any(),
-            Content::Custom { content, .. } => content.clone_ref(py),
+            Content::Http(content) => Ok(content.clone_ref(py).into_any()),
+            Content::Custom { content, .. } => {
+                let content = content.bind(py);
+                if let Ok(bytes) = content.cast::<PyBytes>() {
+                    Ok(PyTuple::new(py, [bytes])?
+                        .into_any()
+                        .try_iter()?
+                        .into_any()
+                        .unbind())
+                } else {
+                    Ok(content.clone().into_any().unbind())
+                }
+            }
         }
     }
 

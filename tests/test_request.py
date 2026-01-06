@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+import pytest
+
+from pyqwest import Headers, Request, SyncRequest
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
+
+
+@pytest.mark.asyncio
+async def test_request_minimal():
+    request = Request(method="GET", url="https://example.com/")
+    assert request.method == "GET"
+    assert request.url == "https://example.com/"
+    assert request.headers == Headers()
+    assert await anext(request.content, None) is None
+
+
+@pytest.mark.asyncio
+async def test_request_content_bytes():
+    request = Request(
+        method="DELETE",
+        url="https://example.com/resource?id=123",
+        headers=Headers({"authorization": "Bearer token"}),
+        content=b"Sample body",
+    )
+
+    assert request.method == "DELETE"
+    assert request.url == "https://example.com/resource?id=123"
+    assert request.headers["authorization"] == "Bearer token"
+    content = request.content
+    assert await anext(content) == b"Sample body"
+    assert await anext(content, None) is None
+
+
+@pytest.mark.asyncio
+async def test_request_content_iterator():
+    async def content() -> AsyncIterator[bytes]:
+        yield b"Part 1, "
+        yield b"Part 2."
+
+    request = Request(
+        method="DELETE", url="https://example.com/resource?id=123", content=content()
+    )
+
+    assert request.method == "DELETE"
+    assert request.url == "https://example.com/resource?id=123"
+    assert request.headers == {}
+    parts = []
+    async for chunk in request.content:
+        parts.append(chunk)
+    assert parts == [b"Part 1, ", b"Part 2."]
+
+
+@pytest.mark.asyncio
+async def test_request_content_invalid():
+    with pytest.raises(TypeError) as excinfo:
+        Request(
+            method="DELETE",
+            url="https://example.com/resource?id=123",
+            content=cast("bytes", "invalid"),
+        )
+
+    assert str(excinfo.value) == "Content must be bytes or an async iterator of bytes"
+
+
+def test_sync_request_minimal():
+    request = SyncRequest(method="GET", url="https://example.com/")
+    assert request.method == "GET"
+    assert request.url == "https://example.com/"
+    assert request.headers == Headers()
+    assert next(request.content, None) is None
+
+
+def test_sync_request_content_bytes():
+    request = SyncRequest(
+        method="DELETE",
+        url="https://example.com/resource?id=123",
+        headers=Headers({"authorization": "Bearer token"}),
+        content=b"Sample body",
+    )
+
+    assert request.method == "DELETE"
+    assert request.url == "https://example.com/resource?id=123"
+    assert request.headers["authorization"] == "Bearer token"
+    content = request.content
+    assert next(content) == b"Sample body"
+    assert next(content, None) is None
+
+
+def test_sync_request_content_iterator():
+    def content() -> Iterator[bytes]:
+        yield b"Part 1, "
+        yield b"Part 2."
+
+    request = SyncRequest(
+        method="DELETE", url="https://example.com/resource?id=123", content=content()
+    )
+
+    assert request.method == "DELETE"
+    assert request.url == "https://example.com/resource?id=123"
+    assert request.headers == {}
+    parts = []
+    for chunk in request.content:
+        parts.append(chunk)
+    assert parts == [b"Part 1, ", b"Part 2."]
+
+
+def test_sync_request_content_invalid():
+    with pytest.raises(TypeError) as excinfo:
+        SyncRequest(
+            method="DELETE",
+            url="https://example.com/resource?id=123",
+            content=cast("bytes", 10),
+        )
+
+    assert str(excinfo.value) == "'int' object is not iterable"

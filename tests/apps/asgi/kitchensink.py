@@ -12,6 +12,8 @@ async def _echo(
     echoed_headers = [
         (f"x-echo-{name.decode()}".encode(), value) for name, value in scope["headers"]
     ]
+    echoed_headers.append((b"x-echo-query-string", scope["query_string"]))
+    echoed_headers.append((b"x-echo-method", scope["method"].encode()))
     await send(
         {
             "type": "http.response.start",
