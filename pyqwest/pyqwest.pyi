@@ -199,8 +199,21 @@ class HTTPTransport:
         self,
         *,
         tls_ca_cert: bytes | None = None,
+        tls_key: bytes | None = None,
+        tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Creates a new HTTPTransport object.
+
+        Args:
+            tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
+            tls_key: The client private key to identify the client for mTLS connections.
+                     tls_cert must also be set.
+            tls_cert: The client certificate to identify the client for mTLS connections.
+                      tls_key must also be set.
+            http_version: The HTTP version to use for requests.
+        """
+
     async def __aenter__(self) -> HTTPTransport:
         """Enters the context manager for the transport to automatically close it when
         leaving.
@@ -349,8 +362,21 @@ class SyncHTTPTransport:
         self,
         *,
         tls_ca_cert: bytes | None = None,
+        tls_key: bytes | None = None,
+        tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Creates a new SyncHTTPTransport object.
+
+        Args:
+            tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
+            tls_key: The client private key to identify the client for mTLS connections.
+                     tls_cert must also be set.
+            tls_cert: The client certificate to identify the client for mTLS connections.
+                      tls_key must also be set.
+            http_version: The HTTP version to use for requests.
+        """
+
     def __enter__(self) -> SyncHTTPTransport:
         """Enters the context manager for the transport to automatically
         close it when leaving.

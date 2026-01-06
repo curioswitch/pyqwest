@@ -25,7 +25,7 @@ impl SyncClient {
                 Transport::Custom(transport.unbind())
             }
         } else {
-            Transport::Http(SyncHttpTransport::new(None, None)?)
+            Transport::Http(SyncHttpTransport::new(None, None, None, None)?)
         };
         Ok(Self { transport })
     }
