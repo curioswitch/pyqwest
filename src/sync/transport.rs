@@ -22,13 +22,17 @@ pub struct SyncHttpTransport {
 #[pymethods]
 impl SyncHttpTransport {
     #[new]
-    #[pyo3(signature = (*, tls_ca_cert = None, http_version = None))]
+    #[pyo3(signature = (*, tls_ca_cert = None, tls_key = None, tls_cert = None, http_version = None))]
     pub(crate) fn new(
         tls_ca_cert: Option<&[u8]>,
+        tls_key: Option<&[u8]>,
+        tls_cert: Option<&[u8]>,
         http_version: Option<Bound<'_, HTTPVersion>>,
     ) -> PyResult<Self> {
         let (client, http3) = new_reqwest_client(ClientParams {
             tls_ca_cert,
+            tls_key,
+            tls_cert,
             http_version,
         })?;
         Ok(Self {

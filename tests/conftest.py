@@ -23,8 +23,12 @@ class Certs:
 
 
 @pytest.fixture(scope="session")
-def certs() -> Certs:
-    ca = trustme.CA()
+def ca() -> trustme.CA:
+    return trustme.CA()
+
+
+@pytest.fixture(scope="session")
+def certs(ca: trustme.CA) -> Certs:
     # Workaround https://github.com/seanmonstar/reqwest/issues/2911
     server = ca.issue_cert("127.0.0.1")
     return Certs(
@@ -48,6 +52,8 @@ async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
         tls_port=tls_port,
         tls_key=certs.server_key,
         tls_cert=certs.server_cert,
+        tls_ca_cert=certs.ca,
+        tls_require_client_certificate=False,
         lifespan=False,
         stdout=None,
         stderr=None,

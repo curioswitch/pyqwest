@@ -25,7 +25,7 @@ impl Client {
                 Transport::Custom(transport.unbind())
             }
         } else {
-            Transport::Http(HttpTransport::new(None, None)?)
+            Transport::Http(HttpTransport::new(None, None, None, None)?)
         };
         Ok(Self { transport })
     }

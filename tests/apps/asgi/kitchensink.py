@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, HTTPScope
@@ -14,6 +14,12 @@ async def _echo(
     ]
     echoed_headers.append((b"x-echo-query-string", scope["query_string"]))
     echoed_headers.append((b"x-echo-method", scope["method"].encode()))
+    if (extensions := scope["extensions"]) and (
+        tls := cast("dict | None", extensions.get("tls"))
+    ):
+        echoed_headers.append(
+            (b"x-echo-tls-client-name", str(tls.get("client_cert_name", "")).encode())
+        )
     await send(
         {
             "type": "http.response.start",
