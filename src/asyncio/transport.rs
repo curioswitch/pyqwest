@@ -9,6 +9,7 @@ use crate::asyncio::awaitable::{EmptyAwaitable, ValueAwaitable};
 use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
 use crate::common::HTTPVersion;
+use crate::shared::pyerrors;
 use crate::shared::transport::{new_reqwest_client, ClientParams};
 
 #[pyclass(module = "pyqwest", name = "HTTPTransport", frozen)]
@@ -79,12 +80,13 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let req_builder = request.as_reqwest_builder(py, client, self.http3)?;
+        let req_builder = request.new_reqwest_builder(py, client, self.http3)?;
         let mut response = Response::pending(py)?;
         future_into_py(py, async move {
-            let res = req_builder.send().await.map_err(|e| {
-                PyRuntimeError::new_err(format!("Request failed: {:+}", errors::fmt(&e)))
-            })?;
+            let res = req_builder
+                .send()
+                .await
+                .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
             response.fill(res).await;
             Ok(response)
         })

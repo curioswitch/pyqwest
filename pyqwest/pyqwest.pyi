@@ -188,6 +188,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        timeout: float | None = None,
     ) -> Response: ...
 
 class Transport(Protocol):
@@ -224,6 +225,7 @@ class Request:
         url: str,
         headers: Headers | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Creates a new Request object.
 
@@ -232,6 +234,7 @@ class Request:
             url: The request URL.
             headers: The request headers.
             content: The request content.
+            timeout: The timeout for the request in seconds.
         """
 
     @property
@@ -249,6 +252,10 @@ class Request:
     @property
     def content(self) -> AsyncIterator[bytes]:
         """Returns an async iterator over the request content."""
+
+    @property
+    def timeout(self) -> float | None:
+        """Returns the timeout for the request in seconds, or None if not set."""
 
 class Response:
     def __init__(
@@ -331,6 +338,7 @@ class SyncClient:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        timeout: float | None = None,
     ) -> SyncResponse: ...
 
 class SyncTransport(Protocol):
@@ -367,6 +375,7 @@ class SyncRequest:
         url: str,
         headers: Headers | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Creates a new SyncRequest object.
 
@@ -375,6 +384,7 @@ class SyncRequest:
             url: The request URL.
             headers: The request headers.
             content: The request content.
+            timeout: The timeout for the request in seconds.
         """
 
     @property
@@ -392,6 +402,10 @@ class SyncRequest:
     @property
     def content(self) -> Iterator[bytes]:
         """Returns an iterator over the request content."""
+
+    @property
+    def timeout(self) -> float | None:
+        """Returns the timeout for the request in seconds, or None if not set."""
 
 class SyncResponse:
     def __init__(

@@ -20,6 +20,7 @@ async def test_request_minimal():
     async for chunk in request.content:
         chunks.append(chunk)
     assert chunks == []
+    assert request.timeout is None
 
 
 @pytest.mark.asyncio
@@ -29,6 +30,7 @@ async def test_request_content_bytes():
         url="https://example.com/resource?id=123",
         headers=Headers({"authorization": "Bearer token"}),
         content=b"Sample body",
+        timeout=30.0,
     )
 
     assert request.method == "DELETE"
@@ -38,6 +40,7 @@ async def test_request_content_bytes():
     async for chunk in request.content:
         chunks.append(chunk)
     assert chunks == [b"Sample body"]
+    assert request.timeout == 30.0
 
 
 @pytest.mark.asyncio
@@ -78,6 +81,7 @@ def test_sync_request_minimal():
     assert request.headers == Headers()
     chunks = list(request.content)
     assert chunks == []
+    assert request.timeout is None
 
 
 def test_sync_request_content_bytes():
@@ -86,6 +90,7 @@ def test_sync_request_content_bytes():
         url="https://example.com/resource?id=123",
         headers=Headers({"authorization": "Bearer token"}),
         content=b"Sample body",
+        timeout=30.0,
     )
 
     assert request.method == "DELETE"
@@ -93,6 +98,7 @@ def test_sync_request_content_bytes():
     assert request.headers["authorization"] == "Bearer token"
     chunks = list(request.content)
     assert chunks == [b"Sample body"]
+    assert request.timeout == 30.0
 
 
 def test_sync_request_content_iterator():

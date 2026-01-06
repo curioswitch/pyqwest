@@ -7,7 +7,7 @@ use http_body_util::BodyExt as _;
 use pyo3::{exceptions::PyRuntimeError, Bound, Py, PyResult, Python};
 use tokio::sync::{watch, Mutex};
 
-use crate::{common::HTTPVersion, headers::Headers};
+use crate::{common::HTTPVersion, headers::Headers, shared::pyerrors};
 
 pub(crate) struct ResponseHead {
     status: http::StatusCode,
@@ -119,12 +119,7 @@ impl ResponseBody {
             let Some(res) = res else {
                 return Ok(None);
             };
-            let frame = res.map_err(|e| {
-                PyRuntimeError::new_err(format!(
-                    "Error reading HTTP body frame: {:+}",
-                    errors::fmt(&e)
-                ))
-            })?;
+            let frame = res.map_err(|e| pyerrors::from_reqwest(&e, "Error reading content"))?;
             // A frame is either data or trailers.
             match frame.into_data().map_err(Frame::into_trailers) {
                 Ok(buf) => {

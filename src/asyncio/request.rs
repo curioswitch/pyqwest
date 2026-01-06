@@ -27,13 +27,14 @@ pub struct Request {
 #[pymethods]
 impl Request {
     #[new]
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
     pub(crate) fn new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
         let content: Option<Content> = match content {
@@ -41,7 +42,7 @@ impl Request {
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers)?,
+            head: RequestHead::new(method, url, headers, timeout)?,
             content,
         })
     }
@@ -72,10 +73,15 @@ impl Request {
             None => EmptyAsyncIterator.into_bound_py_any(py),
         }
     }
+
+    #[getter]
+    fn timeout(&self) -> Option<f64> {
+        self.head.timeout()
+    }
 }
 
 impl Request {
-    pub(crate) fn as_reqwest_builder(
+    pub(crate) fn new_reqwest_builder(
         &self,
         py: Python<'_>,
         client: &reqwest::Client,

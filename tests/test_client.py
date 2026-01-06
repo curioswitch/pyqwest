@@ -13,6 +13,7 @@ from pyqwest import Client, Headers, HTTPVersion, SyncClient
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
+
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http", "https"], indirect=True),
     pytest.mark.parametrize("http_version", ["h1", "h2", "h3", "auto"], indirect=True),

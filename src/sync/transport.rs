@@ -7,6 +7,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::common::HTTPVersion;
+use crate::shared::pyerrors;
 use crate::shared::transport::{new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::SyncResponse;
@@ -79,10 +80,7 @@ impl SyncHttpTransport {
                     let _ = tx.send(Ok(response));
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(PyRuntimeError::new_err(format!(
-                        "Request failed: {:+}",
-                        errors::fmt(&e)
-                    ))));
+                    let _ = tx.send(Err(pyerrors::from_reqwest(&e, "Request failed")));
                 }
             }
         });

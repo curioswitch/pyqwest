@@ -21,13 +21,14 @@ pub struct SyncRequest {
 #[pymethods]
 impl SyncRequest {
     #[new]
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
     pub(crate) fn new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
         let content: Option<Content> = match content {
@@ -35,7 +36,7 @@ impl SyncRequest {
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers)?,
+            head: RequestHead::new(method, url, headers, timeout)?,
             content,
         })
     }
@@ -64,6 +65,11 @@ impl SyncRequest {
             Some(Content::Iter(iter)) => Ok(iter.bind(py).clone().into_any()),
             None => Ok(PyTuple::empty(py).into_any().try_iter()?.into_any()),
         }
+    }
+
+    #[getter]
+    fn timeout(&self) -> Option<f64> {
+        self.head.timeout()
     }
 }
 
