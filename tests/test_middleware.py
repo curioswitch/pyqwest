@@ -23,6 +23,7 @@ from pyqwest import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
+
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
     pytest.mark.parametrize("http_version", ["h2"], indirect=True),

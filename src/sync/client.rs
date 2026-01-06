@@ -30,7 +30,7 @@ impl SyncClient {
         Ok(Self { transport })
     }
 
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
     fn execute<'py>(
         &self,
         py: Python<'py>,
@@ -38,6 +38,7 @@ impl SyncClient {
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let headers = if let Some(headers) = headers {
             if let Ok(headers) = headers.cast::<Headers>() {
@@ -48,7 +49,7 @@ impl SyncClient {
         } else {
             None
         };
-        let request = SyncRequest::new(py, method, url, headers, content)?;
+        let request = SyncRequest::new(py, method, url, headers, content, timeout)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),
             Transport::Custom(transport) => transport
