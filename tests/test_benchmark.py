@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
+import sys
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -87,6 +88,8 @@ async def benchmark_client_async(
             ) as client:
                 yield client
         case "niquests":
+            # Errors like File descriptor 17 is used by transport
+            pytest.skip("niquests seems to not be reliable")
             if http_version == HTTPVersion.HTTP3:
                 pytest.skip("TODO: Debug SNI 127.0.0.1 issue")
             async with niquests.AsyncSession(
@@ -100,6 +103,9 @@ async def benchmark_client_async(
             yield async_client
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 11), reason="asyncio.Runner requires Python 3.11+"
+)
 def test_benchmark_async(
     benchmark: pytest_benchmark.fixture.BenchmarkFixture,
     benchmark_client_async: Client
