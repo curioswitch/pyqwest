@@ -12,5 +12,13 @@ U = TypeVar("U")
 async def wrap_body_gen(
     gen: AsyncIterator[T], wrap_fn: Callable[[T], U]
 ) -> AsyncIterator[U]:
-    async for item in gen:
-        yield wrap_fn(item)
+    try:
+        async for item in gen:
+            yield wrap_fn(item)
+    finally:
+        try:
+            aclose = gen.aclose  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+        else:
+            await aclose()
