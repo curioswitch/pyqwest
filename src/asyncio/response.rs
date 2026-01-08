@@ -9,7 +9,7 @@ use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::{
     asyncio::awaitable::{EmptyAsyncIterator, EmptyAwaitable, ValueAsyncIterator, ValueAwaitable},
-    common::HTTPVersion,
+    common::{FullResponse, HTTPVersion},
     headers::Headers,
     shared::response::{ResponseBody, ResponseHead, RustFullResponse},
 };
@@ -24,7 +24,7 @@ enum Content {
 
 #[pyclass(frozen)]
 pub(crate) struct Response {
-    head: ResponseHead,
+    pub(super) head: ResponseHead,
     content: Content,
 }
 
@@ -49,6 +49,22 @@ impl Response {
             content.get().body.fill(body).await;
         } else {
             unreachable!("fill is only called on HTTP responses");
+        }
+    }
+
+    pub(super) async fn into_full_response(self) -> RustFullResponse {
+        let status = self.head.status();
+        let headers = self.head.headers;
+        let Content::Http(content) = self.content else {
+            unreachable!("into_full_response is only called on HTTP responses")
+        };
+        let body = content.get().body.clone();
+        let (bytes, trailers) = body.read_full().await.unwrap();
+        RustFullResponse {
+            status,
+            headers,
+            body: bytes,
+            trailers,
         }
     }
 }
@@ -160,7 +176,17 @@ impl Response {
                 })
             }
             Content::Custom { content, trailers } => {
-                new_full_response(py, status, &headers, content, trailers)
+                if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
+                    FullResponse::py_new(
+                        status,
+                        headers,
+                        bytes.clone().unbind(),
+                        trailers.clone_ref(py),
+                    )
+                    .into_bound_py_any(py)
+                } else {
+                    new_full_response(py, status, &headers, content, trailers)
+                }
             }
         }
     }

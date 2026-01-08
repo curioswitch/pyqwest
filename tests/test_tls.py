@@ -47,7 +47,7 @@ async def test_mtls(
         ) as transport:
             client = SyncClient(transport)
             resp = await asyncio.to_thread(
-                client.execute, method, url, headers, req_content
+                client.stream, method, url, headers, req_content
             )
             content = b"".join(resp.content)
     else:
@@ -58,7 +58,7 @@ async def test_mtls(
             http_version=http_version,
         ) as transport:
             client = Client(transport)
-            resp = await client.execute(method, url, headers, req_content)
+            resp = await client.stream(method, url, headers, req_content)
             content = b""
             async for chunk in resp.content:
                 content += chunk

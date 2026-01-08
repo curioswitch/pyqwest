@@ -19,14 +19,14 @@ class Headers:
     This class behaves like a dictionary with case-insensitive keys and
     string values. Standard dictionary access will act as if keys can only
     have a single value. The add method can be used to It additionally can be used to store
-    multiple values for the same key by using the [`add`][] method. Iterating over
+    multiple values for the same key by using the add method. Iterating over
     values or items will return all values, including duplicates.
     """
 
     def __init__(
         self, items: Mapping[str, str] | Iterable[tuple[str, str]] | None = None
     ) -> None:
-        """Creates a new [`Headers`][] object.
+        """Creates a new Headers object.
 
         Args:
             items: Initial headers to add.
@@ -176,12 +176,127 @@ class Headers:
         """
 
 class HTTPVersion:
+    """An enumeration of HTTP versions."""
+
     HTTP1: HTTPVersion
+    """HTTP/1.1"""
+
     HTTP2: HTTPVersion
+    """HTTP/2"""
+
     HTTP3: HTTPVersion
+    """HTTP/3"""
 
 class Client:
-    def __init__(self, transport: Transport | None = None) -> None: ...
+    def __init__(self, transport: Transport | None = None) -> None:
+        """Creates a new asynchronous HTTP client.
+
+        Args:
+            transport: The transport to use for requests. If None, a default
+                       transport will be used.
+        """
+
+    async def get(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a GET HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def post(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a POST HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def delete(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a DELETE HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def head(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a HEAD HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def options(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a OPTIONS HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def patch(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a PATCH HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def put(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a PUT HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
     async def execute(
         self,
         method: str,
@@ -189,7 +304,34 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> Response: ...
+    ) -> FullResponse:
+        """Executes an HTTP request, returning the full buffered response.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL.
+            headers: The request headers.
+            content: The request content.
+            timeout: The timeout for the request in seconds.
+        """
+
+    async def stream(
+        self,
+        method: str,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | AsyncIterator[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> Response:
+        """Executes an HTTP request, allowing the response content to be streamed.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL.
+            headers: The request headers.
+            content: The request content.
+            timeout: The timeout for the request in seconds.
+        """
 
 class Transport(Protocol):
     async def execute(self, request: Request) -> Response: ...
@@ -280,7 +422,7 @@ class Response:
         content: bytes | AsyncIterator[bytes] | None = None,
         trailers: Headers | None = None,
     ) -> None:
-        """Creates a new [`Response`][] object.
+        """Creates a new Response object.
 
         Care must be taken if your service uses trailers and you override content.
         Trailers will not be received without fully consuming the original response content.
@@ -333,7 +475,7 @@ class Response:
         """Returns the response trailers.
 
         Because trailers complete the response, this will only be filled after fully
-        consuming the [`content`][] iterator.
+        consuming the content iterator.
         """
 
     async def read_full(self) -> FullResponse:
@@ -352,7 +494,115 @@ class Response:
         """
 
 class SyncClient:
-    def __init__(self, transport: SyncTransport | None = None) -> None: ...
+    def __init__(self, transport: SyncTransport | None = None) -> None:
+        """Creates a new synchronous HTTP client.
+
+        Args:
+            transport: The transport to use for requests. If None, a default
+                       transport will be used.
+        """
+
+    def get(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a GET HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def post(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a POST HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def delete(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a DELETE HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def head(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a HEAD HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def options(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a OPTIONS HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def patch(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a PATCH HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def put(
+        self,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> FullResponse:
+        """Executes a PUT HTTP request.
+
+        Args:
+            url: The request URL.
+            headers: The request headers.
+            timeout: The timeout for the request in seconds.
+        """
+
     def execute(
         self,
         method: str,
@@ -360,7 +610,34 @@ class SyncClient:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
         timeout: float | None = None,
-    ) -> SyncResponse: ...
+    ) -> FullResponse:
+        """Executes an HTTP request, returning the full buffered response.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL.
+            headers: The request headers.
+            content: The request content.
+            timeout: The timeout for the request in seconds.
+        """
+
+    def stream(
+        self,
+        method: str,
+        url: str,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        content: bytes | Iterable[bytes] | None = None,
+        timeout: float | None = None,
+    ) -> SyncResponse:
+        """Executes an HTTP request, allowing the response content to be streamed.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL.
+            headers: The request headers.
+            content: The request content.
+            timeout: The timeout for the request in seconds.
+        """
 
 class SyncTransport(Protocol):
     def execute(self, request: SyncRequest) -> SyncResponse: ...
@@ -451,7 +728,7 @@ class SyncResponse:
         content: bytes | Iterable[bytes] | None = None,
         trailers: Headers | None = None,
     ) -> None:
-        """Creates a new [`SyncResponse`][] object.
+        """Creates a new SyncResponse object.
 
         Care must be taken if your service uses trailers and you override content.
         Trailers will not be received without fully consuming the original response content.
@@ -504,7 +781,7 @@ class SyncResponse:
         """Returns the response trailers.
 
         Because trailers complete the response, this will only be filled after fully
-        consuming the [`content`][] iterator.
+        consuming the content iterator.
         """
 
     def read_full(self) -> FullResponse:

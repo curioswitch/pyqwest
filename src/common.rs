@@ -21,7 +21,7 @@ pub(crate) struct FullResponse {
 #[pymethods]
 impl FullResponse {
     #[new]
-    fn py_new(
+    pub(crate) fn py_new(
         status: u16,
         headers: Py<Headers>,
         content: Py<PyBytes>,

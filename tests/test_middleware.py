@@ -62,9 +62,7 @@ async def test_override_request(url: str, transport: HTTPTransport | SyncHTTPTra
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(
-            client.execute, method, url, headers, req_content
-        )
+        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
         content = b"".join(resp.content)
     else:
 
@@ -80,7 +78,7 @@ async def test_override_request(url: str, transport: HTTPTransport | SyncHTTPTra
                 return await transport.execute(request)
 
         client = Client(Override())
-        resp = await client.execute(method, url, headers, req_content)
+        resp = await client.stream(method, url, headers, req_content)
         content = await read_content(resp.content)
 
     assert resp.status == 200
@@ -123,9 +121,7 @@ async def test_override_response(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(
-            client.execute, method, url, headers, req_content
-        )
+        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
         content = b"".join(resp.content)
     else:
 
@@ -146,7 +142,7 @@ async def test_override_response(
                 )
 
         client = Client(Override())
-        resp = await client.execute(method, url, headers, req_content)
+        resp = await client.stream(method, url, headers, req_content)
         content = await read_content(resp.content)
 
     assert resp.status == 201
@@ -185,9 +181,7 @@ async def test_override_response_content(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(
-            client.execute, method, url, headers, req_content
-        )
+        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
         content = b"".join(resp.content)
     else:
 
@@ -208,7 +202,7 @@ async def test_override_response_content(
                 )
 
         client = Client(Override())
-        resp = await client.execute(method, url, headers, req_content)
+        resp = await client.stream(method, url, headers, req_content)
         content = await read_content(resp.content)
 
     assert resp.status == 200
@@ -243,9 +237,7 @@ async def test_override_response_trailers(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(
-            client.execute, method, url, headers, req_content
-        )
+        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
         content = b"".join(resp.content)
     else:
 
@@ -262,7 +254,7 @@ async def test_override_response_trailers(
                 )
 
         client = Client(Override())
-        resp = await client.execute(method, url, headers, req_content)
+        resp = await client.stream(method, url, headers, req_content)
         content = await read_content(resp.content)
 
     assert resp.status == 200
@@ -270,4 +262,67 @@ async def test_override_response_trailers(
     assert resp.headers["x-echo-te"] == "trailers"
     assert resp.http_version == HTTPVersion.HTTP2
     assert content == b"Hello, World!"
+    assert resp.trailers["final-trailer"] == "bye"
+
+
+@pytest.mark.asyncio
+async def test_override_response_execute(
+    url: str, transport: HTTPTransport | SyncHTTPTransport
+):
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+    ]
+    req_content = b"Hello, World!"
+    if isinstance(transport, SyncHTTPTransport):
+
+        class SyncOverride(SyncTransport):
+            def execute(self, request: SyncRequest) -> SyncResponse:
+                return SyncResponse(
+                    status=201,
+                    http_version=HTTPVersion.HTTP3,
+                    headers=Headers(
+                        (
+                            ("override-1", "yes"),
+                            ("override-1", "definitely"),
+                            ("override-2", "sure"),
+                        )
+                    ),
+                    content=b"Overridden!",
+                    trailers=Headers({"final-trailer": "bye"}),
+                )
+
+        client = SyncClient(SyncOverride())
+
+        resp = await asyncio.to_thread(
+            client.execute, method, url, headers, req_content
+        )
+    else:
+
+        class Override(Transport):
+            async def execute(self, request: Request) -> Response:
+                return Response(
+                    status=201,
+                    http_version=HTTPVersion.HTTP3,
+                    headers=Headers(
+                        (
+                            ("override-1", "yes"),
+                            ("override-1", "definitely"),
+                            ("override-2", "sure"),
+                        )
+                    ),
+                    content=b"Overridden!",
+                    trailers=Headers({"final-trailer": "bye"}),
+                )
+
+        client = Client(Override())
+        resp = await client.execute(method, url, headers, req_content)
+
+    assert resp.status == 201
+    assert resp.headers.getall("override-1") == ["yes", "definitely"]
+    assert resp.headers["override-2"] == "sure"
+    assert resp.content == b"Overridden!"
     assert resp.trailers["final-trailer"] == "bye"

@@ -49,7 +49,7 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
 
                 def run():
                     queue = Queue()
-                    resp = client.execute(
+                    resp = client.stream(
                         method, url, content=sync_request_body(queue), timeout=0
                     )
                     next(resp.content)
@@ -57,7 +57,7 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
                 await asyncio.to_thread(run)
             else:
                 queue = asyncio.Queue()
-                resp = await client.execute(
+                resp = await client.stream(
                     method, url, content=request_body(queue), timeout=0
                 )
                 await anext(resp.content)
@@ -74,7 +74,7 @@ async def test_request_content_timeout(client: Client | SyncClient, url: str) ->
 
             def run():
                 queue = Queue()
-                resp = client.execute(
+                resp = client.stream(
                     method, url, content=sync_request_body(queue), timeout=0.03
                 )
                 assert resp.status == 200
@@ -83,7 +83,7 @@ async def test_request_content_timeout(client: Client | SyncClient, url: str) ->
             await asyncio.to_thread(run)
         else:
             queue = asyncio.Queue()
-            resp = await client.execute(
+            resp = await client.stream(
                 method, url, content=request_body(queue), timeout=0.03
             )
             assert resp.status == 200
@@ -101,8 +101,8 @@ async def test_connection_error(client: Client | SyncClient, url: str) -> None:
         if isinstance(client, SyncClient):
 
             def run():
-                client.execute(method, url)
+                client.stream(method, url)
 
             await asyncio.to_thread(run)
         else:
-            await client.execute(method, url)
+            await client.stream(method, url)

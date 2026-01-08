@@ -95,4 +95,28 @@ impl HttpTransport {
             Ok(response)
         })
     }
+
+    pub(super) fn do_execute_and_read_full<'py>(
+        &self,
+        py: Python<'py>,
+        request: &Request,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client_guard = self.client.load();
+        let Some(client) = client_guard.as_ref() else {
+            return Err(PyRuntimeError::new_err(
+                "Executing request on already closed transport",
+            ));
+        };
+        let req_builder = request.new_reqwest_builder(py, client, self.http3)?;
+        let mut response = Response::pending(py)?;
+        future_into_py(py, async move {
+            let res = req_builder
+                .send()
+                .await
+                .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+            response.fill(res).await;
+            let full_response = response.into_full_response().await;
+            Ok(full_response)
+        })
+    }
 }

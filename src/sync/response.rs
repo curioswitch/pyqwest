@@ -142,7 +142,7 @@ impl SyncResponse {
         }
     }
 
-    fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    pub(super) fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let status = self.head.status();
         let headers = self.head.headers(py);
         match &self.content {
@@ -167,10 +167,14 @@ impl SyncResponse {
             }
             Content::Custom { content, trailers } => {
                 let mut body = Vec::new();
-                for chunk in content.bind(py).try_iter()? {
-                    let chunk_py = chunk?;
-                    let bytes = chunk_py.cast::<PyBytes>()?;
+                if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
                     body.extend_from_slice(bytes.as_bytes());
+                } else {
+                    for chunk in content.bind(py).try_iter()? {
+                        let chunk_py = chunk?;
+                        let bytes = chunk_py.cast::<PyBytes>()?;
+                        body.extend_from_slice(bytes.as_bytes());
+                    }
                 }
                 FullResponse {
                     status,

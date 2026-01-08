@@ -1,3 +1,4 @@
+use pyo3::sync::PyOnceLock;
 use pyo3::{intern, prelude::*};
 
 use crate::asyncio::request::Request;
@@ -30,8 +31,121 @@ impl Client {
         Ok(Self { transport })
     }
 
+    #[pyo3(signature = (url, headers=None, timeout=None))]
+    fn get<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "GET", url, headers, None, timeout)
+    }
+
+    #[pyo3(signature = (url, headers=None, content=None, timeout=None))]
+    fn post<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "POST", url, headers, content, timeout)
+    }
+
+    #[pyo3(signature = (url, headers=None, timeout=None))]
+    fn delete<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "DELETE", url, headers, None, timeout)
+    }
+
+    #[pyo3(signature = (url, headers=None, timeout=None))]
+    fn head<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "HEAD", url, headers, None, timeout)
+    }
+
+    #[pyo3(signature = (url, headers=None, timeout=None))]
+    fn options<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "OPTIONS", url, headers, None, timeout)
+    }
+
+    #[pyo3(signature = (url, headers=None, content=None, timeout=None))]
+    fn patch<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "PATCH", url, headers, content, timeout)
+    }
+
+    #[pyo3(signature = (url, headers=None, content=None, timeout=None))]
+    fn put<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.execute(py, "PUT", url, headers, content, timeout)
+    }
+
     #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
     fn execute<'py>(
+        &self,
+        py: Python<'py>,
+        method: &str,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let headers = if let Some(headers) = headers {
+            if let Ok(headers) = headers.cast::<Headers>() {
+                Some(headers.clone())
+            } else {
+                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
+            }
+        } else {
+            None
+        };
+        let request = Request::new(py, method, url, headers, content, timeout)?;
+        match &self.transport {
+            Transport::Http(transport) => transport.do_execute_and_read_full(py, &request),
+            Transport::Custom(transport) => {
+                static EXECUTE_AND_READ_FULL: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+                let execute_and_read_full = EXECUTE_AND_READ_FULL.get_or_try_init(py, || {
+                    let module = py.import("pyqwest._glue")?;
+                    module.getattr("execute_and_read_full").map(Bound::unbind)
+                })?;
+                execute_and_read_full.bind(py).call1((transport, request))
+            }
+        }
+    }
+
+    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
+    fn stream<'py>(
         &self,
         py: Python<'py>,
         method: &str,
