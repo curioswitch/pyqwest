@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 from queue import Queue
@@ -303,6 +304,35 @@ async def test_execute(client: Client | SyncClient, url: str) -> None:
     assert resp.headers["x-echo-x-hello"] == "rust"
     assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
     assert resp.content == b"Hello, World!"
+    assert resp.text() == "Hello, World!"
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_json(client: Client | SyncClient, url: str) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+    ]
+    req_content_obj = {"message": "Hello, World!"}
+    req_content = json.dumps(req_content_obj).encode("utf-8")
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(
+            client.execute, method, url, headers, req_content
+        )
+    else:
+        resp = await client.execute(method, url, headers, req_content)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "POST"
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.headers["x-echo-x-hello"] == "rust"
+    assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
+    assert resp.content == req_content
+    assert resp.json() == req_content_obj
     assert len(resp.trailers) == 0
 
 

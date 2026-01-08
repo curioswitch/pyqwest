@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pyqwest import Headers, HTTPVersion, Response, SyncResponse
+from pyqwest import FullResponse, Headers, HTTPVersion, Response, SyncResponse
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -131,3 +131,25 @@ def test_sync_response_content_iterator_read_full():
     assert response.headers == {"application": "json"}
     assert response.content == b"Part 1, Part 2."
     assert response.trailers == {"trailer": "info"}
+
+
+def test_full_response_decode_utf8_no_content_type():
+    response = FullResponse(200, Headers(), "日本語".encode(), Headers())
+    assert response.text() == "日本語"
+
+
+def test_full_response_decode_utf8_content_type_no_charset():
+    response = FullResponse(
+        200, Headers({"content-type": "text/plain"}), "日本語".encode(), Headers()
+    )
+    assert response.text() == "日本語"
+
+
+def test_full_response_decode_utf8_content_charset():
+    response = FullResponse(
+        200,
+        Headers({"content-type": "text/plain; charset=shift_jis"}),
+        "日本語".encode("shift_jis"),
+        Headers(),
+    )
+    assert response.text() == "日本語"

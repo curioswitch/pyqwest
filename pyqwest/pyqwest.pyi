@@ -9,9 +9,10 @@ from collections.abc import (
     ValuesView,
 )
 from types import TracebackType
-from typing import Protocol, TypeVar, overload
+from typing import Protocol, TypeAlias, TypeVar, overload
 
 _T = TypeVar("_T")
+JSON: TypeAlias = Mapping[str, JSON] | Sequence[JSON] | str | int | float | bool | None
 
 class Headers:
     """Container of HTTP headers.
@@ -827,3 +828,13 @@ class FullResponse:
     @property
     def trailers(self) -> Headers:
         """Returns the response trailers."""
+
+    def text(self) -> str:
+        """Returns the response content decoded as text.
+
+        The encoding for decoding is determined from the Content-Type header if present,
+        defaulting to UTF-8 otherwise.
+        """
+
+    def json(self) -> JSON:
+        """Parses and returns the response content as JSON."""
