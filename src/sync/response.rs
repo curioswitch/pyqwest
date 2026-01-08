@@ -3,8 +3,8 @@ use http::HeaderMap;
 use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyBytes, PyBytesMethods, PyTuple},
-    Bound, IntoPyObject as _, IntoPyObjectExt, Py, PyAny, PyResult, Python,
+    types::{PyAnyMethods as _, PyBytes, PyBytesMethods as _, PyTuple},
+    Bound, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
@@ -170,7 +170,7 @@ impl SyncResponse {
                 for chunk in content.bind(py).try_iter()? {
                     let chunk_py = chunk?;
                     let bytes = chunk_py.cast::<PyBytes>()?;
-                    body.extend_from_slice(bytes.as_bytes())
+                    body.extend_from_slice(bytes.as_bytes());
                 }
                 FullResponse {
                     status,
