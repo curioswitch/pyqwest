@@ -187,6 +187,83 @@ async def test_bidi_sync(
 
 
 @pytest.mark.asyncio
+async def test_large_body(
+    client: Client | SyncClient, url: str, http_version: HTTPVersion
+) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+        ("te", "trailers"),
+    ]
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(
+            client.execute, method, url, headers, [b"Hello!"] * 100
+        )
+        content = b"".join(resp.content)
+    else:
+
+        async def async_req_content() -> AsyncIterator[bytes]:
+            for _ in range(100):
+                yield b"Hello!"
+
+        resp = await client.execute(method, url, headers, async_req_content())
+        content = b""
+        async for chunk in resp.content:
+            content += chunk
+    assert resp.status == 200
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.headers["x-echo-x-hello"] == "rust"
+    assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
+    assert content == b"Hello!" * 100, len(content)
+    if supports_trailers(http_version, url):
+        assert resp.trailers["x-echo-trailer"] == "last info"
+    else:
+        assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_read_full(
+    client: Client | SyncClient, url: str, http_version: HTTPVersion
+) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+        ("te", "trailers"),
+    ]
+    if isinstance(client, SyncClient):
+
+        def run():
+            return client.execute(method, url, headers, [b"Hello!"] * 100).read_full()
+
+        resp = await asyncio.to_thread(run)
+    else:
+
+        async def async_req_content() -> AsyncIterator[bytes]:
+            for _ in range(100):
+                yield b"Hello!"
+
+        resp1 = await client.execute(method, url, headers, async_req_content())
+        resp = await resp1.read_full()
+    assert resp.status == 200
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.headers["x-echo-x-hello"] == "rust"
+    assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
+    assert resp.content == b"Hello!" * 100
+    if supports_trailers(http_version, url):
+        assert resp.trailers["x-echo-trailer"] == "last info"
+    else:
+        assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
 async def test_close_no_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()

@@ -37,6 +37,7 @@ fn pyqwest(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<asyncio::request::Request>()?;
     m.add_class::<asyncio::response::Response>()?;
     m.add_class::<asyncio::transport::HttpTransport>()?;
+    m.add_class::<common::FullResponse>()?;
     m.add_class::<common::HTTPVersion>()?;
     m.add_class::<headers::Headers>()?;
     m.add_class::<sync::client::SyncClient>()?;

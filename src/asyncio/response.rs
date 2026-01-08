@@ -1,6 +1,9 @@
 use pyo3::{
-    exceptions::PyStopAsyncIteration, pyclass, pymethods, types::PyBytes, Bound,
-    IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
+    exceptions::PyStopAsyncIteration,
+    pyclass, pymethods,
+    sync::PyOnceLock,
+    types::{PyAnyMethods as _, PyBytes},
+    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::future_into_py;
 
@@ -8,7 +11,7 @@ use crate::{
     asyncio::awaitable::{EmptyAsyncIterator, EmptyAwaitable, ValueAsyncIterator, ValueAwaitable},
     common::HTTPVersion,
     headers::Headers,
-    shared::response::{ResponseBody, ResponseHead},
+    shared::response::{ResponseBody, ResponseHead, RustFullResponse},
 };
 
 enum Content {
@@ -140,6 +143,28 @@ impl Response {
         }
     }
 
+    fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let status = self.head.status();
+        let headers = self.head.headers(py);
+        match &self.content {
+            Content::Http(content) => {
+                let body = content.get().body.clone();
+                future_into_py(py, async move {
+                    let (bytes, trailers) = body.read_full().await?;
+                    Ok(RustFullResponse {
+                        status,
+                        headers,
+                        body: bytes,
+                        trailers,
+                    })
+                })
+            }
+            Content::Custom { content, trailers } => {
+                new_full_response(py, status, &headers, content, trailers)
+            }
+        }
+    }
+
     fn close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         if let Content::Http(content) = &self.content {
             if content.get().body.try_close() {
@@ -186,4 +211,22 @@ impl ContentGenerator {
             }
         })
     }
+}
+
+fn new_full_response<'py>(
+    py: Python<'py>,
+    status: u16,
+    headers: &Py<Headers>,
+    content: &Py<PyAny>,
+    trailers: &Py<Headers>,
+) -> PyResult<Bound<'py, PyAny>> {
+    static NEW_FULL_RESPONSE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+    let new_full_response = NEW_FULL_RESPONSE.get_or_try_init(py, || {
+        let module = py.import("pyqwest._glue")?;
+        module.getattr("new_full_response").map(Bound::unbind)
+    })?;
+    new_full_response
+        .bind(py)
+        .call1((status, headers, content, trailers))
 }

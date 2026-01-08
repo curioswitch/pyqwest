@@ -1,15 +1,16 @@
 use bytes::Bytes;
+use http::HeaderMap;
 use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyBytes, PyTuple},
-    Bound, Py, PyAny, PyResult, Python,
+    types::{PyAnyMethods as _, PyBytes, PyBytesMethods, PyTuple},
+    Bound, IntoPyObject as _, IntoPyObjectExt, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::{
-    common::HTTPVersion,
+    common::{FullResponse, HTTPVersion},
     headers::Headers,
     shared::response::{ResponseBody, ResponseHead},
 };
@@ -137,6 +138,47 @@ impl SyncResponse {
                 } else {
                     Ok(content.clone().into_any().unbind())
                 }
+            }
+        }
+    }
+
+    fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let status = self.head.status();
+        let headers = self.head.headers(py);
+        match &self.content {
+            Content::Http(content) => {
+                let body = content.get().body.clone();
+                let (tx, rx) = oneshot::channel::<PyResult<(Bytes, HeaderMap)>>();
+                get_runtime().spawn(async move { tx.send(body.read_full().await) });
+                let (body, trailers) = py
+                    .detach(|| rx.blocking_recv())
+                    .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))??;
+                FullResponse {
+                    status,
+                    headers,
+                    content: PyBytes::new(py, &body).unbind(),
+                    trailers: {
+                        let py_trailers = Headers::empty();
+                        py_trailers.fill(trailers);
+                        py_trailers.into_pyobject(py)?.unbind()
+                    },
+                }
+                .into_bound_py_any(py)
+            }
+            Content::Custom { content, trailers } => {
+                let mut body = Vec::new();
+                for chunk in content.bind(py).try_iter()? {
+                    let chunk_py = chunk?;
+                    let bytes = chunk_py.cast::<PyBytes>()?;
+                    body.extend_from_slice(bytes.as_bytes())
+                }
+                FullResponse {
+                    status,
+                    headers,
+                    content: PyBytes::new(py, &body).unbind(),
+                    trailers: trailers.clone_ref(py),
+                }
+                .into_bound_py_any(py)
             }
         }
     }
