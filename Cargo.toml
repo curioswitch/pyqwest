@@ -37,3 +37,6 @@ url = "2.5.7"
 pedantic = "deny"
 
 unused_trait_names = "deny"
+
+[patch.crates-io]
+pyo3-async-runtimes = { git = "https://github.com/anuraaga/pyo3-async-runtimes", branch = "v0270-gluefix" }
