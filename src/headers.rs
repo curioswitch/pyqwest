@@ -2,6 +2,7 @@ use std::str::FromStr as _;
 use std::sync::Mutex;
 
 use http::{header, HeaderMap, HeaderName, HeaderValue};
+use mime::Mime;
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::sync::{MutexExt as _, PyOnceLock};
 use pyo3::types::{
@@ -642,6 +643,13 @@ impl PyHeaderValue {
                 self.kind = PyHeaderValueKind::Py(py_str.clone().unbind());
                 py_str
             }
+        }
+    }
+
+    pub(crate) fn as_mime(&self, py: Python<'_>) -> Option<Mime> {
+        match &self.kind {
+            PyHeaderValueKind::Http(http) => http.to_str().unwrap_or_default().parse().ok(),
+            PyHeaderValueKind::Py(py_str) => py_str.bind(py).to_str().ok()?.parse().ok(),
         }
     }
 

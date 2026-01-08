@@ -14,6 +14,10 @@ async def _echo(
     ]
     echoed_headers.append((b"x-echo-query-string", scope["query_string"]))
     echoed_headers.append((b"x-echo-method", scope["method"].encode()))
+    content_type = dict(scope["headers"]).get(b"content-type", b"")
+    if content_type:
+        echoed_headers.append((b"content-type", content_type))
+
     if (extensions := scope["extensions"]) and (
         tls := cast("dict | None", extensions.get("tls"))
     ):
