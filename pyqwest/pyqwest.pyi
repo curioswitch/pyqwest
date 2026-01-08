@@ -189,6 +189,12 @@ class HTTPVersion:
     """HTTP/3"""
 
 class Client:
+    """An asynchronous HTTP client.
+
+    A client is a lightweight wrapper around a Transport, providing convenience methods
+    for common HTTP operations with buffering.
+    """
+
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
 
@@ -335,9 +341,20 @@ class Client:
         """
 
 class Transport(Protocol):
+    """Protocol for asynchronous HTTP transport implementations.
+
+    The default implementation of Transport is HTTPTransport which issues requests.
+    Custom implementations may be useful to:
+
+    - Mock requests for testing.
+    - Add middleware wrapping transports
+    """
+
     async def execute(self, request: Request) -> Response: ...
 
 class HTTPTransport:
+    """An HTTP transport implementation using reqwest."""
+
     def __init__(
         self,
         *,
@@ -370,11 +387,15 @@ class HTTPTransport:
     ) -> None:
         """Exits the context manager for the transport, closing it."""
 
-    async def execute(self, request: Request) -> Response: ...
+    async def execute(self, request: Request) -> Response:
+        """Executes the given request, returning the response."""
+
     async def close(self) -> None:
         """Closes the transport, releasing any underlying resources."""
 
 class Request:
+    """An HTTP request."""
+
     def __init__(
         self,
         method: str,
@@ -414,6 +435,8 @@ class Request:
         """Returns the timeout for the request in seconds, or None if not set."""
 
 class Response:
+    """An HTTP response."""
+
     def __init__(
         self,
         *,
@@ -495,6 +518,12 @@ class Response:
         """
 
 class SyncClient:
+    """A synchronous HTTP client.
+
+    A client is a lightweight wrapper around a SyncTransport, providing convenience methods
+    for common HTTP operations with buffering.
+    """
+
     def __init__(self, transport: SyncTransport | None = None) -> None:
         """Creates a new synchronous HTTP client.
 
@@ -641,6 +670,14 @@ class SyncClient:
         """
 
 class SyncTransport(Protocol):
+    """Protocol for synchronous HTTP transport implementations.
+
+    The default implementation of SyncTransport is SyncHTTPTransport which issues requests.
+    Custom implementations may be useful to:
+
+    - Mock requests for testing.
+    - Add middleware wrapping transports
+    """
     def execute(self, request: SyncRequest) -> SyncResponse: ...
 
 class SyncHTTPTransport:
@@ -681,6 +718,8 @@ class SyncHTTPTransport:
         """Closes the transport, releasing any underlying resources."""
 
 class SyncRequest:
+    """An HTTP request."""
+
     def __init__(
         self,
         method: str,
@@ -720,6 +759,8 @@ class SyncRequest:
         """Returns the timeout for the request in seconds, or None if not set."""
 
 class SyncResponse:
+    """An HTTP response."""
+
     def __init__(
         self,
         *,
@@ -801,6 +842,8 @@ class SyncResponse:
         """
 
 class FullResponse:
+    """A fully buffered HTTP response."""
+
     def __init__(
         self, status: int, headers: Headers, content: bytes, trailers: Headers
     ) -> None:
