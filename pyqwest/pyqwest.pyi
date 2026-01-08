@@ -388,7 +388,11 @@ class HTTPTransport:
         """Exits the context manager for the transport, closing it."""
 
     async def execute(self, request: Request) -> Response:
-        """Executes the given request, returning the response."""
+        """Executes the given request, returning the response.
+
+        Args:
+            request: The request to execute.
+        """
 
     async def close(self) -> None:
         """Closes the transport, releasing any underlying resources."""
@@ -681,6 +685,8 @@ class SyncTransport(Protocol):
     def execute(self, request: SyncRequest) -> SyncResponse: ...
 
 class SyncHTTPTransport:
+    """An HTTP transport implementation using reqwest."""
+
     def __init__(
         self,
         *,
@@ -713,7 +719,13 @@ class SyncHTTPTransport:
     ) -> None:
         """Exits the context manager for the transport, closing it."""
 
-    def execute(self, request: SyncRequest) -> SyncResponse: ...
+    def execute(self, request: SyncRequest) -> SyncResponse:
+        """Executes the given request, returning the response.
+
+        Args:
+            request: The request to execute.
+        """
+
     def close(self) -> None:
         """Closes the transport, releasing any underlying resources."""
 

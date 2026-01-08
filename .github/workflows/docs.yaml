@@ -5,11 +5,13 @@ on:
       - main
     paths:
       - "docs/**"
+      - "pyqwest/**"
       - zensical.toml
       - ".github/workflows/docs.yaml"
   pull_request:
     paths:
       - "docs/**"
+      - "pyqwest/**"
       - zensical.toml
       - ".github/workflows/docs.yaml"
 
