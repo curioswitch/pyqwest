@@ -18,7 +18,7 @@ use crate::{
 pub(crate) struct ResponseHead {
     status: http::StatusCode,
     version: http::Version,
-    headers: Py<Headers>,
+    pub(crate) headers: Py<Headers>,
 }
 
 impl ResponseHead {

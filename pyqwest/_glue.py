@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeVar
 
-from .pyqwest import FullResponse, Headers
+from .pyqwest import FullResponse, Headers, Request, Transport
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -41,3 +41,10 @@ async def new_full_response(
         else:
             await aclose()
     return FullResponse(status, headers, bytes(buf), trailers)
+
+
+async def execute_and_read_full(transport: Transport, request: Request) -> FullResponse:
+    resp = await transport.execute(request)
+    return await new_full_response(
+        resp.status, resp.headers, resp.content, resp.trailers
+    )

@@ -56,12 +56,10 @@ async def test_basic(
     ]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(
-            client.execute, method, url, headers, req_content
-        )
+        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
         content = b"".join(resp.content)
     else:
-        resp = await client.execute(method, url, headers, req_content)
+        resp = await client.stream(method, url, headers, req_content)
         content = b""
         async for chunk in resp.content:
             content += chunk
@@ -90,7 +88,7 @@ async def test_iterable_body(client: Client | SyncClient, url: str) -> None:
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
         resp = await asyncio.to_thread(
-            client.execute, method, url, content=[b"Hello, ", b"World!"]
+            client.stream, method, url, content=[b"Hello, ", b"World!"]
         )
         content = b"".join(resp.content)
     else:
@@ -99,7 +97,7 @@ async def test_iterable_body(client: Client | SyncClient, url: str) -> None:
             yield b"Hello, "
             yield b"World!"
 
-        resp = await client.execute(method, url, content=req_content())
+        resp = await client.stream(method, url, content=req_content())
         content = b""
         async for chunk in resp.content:
             content += chunk
@@ -112,10 +110,10 @@ async def test_empty_request(client: Client | SyncClient, url: str) -> None:
     method = "GET"
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.execute, method, url)
+        resp = await asyncio.to_thread(client.stream, method, url)
         content = b"".join(resp.content)
     else:
-        resp = await client.execute(method, url)
+        resp = await client.stream(method, url)
         content = b""
         async for chunk in resp.content:
             content += chunk
@@ -130,7 +128,7 @@ async def test_bidi(
     client = async_client
     queue = asyncio.Queue()
 
-    async with await client.execute(
+    async with await client.stream(
         "POST",
         f"{url}/echo",
         headers=Headers({"content-type": "text/plain", "te": "trailers"}),
@@ -161,7 +159,7 @@ async def test_bidi_sync(
     queue = Queue()
 
     def run():
-        with client.execute(
+        with client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
@@ -200,7 +198,7 @@ async def test_large_body(
     ]
     if isinstance(client, SyncClient):
         resp = await asyncio.to_thread(
-            client.execute, method, url, headers, [b"Hello!"] * 100
+            client.stream, method, url, headers, [b"Hello!"] * 100
         )
         content = b"".join(resp.content)
     else:
@@ -209,7 +207,7 @@ async def test_large_body(
             for _ in range(100):
                 yield b"Hello!"
 
-        resp = await client.execute(method, url, headers, async_req_content())
+        resp = await client.stream(method, url, headers, async_req_content())
         content = b""
         async for chunk in resp.content:
             content += chunk
@@ -243,7 +241,7 @@ async def test_read_full(
 
         def run():
             nonlocal resp, resp2
-            res = client.execute(method, url, headers, [b"Hello!"] * 100)
+            res = client.stream(method, url, headers, [b"Hello!"] * 100)
             resp = res.read_full()
             resp2 = res.read_full()
 
@@ -254,7 +252,7 @@ async def test_read_full(
             for _ in range(100):
                 yield b"Hello!"
 
-        res = await client.execute(method, url, headers, async_req_content())
+        res = await client.stream(method, url, headers, async_req_content())
         resp = await res.read_full()
         resp2 = await res.read_full()
     assert resp.status == 200
@@ -283,11 +281,140 @@ async def test_read_full(
 
 
 @pytest.mark.asyncio
+async def test_execute(client: Client | SyncClient, url: str) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+    ]
+    req_content = b"Hello, World!"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(
+            client.execute, method, url, headers, req_content
+        )
+    else:
+        resp = await client.execute(method, url, headers, req_content)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "POST"
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.headers["x-echo-x-hello"] == "rust"
+    assert resp.headers.getall("x-echo-x-hello") == ["rust", "python"]
+    assert resp.content == b"Hello, World!"
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_get(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.get, url)
+    else:
+        resp = await client.get(url)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "GET"
+    assert resp.content == b""
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_post(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    headers = [("content-type", "text/plain")]
+    req_content = b"Hello, World!"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.post, url, headers, req_content)
+    else:
+        resp = await client.post(url, headers, req_content)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "POST"
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.content == b"Hello, World!"
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.delete, url)
+    else:
+        resp = await client.delete(url)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "DELETE"
+    assert resp.content == b""
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_head(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.head, url)
+    else:
+        resp = await client.head(url)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "HEAD"
+    assert resp.content == b""
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_options(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.options, url)
+    else:
+        resp = await client.options(url)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "OPTIONS"
+    assert resp.content == b""
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_patch(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    headers = [("content-type", "text/plain")]
+    req_content = b"Hello, World!"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.patch, url, headers, req_content)
+    else:
+        resp = await client.patch(url, headers, req_content)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "PATCH"
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.content == b"Hello, World!"
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_put(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    headers = [("content-type", "text/plain")]
+    req_content = b"Hello, World!"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.put, url, headers, req_content)
+    else:
+        resp = await client.put(url, headers, req_content)
+    assert resp.status == 200
+    assert resp.headers["x-echo-method"] == "PUT"
+    assert resp.headers["x-echo-content-type"] == "text/plain"
+    assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
+    assert resp.content == b"Hello, World!"
+    assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
 async def test_close_no_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()
 
-    resp = await client.execute(
+    resp = await client.stream(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
@@ -307,7 +434,7 @@ async def test_close_no_read_sync(sync_client: SyncClient, url: str) -> None:
     queue = Queue()
 
     def run():
-        resp = client.execute(
+        resp = client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
@@ -328,7 +455,7 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()
 
-    resp = await client.execute(
+    resp = await client.stream(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
@@ -356,7 +483,7 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
     queue = Queue()
 
     def run():
-        resp = client.execute(
+        resp = client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),

@@ -130,7 +130,7 @@ def test_benchmark_async(
 
             async def execute_request_pyqwest() -> None:
                 for _ in range(TASK_SIZE):
-                    async with await benchmark_client_async.execute(
+                    async with await benchmark_client_async.stream(
                         method, target_url, headers, body
                     ) as res:
                         assert res.status == 200
