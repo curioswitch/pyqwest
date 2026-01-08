@@ -14,13 +14,10 @@ U = TypeVar("U")
 async def wrap_body_gen(
     gen: AsyncIterator[T], wrap_fn: Callable[[T], U]
 ) -> AsyncIterator[U]:
-    i = 0
     try:
         async for item in gen:
-            i += len(item)
             yield wrap_fn(item)
     finally:
-        print(f"Total bytes consumed by generator: {i}")
         try:
             aclose = gen.aclose  # type: ignore[attr-defined]
         except AttributeError:
