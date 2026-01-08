@@ -1,13 +1,19 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http::response::Parts;
+use http::{response::Parts, HeaderMap};
 use http_body::Frame;
 use http_body_util::BodyExt as _;
-use pyo3::{exceptions::PyRuntimeError, Bound, Py, PyResult, Python};
+use pyo3::{
+    exceptions::PyRuntimeError, types::PyBytes, Bound, IntoPyObject, Py, PyErr, PyResult, Python,
+};
 use tokio::sync::{watch, Mutex};
 
-use crate::{common::HTTPVersion, headers::Headers, shared::pyerrors};
+use crate::{
+    common::{FullResponse, HTTPVersion},
+    headers::Headers,
+    shared::pyerrors,
+};
 
 pub(crate) struct ResponseHead {
     status: http::StatusCode,
@@ -158,7 +164,58 @@ impl ResponseBody {
         }
     }
 
+    pub(crate) async fn read_full(&self) -> PyResult<(Bytes, HeaderMap)> {
+        let _read_guard = self.inner.read_lock.lock().await;
+        let Some(body) = ({
+            let mut body_guard = self.inner.body.lock().await;
+            body_guard.take()
+        }) else {
+            return Ok((Bytes::new(), HeaderMap::new()));
+        };
+        let collected = body
+            .collect()
+            .await
+            .map_err(|e| pyerrors::from_reqwest(&e, "Error reading content"))?;
+
+        let trailers = if let Some(trailers) = collected.trailers() {
+            self.inner.trailers.get().fill(trailers.clone());
+            trailers.clone()
+        } else {
+            HeaderMap::new()
+        };
+        Ok((collected.to_bytes(), trailers))
+    }
+
     pub(crate) fn read_pending(&self) -> bool {
         self.inner.read_lock.try_lock().is_err()
+    }
+}
+
+/// Information for `FullResponse` that can be constructed without the GIL.
+/// We can create this in a tokio future and pyo3 will then call `IntoPyObject`
+/// with the GIL outside of tokio.
+pub(crate) struct RustFullResponse {
+    pub(crate) status: u16,
+    pub(crate) headers: Py<Headers>,
+    pub(crate) body: Bytes,
+    pub(crate) trailers: HeaderMap,
+}
+
+impl<'py> IntoPyObject<'py> for RustFullResponse {
+    type Target = FullResponse;
+    type Output = Bound<'py, FullResponse>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let body = PyBytes::new(py, &self.body);
+        let trailers = Headers::empty();
+        trailers.fill(self.trailers);
+        FullResponse {
+            status: self.status,
+            headers: self.headers.clone_ref(py),
+            content: body.unbind(),
+            trailers: trailers.into_pyobject(py)?.unbind(),
+        }
+        .into_pyobject(py)
     }
 }

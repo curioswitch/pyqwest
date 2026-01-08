@@ -56,6 +56,24 @@ async def test_response_content_iterator():
     assert parts == [b"Part 1, ", b"Part 2."]
 
 
+@pytest.mark.asyncio
+async def test_response_content_iterator_read_full():
+    async def content() -> AsyncIterator[bytes]:
+        yield b"Part 1, "
+        yield b"Part 2."
+
+    response = await Response(
+        status=200,
+        headers=Headers({"application": "json"}),
+        content=content(),
+        trailers=Headers({"trailer": "info"}),
+    ).read_full()
+    assert response.status == 200
+    assert response.headers == {"application": "json"}
+    assert response.content == b"Part 1, Part 2."
+    assert response.trailers == {"trailer": "info"}
+
+
 def test_sync_response_minimal():
     response = SyncResponse(status=404)
     assert response.status == 404
@@ -96,3 +114,20 @@ def test_sync_response_content_iterator():
     for chunk in response.content:
         parts.append(chunk)
     assert parts == [b"Part 1, ", b"Part 2."]
+
+
+def test_sync_response_content_iterator_read_full():
+    def content() -> Iterator[bytes]:
+        yield b"Part 1, "
+        yield b"Part 2."
+
+    response = SyncResponse(
+        status=200,
+        headers=Headers({"application": "json"}),
+        content=content(),
+        trailers=Headers({"trailer": "info"}),
+    ).read_full()
+    assert response.status == 200
+    assert response.headers == {"application": "json"}
+    assert response.content == b"Part 1, Part 2."
+    assert response.trailers == {"trailer": "info"}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = [
     "Client",
+    "FullResponse",
     "HTTPTransport",
     "HTTPVersion",
     "Headers",
@@ -17,6 +18,7 @@ __all__ = [
 
 from .pyqwest import (
     Client,
+    FullResponse,
     Headers,
     HTTPTransport,
     HTTPVersion,

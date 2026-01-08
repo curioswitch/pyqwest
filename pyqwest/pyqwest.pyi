@@ -336,6 +336,14 @@ class Response:
         consuming the [`content`][] iterator.
         """
 
+    async def read_full(self) -> FullResponse:
+        """Reads the full response content, returning a FullResponse with it.
+
+        After calling this method, the content iterator on this object will be empty.
+        It is expected that this method is called to replace Response with FullResponse
+        for full access to the response.
+        """
+
     async def close(self) -> None:
         """Closes the response, releasing any underlying resources.
 
@@ -490,6 +498,7 @@ class SyncResponse:
     @property
     def content(self) -> Iterator[bytes]:
         """Returns an iterator over the response content."""
+
     @property
     def trailers(self) -> Headers:
         """Returns the response trailers.
@@ -498,9 +507,46 @@ class SyncResponse:
         consuming the [`content`][] iterator.
         """
 
+    def read_full(self) -> FullResponse:
+        """Reads the full response content, returning a FullResponse with it.
+
+        After calling this method, the content iterator on this object will be empty.
+        It is expected that this method is called to replace Response with FullResponse
+        for full access to the response.
+        """
+
     def close(self) -> None:
         """Closes the response, releasing any underlying resources.
 
         Note that if your code is guaranteed to fully consume the response content,
         it is not necessary to explicitly close the response.
         """
+
+class FullResponse:
+    def __init__(
+        self, status: int, headers: Headers, content: bytes, trailers: Headers
+    ) -> None:
+        """Creates a new FullResponse object.
+
+        Args:
+            status: The HTTP status code of the response.
+            headers: The response headers.
+            content: The response content.
+            trailers: The response trailers.
+        """
+
+    @property
+    def status(self) -> int:
+        """Returns the HTTP status code of the response."""
+
+    @property
+    def headers(self) -> Headers:
+        """Returns the response headers."""
+
+    @property
+    def content(self) -> bytes:
+        """Returns the response content."""
+
+    @property
+    def trailers(self) -> Headers:
+        """Returns the response trailers."""
