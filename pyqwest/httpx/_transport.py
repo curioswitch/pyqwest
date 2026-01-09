@@ -217,9 +217,13 @@ def convert_timeout(extensions: dict) -> float | None:
     # and can be given a longer timeout - we assume the operation timeout
     # is the max of read/write if present, or connect if not. We ignore
     # pool for now
-    operation_timeout = max(
-        httpx_timeout.get("read", -1), httpx_timeout.get("write", -1)
-    )
+    read_timeout = httpx_timeout.get("read", -1)
+    if read_timeout is None:
+        read_timeout = -1
+    write_timeout = httpx_timeout.get("write", -1)
+    if write_timeout is None:
+        write_timeout = -1
+    operation_timeout = max(read_timeout, write_timeout)
     if operation_timeout != -1:
         return operation_timeout
     return httpx_timeout.get("connect")
