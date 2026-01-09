@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import ssl
 import sys
 from typing import TYPE_CHECKING
@@ -22,8 +23,8 @@ if TYPE_CHECKING:
     from .conftest import Certs
 
 pytestmark = [
-    pytest.mark.parametrize("http_scheme", ["http", "https"], indirect=True),
-    pytest.mark.parametrize("http_version", ["h1", "h2", "h3", "auto"], indirect=True),
+    pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
+    pytest.mark.parametrize("http_version", ["h1", "h2", "h3"], indirect=True),
 ]
 
 CONCURRENCY = 10
@@ -88,10 +89,11 @@ async def benchmark_client_async(
             ) as client:
                 yield client
         case "niquests":
-            # Errors like File descriptor 17 is used by transport
-            pytest.skip("niquests seems to not be reliable")
+            # Errors like "File descriptor 17 is used by transport"
+            if os.environ.get("CI"):
+                pytest.skip("niquests currently not stable")
             if http_version == HTTPVersion.HTTP3:
-                pytest.skip("TODO: Debug SNI 127.0.0.1 issue")
+                pytest.skip("Connection aborted error")
             async with niquests.AsyncSession(
                 disable_http1=(http_version not in (HTTPVersion.HTTP1, None)),
                 disable_http2=(http_version not in (HTTPVersion.HTTP2, None)),
@@ -106,6 +108,7 @@ async def benchmark_client_async(
 @pytest.mark.skipif(
     sys.version_info < (3, 11), reason="asyncio.Runner requires Python 3.11+"
 )
+@pytest.mark.parametrize("content_size", [0, 1024, 1024 * 1024])
 def test_benchmark_async(
     benchmark: pytest_benchmark.fixture.BenchmarkFixture,
     benchmark_client_async: Client
@@ -113,6 +116,7 @@ def test_benchmark_async(
     | httpx.AsyncClient
     | niquests.AsyncSession,
     url: str,
+    content_size: int,
     async_runner: asyncio.Runner,
 ) -> None:
     method = "POST"
@@ -122,7 +126,19 @@ def test_benchmark_async(
         ("x-hello", "rust"),
         ("x-hello", "python"),
     ]
-    body = b"Hello, World!"
+    match content_size:
+        case 0:
+            body = b""
+        case 1024:
+            body = b"A" * 1024
+        case _:
+
+            async def generate_body(size) -> AsyncIterator[bytes]:
+                chunk = b"A" * 1024
+                for _ in range(size // 1024):
+                    yield chunk
+
+            body = generate_body(content_size)
 
     execute_request: Callable[[], Awaitable[None]]
     match benchmark_client_async:

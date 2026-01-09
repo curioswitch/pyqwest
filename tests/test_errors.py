@@ -96,7 +96,7 @@ async def test_connection_error(client: Client | SyncClient, url: str) -> None:
         s.bind(("", 0))
         port = s.getsockname()[1]
     method = "GET"
-    url = f"http://127.0.0.1:{port}/echo"
+    url = f"http://localhost:{port}/echo"
     with pytest.raises(ConnectionError):
         if isinstance(client, SyncClient):
 

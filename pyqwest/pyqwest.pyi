@@ -411,6 +411,7 @@ class HTTPTransport:
         enable_gzip: bool = False,
         enable_brotli: bool = False,
         enable_zstd: bool = False,
+        use_system_dns: bool = False,
     ) -> None:
         """Creates a new HTTPTransport object.
 
@@ -440,6 +441,10 @@ class HTTPTransport:
             enable_gzip: Whether to enable gzip decompression for responses.
             enable_brotli: Whether to enable brotli decompression for responses.
             enable_zstd: Whether to enable zstd decompression for responses.
+            use_system_dns: Whether to use the system DNS resolver. By default, pyqwest uses an
+                            asynchronous DNS resolver implemented in Rust, but it can have different
+                            behavior from system DNS in certain environments. Try enabling this option if
+                            you have any DNS resolution issues.
         """
 
     async def __aenter__(self) -> HTTPTransport:
@@ -834,6 +839,7 @@ class SyncHTTPTransport:
         enable_gzip: bool = False,
         enable_brotli: bool = False,
         enable_zstd: bool = False,
+        use_system_dns: bool = False,
     ) -> None:
         """Creates a new SyncHTTPTransport object.
 
@@ -863,6 +869,10 @@ class SyncHTTPTransport:
             enable_gzip: Whether to enable gzip decompression for responses.
             enable_brotli: Whether to enable brotli decompression for responses.
             enable_zstd: Whether to enable zstd decompression for responses.
+            use_system_dns: Whether to use the system DNS resolver. By default, pyqwest uses an
+                            asynchronous DNS resolver implemented in Rust, but it can have different
+                            behavior from system DNS in certain environments. Try enabling this option if
+                            you have any DNS resolution issues.
         """
 
     def __enter__(self) -> SyncHTTPTransport:

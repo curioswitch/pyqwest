@@ -30,7 +30,7 @@ def ca() -> trustme.CA:
 @pytest.fixture(scope="session")
 def certs(ca: trustme.CA) -> Certs:
     # Workaround https://github.com/seanmonstar/reqwest/issues/2911
-    server = ca.issue_cert("127.0.0.1")
+    server = ca.issue_cert("localhost")
     return Certs(
         ca=ca.cert_pem.bytes(),
         server_cert=server.cert_chain_pems[0].bytes(),
@@ -88,9 +88,9 @@ def url(server: PyvoyServer, http_scheme: str, http_version: HTTPVersion | None)
         case "http":
             if http_version == HTTPVersion.HTTP3:
                 pytest.skip("HTTP/3 over plain HTTP is not supported")
-            return f"http://127.0.0.1:{server.listener_port}"
+            return f"http://localhost:{server.listener_port}"
         case "https":
-            return f"https://127.0.0.1:{server.listener_port_tls}"
+            return f"https://localhost:{server.listener_port_tls}"
         case _:
             msg = "Invalid scheme"
             raise ValueError(msg)
