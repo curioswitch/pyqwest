@@ -35,8 +35,9 @@ tokio-stream = "0.1.17"
 url = "2.5.7"
 
 [lints.clippy]
-pedantic = "deny"
+pedantic = { level = "deny", priority = -1 }
 
+too_many_arguments = "allow"
 unused_trait_names = "deny"
 
 [patch.crates-io]

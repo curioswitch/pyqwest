@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
     sync::PyOnceLock,
@@ -14,6 +16,15 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) tls_key: Option<&'a [u8]>,
     pub(crate) tls_cert: Option<&'a [u8]>,
     pub(crate) http_version: Option<Bound<'a, HTTPVersion>>,
+    pub(crate) timeout: Option<f64>,
+    pub(crate) connect_timeout: Option<f64>,
+    pub(crate) read_timeout: Option<f64>,
+    pub(crate) pool_idle_timeout: Option<f64>,
+    pub(crate) pool_max_idle_per_host: Option<usize>,
+    pub(crate) tcp_keepalive_interval: Option<f64>,
+    pub(crate) enable_gzip: bool,
+    pub(crate) enable_brotli: bool,
+    pub(crate) enable_zstd: bool,
 }
 
 pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Client, bool)> {
@@ -50,6 +61,30 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
         ));
     }
 
+    if let Some(timeout) = params.timeout {
+        builder = builder.timeout(Duration::from_secs_f64(timeout));
+    }
+    if let Some(connect_timeout) = params.connect_timeout {
+        builder = builder.connect_timeout(Duration::from_secs_f64(connect_timeout));
+    }
+    if let Some(read_timeout) = params.read_timeout {
+        builder = builder.read_timeout(Duration::from_secs_f64(read_timeout));
+    }
+    if let Some(idle_connection_timeout) = params.pool_idle_timeout {
+        builder = builder.pool_idle_timeout(Duration::from_secs_f64(idle_connection_timeout));
+    } else {
+        builder = builder.pool_idle_timeout(None);
+    }
+    if let Some(max_idle_connections_per_host) = params.pool_max_idle_per_host {
+        builder = builder.pool_max_idle_per_host(max_idle_connections_per_host);
+    }
+    if let Some(tcp_keepalive_interval) = params.tcp_keepalive_interval {
+        builder = builder.tcp_keepalive_interval(Duration::from_secs_f64(tcp_keepalive_interval));
+    }
+    builder = builder.gzip(params.enable_gzip);
+    builder = builder.brotli(params.enable_brotli);
+    builder = builder.zstd(params.enable_zstd);
+
     let client = if http3 {
         // Workaround https://github.com/seanmonstar/reqwest/issues/2910
         let _guard = get_runtime().enter();
@@ -71,6 +106,15 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 tls_key: None,
                 tls_cert: None,
                 http_version: None,
+                timeout: None,
+                connect_timeout: Some(30.0),
+                read_timeout: None,
+                pool_idle_timeout: Some(90.0),
+                pool_max_idle_per_host: Some(2),
+                tcp_keepalive_interval: Some(30.0),
+                enable_gzip: true,
+                enable_brotli: true,
+                enable_zstd: true,
             })
             .unwrap();
             client

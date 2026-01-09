@@ -24,18 +24,51 @@ pub struct HttpTransport {
 #[pymethods]
 impl HttpTransport {
     #[new]
-    #[pyo3(signature = (*, tls_ca_cert = None, tls_key = None, tls_cert = None, http_version = None))]
+    #[pyo3(signature = (
+        *,
+        tls_ca_cert = None,
+        tls_key = None,
+        tls_cert = None,
+        http_version = None,
+        timeout = None,
+        connect_timeout = None,
+        read_timeout = None,
+        pool_idle_timeout = None,
+        pool_max_idle_per_host = None,
+        tcp_keepalive_interval = None,
+        enable_gzip = false,
+        enable_brotli = false,
+        enable_zstd = false,
+    ))]
     pub(crate) fn new(
         tls_ca_cert: Option<&[u8]>,
         tls_key: Option<&[u8]>,
         tls_cert: Option<&[u8]>,
         http_version: Option<Bound<'_, HTTPVersion>>,
+        timeout: Option<f64>,
+        connect_timeout: Option<f64>,
+        read_timeout: Option<f64>,
+        pool_idle_timeout: Option<f64>,
+        pool_max_idle_per_host: Option<usize>,
+        tcp_keepalive_interval: Option<f64>,
+        enable_gzip: bool,
+        enable_brotli: bool,
+        enable_zstd: bool,
     ) -> PyResult<Self> {
         let (client, http3) = new_reqwest_client(ClientParams {
             tls_ca_cert,
             tls_key,
             tls_cert,
             http_version,
+            timeout,
+            connect_timeout,
+            read_timeout,
+            pool_idle_timeout,
+            pool_max_idle_per_host,
+            tcp_keepalive_interval,
+            enable_gzip,
+            enable_brotli,
+            enable_zstd,
         })?;
         Ok(Self {
             client: Arc::new(ArcSwapOption::from_pointee(client)),

@@ -199,7 +199,7 @@ class Client:
         """Creates a new asynchronous HTTP client.
 
         Args:
-            transport: The transport to use for requests. If None, a default
+            transport: The transport to use for requests. If None, the shared default
                        transport will be used.
         """
 
@@ -402,8 +402,23 @@ class HTTPTransport:
         tls_key: bytes | None = None,
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
+        timeout: float | None = None,
+        connect_timeout: float | None = None,
+        read_timeout: float | None = None,
+        pool_idle_timeout: float | None = None,
+        pool_max_idle_per_host: int | None = None,
+        tcp_keepalive_interval: float | None = None,
+        enable_gzip: bool = False,
+        enable_brotli: bool = False,
+        enable_zstd: bool = False,
     ) -> None:
         """Creates a new HTTPTransport object.
+
+        Without any arguments, the transport behaves like a raw, low-level HTTP transport,
+        with no timeouts or other higher level behavior. When creating a transport, take care
+        to set options to meet your needs. Also consider using get_default_transport instead
+        which is preconfigured with reasonable defaults, though does not support custom TLS
+        certificates.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
@@ -414,6 +429,17 @@ class HTTPTransport:
             http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
                           plaintext and ALPN negotiates the version for TLS connections
                           which typically means HTTP/2 if the server supports it.
+            timeout: Default timeout for requests in seconds. This is the timeout from
+                     the start of the request to the end of the response.
+            connect_timeout: Timeout for connection establishment in seconds.
+            read_timeout: Timeout for each read operation of a request in seconds.
+            pool_idle_timeout: Timeout for idle connections in the connection pool in seconds.
+            pool_max_idle_per_host: Maximum number of idle connections to keep in the pool per host.
+                                    Defaults to 2.
+            tcp_keepalive_interval: Interval for TCP keepalive probes in seconds.
+            enable_gzip: Whether to enable gzip decompression for responses.
+            enable_brotli: Whether to enable brotli decompression for responses.
+            enable_zstd: Whether to enable zstd decompression for responses.
         """
 
     async def __aenter__(self) -> HTTPTransport:
@@ -446,6 +472,19 @@ class HTTPTransport:
 def get_default_transport() -> HTTPTransport:
     """Returns the singleton default HTTP transport instance used by clients that do not
     specify a transport.
+
+    The default transport is constructed as follows:
+    ```
+    HTTPTransport(
+        connect_timeout=30.0,
+        pool_idle_timeout=90.0,
+        pool_max_idle_per_host=2,
+        tcp_keepalive_interval=30.0,
+        enable_gzip: bool = True,
+        enable_brotli: bool = True,
+        enable_zstd: bool = True,
+    )
+    ```
     """
 
 class Request:
@@ -583,7 +622,7 @@ class SyncClient:
         """Creates a new synchronous HTTP client.
 
         Args:
-            transport: The transport to use for requests. If None, a default
+            transport: The transport to use for requests. If None, the shared default
                        transport will be used.
         """
 
@@ -786,8 +825,23 @@ class SyncHTTPTransport:
         tls_key: bytes | None = None,
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
+        timeout: float | None = None,
+        connect_timeout: float | None = None,
+        read_timeout: float | None = None,
+        pool_idle_timeout: float | None = None,
+        pool_max_idle_per_host: int | None = None,
+        tcp_keepalive_interval: float | None = None,
+        enable_gzip: bool = False,
+        enable_brotli: bool = False,
+        enable_zstd: bool = False,
     ) -> None:
         """Creates a new SyncHTTPTransport object.
+
+        Without any arguments, the transport behaves like a raw, low-level HTTP transport,
+        with no timeouts or other higher level behavior. When creating a transport, take care
+        to set options to meet your needs. Also consider using get_default_transport instead
+        which is preconfigured with reasonable defaults, though does not support custom TLS
+        certificates.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
@@ -798,6 +852,17 @@ class SyncHTTPTransport:
             http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
                           plaintext and ALPN negotiates the version for TLS connections
                           which typically means HTTP/2 if the server supports it.
+            timeout: Default timeout for requests in seconds. This is the timeout from
+                     the start of the request to the end of the response.
+            connect_timeout: Timeout for connection establishment in seconds.
+            read_timeout: Timeout for each read operation of a request in seconds.
+            pool_idle_timeout: Timeout for idle connections in the connection pool in seconds.
+            pool_max_idle_per_host: Maximum number of idle connections to keep in the pool per host.
+                                    Defaults to 2.
+            tcp_keepalive_interval: Interval for TCP keepalive probes in seconds.
+            enable_gzip: Whether to enable gzip decompression for responses.
+            enable_brotli: Whether to enable brotli decompression for responses.
+            enable_zstd: Whether to enable zstd decompression for responses.
         """
 
     def __enter__(self) -> SyncHTTPTransport:
@@ -825,7 +890,21 @@ class SyncHTTPTransport:
 
 def get_default_sync_transport() -> SyncHTTPTransport:
     """Returns the singleton default HTTP transport instance used by synchronous clients that do not
+    specify a transport.ult HTTP transport instance used by clients that do not
     specify a transport.
+
+    The default transport is constructed as follows:
+    ```
+    SyncHTTPTransport(
+        connect_timeout=30.0,
+        pool_idle_timeout=90.0,
+        pool_max_idle_per_host=2,
+        tcp_keepalive_interval=30.0,
+        enable_gzip: bool = True,
+        enable_brotli: bool = True,
+        enable_zstd: bool = True,
+    )
+    ```
     """
 
 class SyncRequest:
