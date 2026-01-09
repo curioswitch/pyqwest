@@ -1,10 +1,13 @@
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
-    Bound, PyResult,
+    sync::PyOnceLock,
+    Bound, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 
 use crate::common::HTTPVersion;
+
+static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();
 
 pub(crate) struct ClientParams<'a> {
     pub(crate) tls_ca_cert: Option<&'a [u8]>,
@@ -64,4 +67,19 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
         PyRuntimeError::new_err(format!("Failed to create client: {:+}", errors::fmt(&e)))
     })?;
     Ok((client, http3))
+}
+
+pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
+    DEFAULT_REQWEST_CLIENT
+        .get_or_init(py, || {
+            let (client, _) = new_reqwest_client(ClientParams {
+                tls_ca_cert: None,
+                tls_key: None,
+                tls_cert: None,
+                http_version: None,
+            })
+            .unwrap();
+            client
+        })
+        .clone()
 }

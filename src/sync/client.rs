@@ -2,7 +2,7 @@ use pyo3::{intern, prelude::*};
 
 use crate::headers::Headers;
 use crate::sync::request::SyncRequest;
-use crate::sync::transport::SyncHttpTransport;
+use crate::sync::transport::{get_default_sync_transport, SyncHttpTransport};
 
 enum Transport {
     Http(SyncHttpTransport),
@@ -17,7 +17,8 @@ pub struct SyncClient {
 #[pymethods]
 impl SyncClient {
     #[new]
-    fn new(transport: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
+    #[pyo3(signature = (transport=None))]
+    fn new(py: Python<'_>, transport: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
         let transport = if let Some(transport) = transport {
             if let Ok(transport) = transport.extract::<SyncHttpTransport>() {
                 Transport::Http(transport)
@@ -25,7 +26,8 @@ impl SyncClient {
                 Transport::Custom(transport.unbind())
             }
         } else {
-            Transport::Http(SyncHttpTransport::new(None, None, None, None)?)
+            let transport = get_default_sync_transport(py)?;
+            Transport::Http(transport.get().clone())
         };
         Ok(Self { transport })
     }
