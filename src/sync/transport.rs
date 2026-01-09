@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::sync::PyOnceLock;
 use pyo3::{prelude::*, IntoPyObjectExt as _};
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::common::HTTPVersion;
 use crate::shared::pyerrors;
-use crate::shared::transport::{new_reqwest_client, ClientParams};
+use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::SyncResponse;
 
@@ -17,6 +18,7 @@ use crate::sync::response::SyncResponse;
 pub struct SyncHttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
+    close: bool,
 }
 
 #[pymethods]
@@ -38,6 +40,7 @@ impl SyncHttpTransport {
         Ok(Self {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
+            close: true,
         })
     }
 
@@ -58,7 +61,9 @@ impl SyncHttpTransport {
     }
 
     fn close(&self) {
-        self.client.store(None);
+        if self.close {
+            self.client.store(None);
+        }
     }
 }
 
@@ -94,4 +99,21 @@ impl SyncHttpTransport {
         })??;
         res.into_bound_py_any(py)
     }
+
+    pub(super) fn py_default(py: Python<'_>) -> Self {
+        SyncHttpTransport {
+            client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
+            http3: false,
+            close: false,
+        }
+    }
+}
+
+static DEFAULT_TRANSPORT: PyOnceLock<Py<SyncHttpTransport>> = PyOnceLock::new();
+
+#[pyfunction]
+pub(crate) fn get_default_sync_transport(py: Python<'_>) -> PyResult<Py<SyncHttpTransport>> {
+    Ok(DEFAULT_TRANSPORT
+        .get_or_try_init(py, || Py::new(py, SyncHttpTransport::py_default(py)))?
+        .clone_ref(py))
 }

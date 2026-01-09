@@ -2,7 +2,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::{intern, prelude::*};
 
 use crate::asyncio::request::Request;
-use crate::asyncio::transport::HttpTransport;
+use crate::asyncio::transport::{get_default_transport, HttpTransport};
 use crate::headers::Headers;
 
 enum Transport {
@@ -11,14 +11,15 @@ enum Transport {
 }
 
 #[pyclass(module = "pyqwest", frozen)]
-pub struct Client {
+pub(crate) struct Client {
     transport: Transport,
 }
 
 #[pymethods]
 impl Client {
     #[new]
-    fn new(transport: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
+    #[pyo3(signature = (transport=None))]
+    fn new(py: Python<'_>, transport: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
         let transport = if let Some(transport) = transport {
             if let Ok(transport) = transport.extract::<HttpTransport>() {
                 Transport::Http(transport)
@@ -26,7 +27,8 @@ impl Client {
                 Transport::Custom(transport.unbind())
             }
         } else {
-            Transport::Http(HttpTransport::new(None, None, None, None)?)
+            let transport = get_default_transport(py)?;
+            Transport::Http(transport.get().clone())
         };
         Ok(Self { transport })
     }
