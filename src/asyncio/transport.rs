@@ -22,12 +22,18 @@ pub struct HttpTransport {
 #[pymethods]
 impl HttpTransport {
     #[new]
-    #[pyo3(signature = (*, tls_ca_cert = None, tls_key = None, tls_cert = None, http_version = None))]
+    #[pyo3(signature = (*, tls_ca_cert = None, tls_key = None, tls_cert = None, http_version = None, timeout = None, connect_timeout = None, read_timeout = None, idle_connection_timeout = None, max_idle_connections_per_host = None, tcp_keepalive_interval = None))]
     pub(crate) fn new(
         tls_ca_cert: Option<&[u8]>,
         tls_key: Option<&[u8]>,
         tls_cert: Option<&[u8]>,
         http_version: Option<Bound<'_, HTTPVersion>>,
+        timeout: Option<f64>,
+        connect_timeout: Option<f64>,
+        read_timeout: Option<f64>,
+        idle_connection_timeout: Option<f64>,
+        max_idle_connections_per_host: Option<usize>,
+        tcp_keepalive_interval: Option<f64>,
     ) -> PyResult<Self> {
         let (client, http3) = new_reqwest_client(ClientParams {
             tls_ca_cert,
