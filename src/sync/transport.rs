@@ -39,6 +39,7 @@ impl SyncHttpTransport {
         enable_gzip = false,
         enable_brotli = false,
         enable_zstd = false,
+        use_system_dns = false,
     ))]
     pub(crate) fn new(
         tls_ca_cert: Option<&[u8]>,
@@ -54,6 +55,7 @@ impl SyncHttpTransport {
         enable_gzip: bool,
         enable_brotli: bool,
         enable_zstd: bool,
+        use_system_dns: bool,
     ) -> PyResult<Self> {
         let (client, http3) = new_reqwest_client(ClientParams {
             tls_ca_cert,
@@ -69,6 +71,7 @@ impl SyncHttpTransport {
             enable_gzip,
             enable_brotli,
             enable_zstd,
+            use_system_dns,
         })?;
         Ok(Self {
             client: Arc::new(ArcSwapOption::from_pointee(client)),

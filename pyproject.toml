@@ -172,7 +172,7 @@ addopts = [
     "--import-mode=importlib",
     "--benchmark-disable",
     "--benchmark-sort=name",
-    "--benchmark-group-by=param:http_scheme,param:http_version",
+    "--benchmark-group-by=param:http_scheme,param:http_version,param:content_size",
 ]
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"

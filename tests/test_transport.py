@@ -74,6 +74,7 @@ async def test_transport_options(url: str) -> None:
         enable_gzip=True,
         enable_brotli=True,
         enable_zstd=True,
+        use_system_dns=True,
     )
 
     async def request_content() -> AsyncIterator[bytes]:
@@ -100,6 +101,7 @@ async def test_sync_transport_options(url: str) -> None:
         enable_gzip=True,
         enable_brotli=True,
         enable_zstd=True,
+        use_system_dns=True,
     )
 
     def request_content() -> Iterator[bytes]:
