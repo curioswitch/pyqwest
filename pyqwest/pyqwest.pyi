@@ -212,9 +212,13 @@ class Client:
         """Executes a GET HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def post(
@@ -227,9 +231,14 @@ class Client:
         """Executes a POST HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
+            content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def delete(
@@ -241,9 +250,13 @@ class Client:
         """Executes a DELETE HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def head(
@@ -255,9 +268,13 @@ class Client:
         """Executes a HEAD HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def options(
@@ -269,9 +286,13 @@ class Client:
         """Executes a OPTIONS HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def patch(
@@ -284,9 +305,14 @@ class Client:
         """Executes a PATCH HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
+            content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def put(
@@ -299,9 +325,14 @@ class Client:
         """Executes a PUT HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
+            content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def execute(
@@ -316,10 +347,14 @@ class Client:
 
         Args:
             method: The HTTP method.
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def stream(
@@ -334,10 +369,14 @@ class Client:
 
         Args:
             method: The HTTP method.
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
 class Transport(Protocol):
@@ -350,7 +389,8 @@ class Transport(Protocol):
     - Add middleware wrapping transports
     """
 
-    async def execute(self, request: Request) -> Response: ...
+    async def execute(self, request: Request) -> Response:
+        """Executes a request."""
 
 class HTTPTransport:
     """An HTTP transport implementation using reqwest."""
@@ -371,7 +411,9 @@ class HTTPTransport:
                      tls_cert must also be set.
             tls_cert: The client certificate to identify the client for mTLS connections.
                       tls_key must also be set.
-            http_version: The HTTP version to use for requests.
+            http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
+                          plaintext and ALPN negotiates the version for TLS connections
+                          which typically means HTTP/2 if the server supports it.
         """
 
     async def __aenter__(self) -> HTTPTransport:
@@ -392,6 +434,10 @@ class HTTPTransport:
 
         Args:
             request: The request to execute.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     async def close(self) -> None:
@@ -412,7 +458,7 @@ class Request:
 
         Args:
             method: The HTTP method.
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
@@ -424,7 +470,7 @@ class Request:
 
     @property
     def url(self) -> str:
-        """Returns the request URL."""
+        """Returns the unencoded request URL."""
 
     @property
     def headers(self) -> Headers:
@@ -545,9 +591,13 @@ class SyncClient:
         """Executes a GET HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def post(
@@ -560,9 +610,14 @@ class SyncClient:
         """Executes a POST HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
+            content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def delete(
@@ -574,9 +629,13 @@ class SyncClient:
         """Executes a DELETE HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def head(
@@ -588,9 +647,13 @@ class SyncClient:
         """Executes a HEAD HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def options(
@@ -602,9 +665,13 @@ class SyncClient:
         """Executes a OPTIONS HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def patch(
@@ -617,9 +684,14 @@ class SyncClient:
         """Executes a PATCH HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
+            content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def put(
@@ -632,9 +704,14 @@ class SyncClient:
         """Executes a PUT HTTP request.
 
         Args:
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
+            content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def execute(
@@ -649,10 +726,14 @@ class SyncClient:
 
         Args:
             method: The HTTP method.
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
     def stream(
@@ -667,10 +748,14 @@ class SyncClient:
 
         Args:
             method: The HTTP method.
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+
+        Raises:
+            ConnectionError: If the connection fails.
+            TimeoutError: If the request times out.
         """
 
 class SyncTransport(Protocol):
@@ -682,7 +767,9 @@ class SyncTransport(Protocol):
     - Mock requests for testing.
     - Add middleware wrapping transports
     """
-    def execute(self, request: SyncRequest) -> SyncResponse: ...
+
+    def execute(self, request: SyncRequest) -> SyncResponse:
+        """Executes a request."""
 
 class SyncHTTPTransport:
     """An HTTP transport implementation using reqwest."""
@@ -703,7 +790,9 @@ class SyncHTTPTransport:
                      tls_cert must also be set.
             tls_cert: The client certificate to identify the client for mTLS connections.
                       tls_key must also be set.
-            http_version: The HTTP version to use for requests.
+            http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
+                          plaintext and ALPN negotiates the version for TLS connections
+                          which typically means HTTP/2 if the server supports it.
         """
 
     def __enter__(self) -> SyncHTTPTransport:
@@ -744,7 +833,7 @@ class SyncRequest:
 
         Args:
             method: The HTTP method.
-            url: The request URL.
+            url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
@@ -756,7 +845,7 @@ class SyncRequest:
 
     @property
     def url(self) -> str:
-        """Returns the request URL."""
+        """Returns the unencoded request URL."""
 
     @property
     def headers(self) -> Headers:
@@ -887,9 +976,12 @@ class FullResponse:
     def text(self) -> str:
         """Returns the response content decoded as text.
 
-        The encoding for decoding is determined from the Content-Type header if present,
+        The encoding for decoding is determined from the content-type header if present,
         defaulting to UTF-8 otherwise.
         """
 
     def json(self) -> JSON:
-        """Parses and returns the response content as JSON."""
+        """Parses and returns the response content as JSON.
+
+        The content-type header is not checked when using this method.
+        """
