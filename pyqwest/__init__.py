@@ -14,6 +14,8 @@ __all__ = [
     "SyncResponse",
     "SyncTransport",
     "Transport",
+    "get_default_sync_transport",
+    "get_default_transport",
 ]
 
 from .pyqwest import (
@@ -30,6 +32,8 @@ from .pyqwest import (
     SyncResponse,
     SyncTransport,
     Transport,
+    get_default_sync_transport,
+    get_default_transport,
 )
 
 __doc__ = pyqwest.__doc__  # noqa: F821

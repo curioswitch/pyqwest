@@ -37,6 +37,10 @@ fn pyqwest(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<asyncio::request::Request>()?;
     m.add_class::<asyncio::response::Response>()?;
     m.add_class::<asyncio::transport::HttpTransport>()?;
+    m.add_function(wrap_pyfunction!(
+        asyncio::transport::get_default_transport,
+        m
+    )?)?;
     m.add_class::<common::FullResponse>()?;
     m.add_class::<common::HTTPVersion>()?;
     m.add_class::<headers::Headers>()?;
@@ -44,6 +48,10 @@ fn pyqwest(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<sync::request::SyncRequest>()?;
     m.add_class::<sync::response::SyncResponse>()?;
     m.add_class::<sync::transport::SyncHttpTransport>()?;
+    m.add_function(wrap_pyfunction!(
+        sync::transport::get_default_sync_transport,
+        m
+    )?)?;
     add_protocols(py, m)?;
     Ok(())
 }

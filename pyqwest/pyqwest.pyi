@@ -443,6 +443,11 @@ class HTTPTransport:
     async def close(self) -> None:
         """Closes the transport, releasing any underlying resources."""
 
+def get_default_transport() -> HTTPTransport:
+    """Returns the singleton default HTTP transport instance used by clients that do not
+    specify a transport.
+    """
+
 class Request:
     """An HTTP request."""
 
@@ -817,6 +822,11 @@ class SyncHTTPTransport:
 
     def close(self) -> None:
         """Closes the transport, releasing any underlying resources."""
+
+def get_default_sync_transport() -> SyncHTTPTransport:
+    """Returns the singleton default HTTP transport instance used by synchronous clients that do not
+    specify a transport.
+    """
 
 class SyncRequest:
     """An HTTP request."""
