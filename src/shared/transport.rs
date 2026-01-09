@@ -11,14 +11,11 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) tls_key: Option<&'a [u8]>,
     pub(crate) tls_cert: Option<&'a [u8]>,
     pub(crate) http_version: Option<Bound<'a, HTTPVersion>>,
-
     pub(crate) timeout: Option<f64>,
     pub(crate) connect_timeout: Option<f64>,
     pub(crate) read_timeout: Option<f64>,
-
     pub(crate) idle_connection_timeout: Option<f64>,
     pub(crate) max_idle_connections_per_host: Option<usize>,
-
     pub(crate) tcp_keepalive_interval: Option<f64>,
 }
 
