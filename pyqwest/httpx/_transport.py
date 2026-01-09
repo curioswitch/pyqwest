@@ -54,11 +54,14 @@ class AsyncPyQwestTransport(httpx.AsyncBaseTransport):
             )
         )
 
+        def get_trailers() -> httpx.Headers:
+            return httpx.Headers(tuple(response.trailers.items()))
+
         return httpx.Response(
             status_code=response.status,
             headers=httpx.Headers(tuple(response.headers.items())),
             stream=AsyncIteratorByteStream(response),
-            extensions={"trailers": response.trailers},
+            extensions={"get_trailers": get_trailers},
         )
 
 
@@ -139,11 +142,14 @@ class PyQwestTransport(httpx.BaseTransport):
             )
         )
 
+        def get_trailers() -> httpx.Headers:
+            return httpx.Headers(tuple(response.trailers.items()))
+
         return httpx.Response(
             status_code=response.status,
             headers=httpx.Headers(tuple(response.headers.items())),
             stream=IteratorByteStream(response),
-            extensions={"trailers": response.trailers},
+            extensions={"get_trailers": get_trailers},
         )
 
 

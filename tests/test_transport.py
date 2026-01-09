@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pyqwest import (
     Client,
+    HTTPTransport,
     Request,
     SyncClient,
+    SyncHTTPTransport,
     SyncRequest,
     get_default_sync_transport,
     get_default_transport,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
@@ -51,3 +58,55 @@ async def test_default_sync_client(url: str) -> None:
     res = await asyncio.to_thread(client.get, url)
     assert res.status == 200
     assert res.content == b""
+
+
+# Most options are performance related and can't really be
+# tested but it's worth adding coverage for them anyways.
+@pytest.mark.asyncio
+async def test_transport_options(url: str) -> None:
+    transport = HTTPTransport(
+        timeout=0.001,
+        connect_timeout=10,
+        read_timeout=20,
+        pool_idle_timeout=30,
+        pool_max_idle_per_host=5,
+        tcp_keepalive_interval=100,
+        enable_gzip=True,
+        enable_brotli=True,
+        enable_zstd=True,
+    )
+
+    async def request_content() -> AsyncIterator[bytes]:
+        await asyncio.sleep(1)
+        yield b"hello"
+
+    url = f"{url}/echo"
+    with pytest.raises(TimeoutError):
+        res = await transport.execute(Request("POST", url, content=request_content()))
+        await res.read_full()
+
+
+# Most options are performance related and can't really be
+# tested but it's worth adding coverage for them anyways.
+@pytest.mark.asyncio
+async def test_sync_transport_options(url: str) -> None:
+    transport = SyncHTTPTransport(
+        timeout=0.001,
+        connect_timeout=10,
+        read_timeout=20,
+        pool_idle_timeout=30,
+        pool_max_idle_per_host=5,
+        tcp_keepalive_interval=100,
+        enable_gzip=True,
+        enable_brotli=True,
+        enable_zstd=True,
+    )
+
+    def request_content() -> Iterator[bytes]:
+        time.sleep(1)
+        yield b""
+
+    url = f"{url}/echo"
+    with pytest.raises(TimeoutError):
+        res = transport.execute(SyncRequest("POST", url, content=request_content()))
+        res.read_full()
