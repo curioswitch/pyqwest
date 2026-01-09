@@ -1,13 +1,16 @@
 [project]
 site_name = "pyqwest"
+site_url = "https://curioswitch.github.io/pyqwest/"
 site_description = "A Python HTTP client built on top of reqwest"
 site_author = "CurioSwitch"
 copyright = "&copy; CurioSwitch"
 repo_url = "https://github.com/curioswitch/pyqwest"
 edit_uri = "edit/main/docs/"
-nav = ["api.md"]
+nav = [{ "Introduction" = "index.md" }, "api.md"]
 
 [project.theme]
+favicon = "img/favicon.png"
+logo = "img/logo.png"
 features = ["content.action.edit"]
 
 [project.theme.icon]
