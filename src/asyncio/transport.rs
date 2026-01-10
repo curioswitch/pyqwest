@@ -125,8 +125,9 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let req_builder = request.new_reqwest_builder(py, client, self.http3)?;
-        let mut response = Response::pending(py)?;
+        let (req_builder, request_iter_task) =
+            request.new_reqwest_builder(py, client, self.http3)?;
+        let mut response = Response::pending(py, request_iter_task)?;
         future_into_py(py, async move {
             let res = req_builder
                 .send()
@@ -148,8 +149,9 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let req_builder = request.new_reqwest_builder(py, client, self.http3)?;
-        let mut response = Response::pending(py)?;
+        let (req_builder, request_iter_task) =
+            request.new_reqwest_builder(py, client, self.http3)?;
+        let mut response = Response::pending(py, request_iter_task)?;
         future_into_py(py, async move {
             let res = req_builder
                 .send()

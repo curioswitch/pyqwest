@@ -444,11 +444,28 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()
 
+    request_cancelled = asyncio.Event()
+    generator_cancelled = asyncio.Event()
+
+    class RequestGenerator:
+        def __aiter__(self) -> AsyncIterator[bytes]:
+            return self
+
+        async def __anext__(self) -> bytes:
+            try:
+                return await queue.get()
+            except asyncio.CancelledError:
+                request_cancelled.set()
+                raise
+
+        async def aclose(self) -> None:
+            generator_cancelled.set()
+
     resp = await client.stream(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
-        content=request_body(queue),
+        content=RequestGenerator(),
     )
     assert resp.status == 200
     content = resp.content
@@ -456,6 +473,9 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
     await resp.close()
     chunk = await anext(content, None)
     assert chunk is None
+
+    await asyncio.wait_for(request_cancelled.wait(), timeout=1.0)
+    await asyncio.wait_for(generator_cancelled.wait(), timeout=1.0)
 
 
 @pytest.mark.asyncio
