@@ -1889,6 +1889,7 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "trustme" },
+    { name = "uvloop" },
 ]
 docs = [
     { name = "mkdocstrings-python" },
@@ -1914,6 +1915,7 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "trustme" },
+    { name = "uvloop" },
 ]
 docs = [
     { name = "mkdocstrings-python" },
