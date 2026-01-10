@@ -1889,6 +1889,8 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "trustme" },
+    { name = "uvloop", marker = "sys_platform != 'win32'" },
+    { name = "winloop", marker = "sys_platform == 'win32'" },
 ]
 docs = [
     { name = "mkdocstrings-python" },
@@ -1914,6 +1916,8 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "trustme" },
+    { name = "uvloop", marker = "sys_platform != 'win32'" },
+    { name = "winloop", marker = "sys_platform == 'win32'" },
 ]
 docs = [
     { name = "mkdocstrings-python" },
