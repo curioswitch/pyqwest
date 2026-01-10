@@ -11,10 +11,21 @@ import httpx
 import niquests
 import pytest
 import pytest_asyncio
-import uvloop
 
 from pyqwest import Client, HTTPTransport, HTTPVersion, SyncClient, SyncHTTPTransport
 from pyqwest.httpx import AsyncPyQwestTransport, PyQwestTransport
+
+try:
+    import uvloop
+
+    new_event_loop = uvloop.new_event_loop
+except ImportError:
+    try:
+        import winloop  # pyright: ignore[reportMissingImports]
+
+        new_event_loop = winloop.new_event_loop
+    except ImportError:
+        new_event_loop = asyncio.new_event_loop
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -41,7 +52,7 @@ def library(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture(scope="module")
 def async_runner() -> Iterator[asyncio.Runner]:
-    with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
+    with asyncio.Runner(loop_factory=new_event_loop) as runner:
         yield runner
 
 

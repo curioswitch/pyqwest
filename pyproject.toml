@@ -24,7 +24,8 @@ dev = [
     "pyvoy",
     "ruff",
     "trustme",
-    "uvloop",
+    "uvloop; sys_platform != 'win32'",
+    "winloop; sys_platform == 'win32'",
 ]
 
 docs = ["zensical", "mkdocstrings-python"]
