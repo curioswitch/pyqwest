@@ -85,7 +85,8 @@ struct TaskConsumer;
 
 #[pymethods]
 impl TaskConsumer {
-    fn __call__<'py>(&self, py: Python<'py>, future: Bound<'py, PyAny>) -> () {
+    #[allow(clippy::unused_self)]
+    fn __call__(&self, py: Python<'_>, future: &Bound<'_, PyAny>) {
         // Suppress errors
         let _ = future.call_method0(intern!(py, "exception"));
     }
