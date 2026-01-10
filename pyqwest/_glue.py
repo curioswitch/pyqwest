@@ -61,14 +61,15 @@ class Sender(Protocol[T_contra]):
 
 
 async def forward(gen: AsyncIterator[T_contra], sender: Sender[T_contra]) -> None:
-    async for item in gen:
-        should_continue = sender.send(item)
+    try:
+        async for item in gen:
+            should_continue = sender.send(item)
 
-        if inspect.isawaitable(should_continue):
-            should_continue = await should_continue
+            if inspect.isawaitable(should_continue):
+                should_continue = await should_continue
 
-        if should_continue:
-            continue
-        break
-
-    sender.close()
+            if should_continue:
+                continue
+            break
+    finally:
+        sender.close()

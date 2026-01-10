@@ -35,15 +35,14 @@ pub(super) fn into_stream(
     )?;
 
     let coro = forward_fn.bind(py).call1((gen, sender))?;
-    let task = event_loop
-        .call_method1(intern!(py, "create_task"), (coro,))?
-        .unbind();
+    let task = event_loop.call_method1(intern!(py, "create_task"), (coro,))?;
+    task.call_method1(intern!(py, "add_done_callback"), (TaskConsumer,))?;
 
     let stream = ReceiverStream::new(rx);
-    Ok((stream, task))
+    Ok((stream, task.unbind()))
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest._asyncio", frozen)]
 struct Sender {
     locals: TaskLocals,
     tx: Mutex<Option<mpsc::Sender<Py<PyAny>>>>,
@@ -78,5 +77,16 @@ impl Sender {
     fn close(&self, py: Python<'_>) {
         let mut guard = self.tx.lock_py_attached(py).unwrap();
         *guard = None;
+    }
+}
+
+#[pyclass(module = "pyqwest._asyncio", frozen)]
+struct TaskConsumer;
+
+#[pymethods]
+impl TaskConsumer {
+    fn __call__<'py>(&self, py: Python<'py>, future: Bound<'py, PyAny>) -> () {
+        // Suppress errors
+        let _ = future.call_method0(intern!(py, "exception"));
     }
 }
