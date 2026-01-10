@@ -125,7 +125,20 @@ impl ResponseBody {
             let Some(res) = res else {
                 return Ok(None);
             };
-            let frame = res.map_err(|e| pyerrors::from_reqwest(&e, "Error reading content"))?;
+            let frame = match res {
+                Ok(frame) => frame,
+                Err(e) => {
+                    if let Some(e) = errors::find::<h2::Error>(&e) {
+                        if matches!(
+                            e.reason(),
+                            Some(h2::Reason::NO_ERROR) | Some(h2::Reason::CANCEL)
+                        ) {
+                            return Ok(None);
+                        }
+                    }
+                    return Err(pyerrors::from_reqwest(&e, "Error reading content"));
+                }
+            };
             // A frame is either data or trailers.
             match frame.into_data().map_err(Frame::into_trailers) {
                 Ok(buf) => {
