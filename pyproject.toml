@@ -172,7 +172,7 @@ split-on-trailing-comma = false
 testpaths = ["tests"]
 addopts = [
     "--import-mode=importlib",
-    "--benchmark-disable",
+    "--benchmark-skip",
     "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
 ]
 asyncio_default_fixture_loop_scope = "session"
