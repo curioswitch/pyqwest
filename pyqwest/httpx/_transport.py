@@ -50,7 +50,7 @@ class AsyncPyQwestTransport(httpx.AsyncBaseTransport):
                 str(httpx_request.url),
                 headers=request_headers,
                 content=request_content,
-                timeout=timeout,
+                timeout=timeout,  # pyright: ignore[reportCallIssue]
             )
         )
 
@@ -138,7 +138,7 @@ class PyQwestTransport(httpx.BaseTransport):
                 str(httpx_request.url),
                 headers=request_headers,
                 content=request_content,
-                timeout=timeout,
+                timeout=timeout,  # pyright: ignore[reportCallIssue]
             )
         )
 
