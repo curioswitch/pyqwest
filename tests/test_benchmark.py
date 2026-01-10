@@ -20,12 +20,9 @@ try:
 
     new_event_loop = uvloop.new_event_loop
 except ImportError:
-    try:
-        import winloop  # pyright: ignore[reportMissingImports]
+    import winloop  # pyright: ignore[reportMissingImports]
 
-        new_event_loop = winloop.new_event_loop
-    except ImportError:
-        new_event_loop = asyncio.new_event_loop
+    new_event_loop = winloop.new_event_loop
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
