@@ -9,11 +9,13 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyErr,
     PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::into_stream_v2;
 use tokio_stream::StreamExt as _;
 
 use crate::{
-    asyncio::awaitable::{EmptyAsyncIterator, ValueAsyncIterator},
+    asyncio::{
+        awaitable::{EmptyAsyncIterator, ValueAsyncIterator},
+        stream::into_stream,
+    },
     headers::Headers,
     shared::request::RequestHead,
 };
@@ -81,15 +83,20 @@ impl Request {
         py: Python<'_>,
         client: &reqwest::Client,
         http3: bool,
-    ) -> PyResult<reqwest::RequestBuilder> {
+    ) -> PyResult<(reqwest::RequestBuilder, Option<Py<PyAny>>)> {
         let mut req_builder = self.head.new_request_builder(py, client, http3)?;
-        if let Some(body) = self.content_into_reqwest(py)? {
+        let mut request_iter_task: Option<Py<PyAny>> = None;
+        if let (Some(body), task) = self.content_into_reqwest(py)? {
             req_builder = req_builder.body(body);
+            request_iter_task = task;
         }
-        Ok(req_builder)
+        Ok((req_builder, request_iter_task))
     }
 
-    fn content_into_reqwest(&self, py: Python<'_>) -> PyResult<Option<reqwest::Body>> {
+    fn content_into_reqwest(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<(Option<reqwest::Body>, Option<Py<PyAny>>)> {
         match &self.content {
             Some(Content::Bytes(bytes)) => {
                 // TODO: Replace this dance with clone_ref when released.
@@ -98,14 +105,15 @@ impl Request {
                 // switch to clone_ref later.
                 let bytes = bytes.into_pyobject(py).unwrap();
                 let bytes = PyBackedBytes::from(bytes);
-                Ok(Some(reqwest::Body::from(Bytes::from_owner(bytes))))
+                Ok((Some(reqwest::Body::from(Bytes::from_owner(bytes))), None))
             }
             Some(Content::AsyncIter(iter)) => {
                 let iter = wrap_async_iter(py, iter)?;
-                let res = into_stream_v2(iter)?.map(|item| Ok::<_, PyErr>(bytes_from_chunk(item)));
-                Ok(Some(reqwest::Body::wrap_stream(res)))
+                let (stream, task) = into_stream(py, iter)?;
+                let res = stream.map(|item| Ok::<_, PyErr>(bytes_from_chunk(item)));
+                Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
-            None => Ok(None),
+            None => Ok((None, None)),
         }
     }
 }

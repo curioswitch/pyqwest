@@ -1,6 +1,8 @@
+use std::sync::Mutex;
+
 use pyo3::{
     exceptions::PyStopAsyncIteration,
-    pyclass, pymethods,
+    intern, pyclass, pymethods,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyBytes},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
@@ -26,10 +28,14 @@ enum Content {
 pub(crate) struct Response {
     pub(super) head: ResponseHead,
     content: Content,
+    request_iter_task: Mutex<Option<Py<PyAny>>>,
 }
 
 impl Response {
-    pub(super) fn pending(py: Python<'_>) -> PyResult<Response> {
+    pub(super) fn pending(
+        py: Python<'_>,
+        request_iter_task: Option<Py<PyAny>>,
+    ) -> PyResult<Response> {
         Ok(Response {
             head: ResponseHead::pending(py),
             content: Content::Http(Py::new(
@@ -38,6 +44,7 @@ impl Response {
                     body: ResponseBody::pending(py),
                 },
             )?),
+            request_iter_task: Mutex::new(request_iter_task),
         })
     }
 
@@ -98,6 +105,7 @@ impl Response {
                 content: content.unbind(),
                 trailers,
             },
+            request_iter_task: Mutex::new(None),
         })
     }
 
@@ -192,6 +200,10 @@ impl Response {
     }
 
     fn close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let request_iter_task = self.request_iter_task.lock().unwrap().take();
+        if let Some(task) = request_iter_task {
+            task.call_method0(py, intern!(py, "cancel"))?;
+        }
         if let Content::Http(content) = &self.content {
             if content.get().body.try_close() {
                 return EmptyAwaitable.into_bound_py_any(py);

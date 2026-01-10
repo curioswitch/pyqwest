@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+import inspect
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from .pyqwest import FullResponse, Headers, Request, Transport
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
 
-T = TypeVar("T")
+T_contra = TypeVar("T_contra", contravariant=True)
 U = TypeVar("U")
 
 
 async def wrap_body_gen(
-    gen: AsyncIterator[T], wrap_fn: Callable[[T], U]
+    gen: AsyncIterator[T_contra], wrap_fn: Callable[[T_contra], U]
 ) -> AsyncIterator[U]:
     try:
         async for item in gen:
@@ -48,3 +49,26 @@ async def execute_and_read_full(transport: Transport, request: Request) -> FullR
     return await new_full_response(
         resp.status, resp.headers, resp.content, resp.trailers
     )
+
+
+# Vendored from pyo3-async-runtimes to apply some fixes
+
+
+class Sender(Protocol[T_contra]):
+    def send(self, item: T_contra) -> bool | Awaitable[bool]: ...
+
+    def close(self) -> None: ...
+
+
+async def forward(gen: AsyncIterator[T_contra], sender: Sender[T_contra]) -> None:
+    async for item in gen:
+        should_continue = sender.send(item)
+
+        if inspect.isawaitable(should_continue):
+            should_continue = await should_continue
+
+        if should_continue:
+            continue
+        break
+
+    sender.close()
