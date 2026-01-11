@@ -110,7 +110,7 @@ impl Request {
             Some(Content::AsyncIter(iter)) => {
                 let iter = wrap_async_iter(py, iter)?;
                 let (stream, task) = into_stream(py, iter)?;
-                let res = stream.map(|item| bytes_from_chunk(item));
+                let res = stream.map(bytes_from_chunk);
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
             None => Ok((None, None)),
