@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import time
+from queue import Queue
 from typing import TYPE_CHECKING
 
 import pytest
@@ -104,11 +104,18 @@ async def test_sync_transport_options(url: str) -> None:
         use_system_dns=True,
     )
 
+    queue = Queue()
+
     def request_content() -> Iterator[bytes]:
-        time.sleep(1)
+        queue.get()
         yield b""
 
     url = f"{url}/echo"
-    with pytest.raises(TimeoutError):
-        res = transport.execute(SyncRequest("POST", url, content=request_content()))
+    with (
+        pytest.raises(TimeoutError),
+        transport.execute(SyncRequest("POST", url, content=request_content())) as res,
+    ):
         res.read_full()
+
+    # Make sure the generator cleans up
+    queue.put(None)

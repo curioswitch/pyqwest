@@ -107,7 +107,8 @@ impl SyncRequest {
                                 Some(Err(e)) => Err(e),
                                 None => break,
                             };
-                            if py.detach(|| tx.blocking_send(res)).is_err() {
+                            let errored = res.is_err();
+                            if py.detach(|| tx.blocking_send(res)).is_err() || errored {
                                 break;
                             }
                         }

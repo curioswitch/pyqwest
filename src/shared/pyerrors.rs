@@ -7,7 +7,9 @@ use pyo3::{
 
 pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
     if let Some(e) = errors::find::<h2::Error>(e) {
-        return PyErr::new::<HttpStreamError, _>(HttpStreamError::as_args(e, msg));
+        if e.is_remote() {
+            return PyErr::new::<HttpStreamError, _>(HttpStreamError::as_args(e, msg));
+        }
     }
 
     let msg = format!("{msg}: {:+}", errors::fmt(e));

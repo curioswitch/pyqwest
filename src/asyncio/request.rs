@@ -110,7 +110,7 @@ impl Request {
             Some(Content::AsyncIter(iter)) => {
                 let iter = wrap_async_iter(py, iter)?;
                 let (stream, task) = into_stream(py, iter)?;
-                let res = stream.map(|item| Ok::<_, PyErr>(bytes_from_chunk(item)));
+                let res = stream.map(|item| bytes_from_chunk(item));
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
             None => Ok((None, None)),
@@ -170,8 +170,13 @@ fn wrap_body_chunk(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<Py<BodyC
     Py::new(py, BodyChunk { bytes })
 }
 
-fn bytes_from_chunk(item: Py<PyAny>) -> Bytes {
-    // SAFETY: items originate from wrap_body_gen, which yields BodyChunk instances.
-    let chunk: Py<BodyChunk> = unsafe { std::mem::transmute(item) };
-    chunk.get().bytes.clone()
+fn bytes_from_chunk(item: PyResult<Py<PyAny>>) -> PyResult<Bytes> {
+    match item {
+        Ok(item) => {
+            // SAFETY: items originate from wrap_body_gen, which yields BodyChunk instances.
+            let chunk: Py<BodyChunk> = unsafe { std::mem::transmute(item) };
+            Ok(chunk.get().bytes.clone())
+        }
+        Err(e) => Err(e),
+    }
 }

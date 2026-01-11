@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use pyo3::{
+    exceptions::PyBaseException,
     intern, pyclass, pymethods,
     sync::{MutexExt as _, PyOnceLock},
     types::PyAnyMethods as _,
@@ -16,7 +17,10 @@ use tokio_stream::wrappers::ReceiverStream;
 pub(super) fn into_stream(
     py: Python<'_>,
     gen: Bound<'_, PyAny>,
-) -> PyResult<(impl futures_core::Stream<Item = Py<PyAny>>, Py<PyAny>)> {
+) -> PyResult<(
+    impl futures_core::Stream<Item = PyResult<Py<PyAny>>>,
+    Py<PyAny>,
+)> {
     static FORWARD_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     let forward_fn = FORWARD_FN.get_or_try_init(py, || {
         let module = py.import("pyqwest._glue")?;
@@ -25,7 +29,7 @@ pub(super) fn into_stream(
 
     let locals = get_current_locals(py)?;
     let event_loop = locals.event_loop(py);
-    let (tx, rx) = mpsc::channel::<Py<PyAny>>(10);
+    let (tx, rx) = mpsc::channel::<PyResult<Py<PyAny>>>(10);
     let sender = Py::new(
         py,
         Sender {
@@ -45,12 +49,18 @@ pub(super) fn into_stream(
 #[pyclass(module = "pyqwest._asyncio", frozen)]
 struct Sender {
     locals: TaskLocals,
-    tx: Mutex<Option<mpsc::Sender<Py<PyAny>>>>,
+    tx: Mutex<Option<mpsc::Sender<PyResult<Py<PyAny>>>>>,
 }
 
 #[pymethods]
 impl Sender {
-    fn send(&self, py: Python<'_>, item: Py<PyAny>) -> PyResult<Py<PyAny>> {
+    fn send(&self, py: Python<'_>, item: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        let item = if let Ok(item) = item.cast::<PyBaseException>() {
+            Err(PyErr::from_value(item.clone().into_any()))
+        } else {
+            Ok(item.unbind())
+        };
+
         let guard = self.tx.lock_py_attached(py).unwrap();
         // SAFETY - We never call send after close in _glue.py
         let tx = guard.as_ref().unwrap();
