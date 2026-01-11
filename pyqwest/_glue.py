@@ -55,7 +55,7 @@ async def execute_and_read_full(transport: Transport, request: Request) -> FullR
 
 
 class Sender(Protocol[T_contra]):
-    def send(self, item: T_contra) -> bool | Awaitable[bool]: ...
+    def send(self, item: T_contra | BaseException) -> bool | Awaitable[bool]: ...
 
     def close(self) -> None: ...
 
@@ -71,5 +71,9 @@ async def forward(gen: AsyncIterator[T_contra], sender: Sender[T_contra]) -> Non
             if should_continue:
                 continue
             break
+    except Exception as e:
+        res = sender.send(e)
+        if inspect.isawaitable(res):
+            await res
     finally:
         sender.close()

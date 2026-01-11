@@ -1073,3 +1073,28 @@ class FullResponse:
 
         The content-type header is not checked when using this method.
         """
+
+class StreamErrorCode:
+    NO_ERROR: StreamErrorCode
+    PROTOCOL_ERROR: StreamErrorCode
+    INTERNAL_ERROR: StreamErrorCode
+    FLOW_CONTROL_ERROR: StreamErrorCode
+    SETTINGS_TIMEOUT: StreamErrorCode
+    STREAM_CLOSED: StreamErrorCode
+    FRAME_SIZE_ERROR: StreamErrorCode
+    REFUSED_STREAM: StreamErrorCode
+    CANCEL: StreamErrorCode
+    COMPRESSION_ERROR: StreamErrorCode
+    CONNECT_ERROR: StreamErrorCode
+    ENHANCE_YOUR_CALM: StreamErrorCode
+    INADEQUATE_SECURITY: StreamErrorCode
+    HTTP_1_1_REQUIRED: StreamErrorCode
+
+class StreamError(Exception):
+    """An error representing an HTTP/2+ stream error."""
+
+    message: str
+    """The error message."""
+
+    code: StreamErrorCode
+    """The stream error code."""

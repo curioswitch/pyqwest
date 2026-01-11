@@ -5,12 +5,16 @@ import contextlib
 from typing import TYPE_CHECKING, cast
 
 import httpx
+from h2.errors import ErrorCodes
+from h2.events import StreamReset
 
 from pyqwest import (
     Headers,
     HTTPTransport,
     Request,
     Response,
+    StreamError,
+    StreamErrorCode,
     SyncHTTPTransport,
     SyncRequest,
     SyncResponse,
@@ -20,7 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
 
-class AsyncPyQwestTransport(httpx.AsyncBaseTransport):
+class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
     """An HTTPX transport implementation that delegates to pyqwest.
 
     This can be used with any existing code using httpx.AsyncClient, and will enable
@@ -44,15 +48,18 @@ class AsyncPyQwestTransport(httpx.AsyncBaseTransport):
         request_content = async_request_content(httpx_request.stream)
         timeout = convert_timeout(httpx_request.extensions)
 
-        response = await self._transport.execute(
-            Request(
-                httpx_request.method,
-                str(httpx_request.url),
-                headers=request_headers,
-                content=request_content,
-                timeout=timeout,  # pyright: ignore[reportCallIssue]
+        try:
+            response = await self._transport.execute(
+                Request(
+                    httpx_request.method,
+                    str(httpx_request.url),
+                    headers=request_headers,
+                    content=request_content,
+                    timeout=timeout,  # pyright: ignore[reportCallIssue]
+                )
             )
-        )
+        except StreamError as e:
+            raise map_stream_error(e) from e
 
         def get_trailers() -> httpx.Headers:
             return httpx.Headers(tuple(response.trailers.items()))
@@ -103,14 +110,17 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
         if self._is_stream_consumed:
             raise httpx.StreamConsumed
         self._is_stream_consumed = True
-        async for chunk in self._response.content:
-            yield chunk
+        try:
+            async for chunk in self._response.content:
+                yield chunk
+        except StreamError as e:
+            raise map_stream_error(e) from e
 
     async def aclose(self) -> None:
         await self._response.close()
 
 
-class PyQwestTransport(httpx.BaseTransport):
+class PyqwestTransport(httpx.BaseTransport):
     """An HTTPX transport implementation that delegates to pyqwest.
 
     This can be used with any existing code using httpx.Client, and will enable
@@ -132,15 +142,18 @@ class PyQwestTransport(httpx.BaseTransport):
         request_content = sync_request_content(httpx_request.stream)
         timeout = convert_timeout(httpx_request.extensions)
 
-        response = self._transport.execute(
-            SyncRequest(
-                httpx_request.method,
-                str(httpx_request.url),
-                headers=request_headers,
-                content=request_content,
-                timeout=timeout,  # pyright: ignore[reportCallIssue]
+        try:
+            response = self._transport.execute(
+                SyncRequest(
+                    httpx_request.method,
+                    str(httpx_request.url),
+                    headers=request_headers,
+                    content=request_content,
+                    timeout=timeout,  # pyright: ignore[reportCallIssue]
+                )
             )
-        )
+        except StreamError as e:
+            raise map_stream_error(e) from e
 
         def get_trailers() -> httpx.Headers:
             return httpx.Headers(tuple(response.trailers.items()))
@@ -185,7 +198,10 @@ class IteratorByteStream(httpx.SyncByteStream):
         if self._is_stream_consumed:
             raise httpx.StreamConsumed
         self._is_stream_consumed = True
-        return self._response.content
+        try:
+            yield from self._response.content
+        except StreamError as e:
+            raise map_stream_error(e) from e
 
     def close(self) -> None:
         self._response.close()
@@ -227,3 +243,38 @@ def convert_timeout(extensions: dict) -> float | None:
     if operation_timeout != -1:
         return operation_timeout
     return httpx_timeout.get("connect")
+
+
+def map_stream_error(e: StreamError) -> httpx.RemoteProtocolError:
+    match e.code:
+        case StreamErrorCode.NO_ERROR:
+            code = ErrorCodes.NO_ERROR
+        case StreamErrorCode.PROTOCOL_ERROR:
+            code = ErrorCodes.PROTOCOL_ERROR
+        case StreamErrorCode.INTERNAL_ERROR:
+            code = ErrorCodes.INTERNAL_ERROR
+        case StreamErrorCode.FLOW_CONTROL_ERROR:
+            code = ErrorCodes.FLOW_CONTROL_ERROR
+        case StreamErrorCode.SETTINGS_TIMEOUT:
+            code = ErrorCodes.SETTINGS_TIMEOUT
+        case StreamErrorCode.STREAM_CLOSED:
+            code = ErrorCodes.STREAM_CLOSED
+        case StreamErrorCode.FRAME_SIZE_ERROR:
+            code = ErrorCodes.FRAME_SIZE_ERROR
+        case StreamErrorCode.REFUSED_STREAM:
+            code = ErrorCodes.REFUSED_STREAM
+        case StreamErrorCode.CANCEL:
+            code = ErrorCodes.CANCEL
+        case StreamErrorCode.COMPRESSION_ERROR:
+            code = ErrorCodes.COMPRESSION_ERROR
+        case StreamErrorCode.CONNECT_ERROR:
+            code = ErrorCodes.CONNECT_ERROR
+        case StreamErrorCode.ENHANCE_YOUR_CALM:
+            code = ErrorCodes.ENHANCE_YOUR_CALM
+        case StreamErrorCode.INADEQUATE_SECURITY:
+            code = ErrorCodes.INADEQUATE_SECURITY
+        case StreamErrorCode.HTTP_1_1_REQUIRED:
+            code = ErrorCodes.HTTP_1_1_REQUIRED
+        case _:
+            code = ErrorCodes.INTERNAL_ERROR
+    return httpx.RemoteProtocolError(str(StreamReset(stream_id=-1, error_code=code)))

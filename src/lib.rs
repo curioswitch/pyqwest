@@ -52,6 +52,10 @@ fn pyqwest(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         sync::transport::get_default_sync_transport,
         m
     )?)?;
+
+    m.add_class::<shared::pyerrors::StreamErrorCode>()?;
+    m.add_class::<shared::pyerrors::StreamError>()?;
+
     add_protocols(py, m)?;
     Ok(())
 }

@@ -13,7 +13,7 @@ import pytest
 import pytest_asyncio
 
 from pyqwest import Client, HTTPTransport, HTTPVersion, SyncClient, SyncHTTPTransport
-from pyqwest.httpx import AsyncPyQwestTransport, PyQwestTransport
+from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
 
 try:
     import uvloop
@@ -100,7 +100,7 @@ async def benchmark_client_async(
                 yield client
         case "httpx_pyqwest":
             async with httpx.AsyncClient(
-                transport=AsyncPyQwestTransport(async_transport)
+                transport=AsyncPyqwestTransport(async_transport)
             ) as client:
                 yield client
         case "niquests":
@@ -143,7 +143,7 @@ def benchmark_client_sync(
             ) as client:
                 yield client
         case "httpx_pyqwest":
-            with httpx.Client(transport=PyQwestTransport(sync_transport)) as client:
+            with httpx.Client(transport=PyqwestTransport(sync_transport)) as client:
                 yield client
         case "niquests":
             pytest.skip("seems to leak file descriptors")

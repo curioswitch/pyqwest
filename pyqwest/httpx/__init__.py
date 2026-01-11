@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-__all__ = ["AsyncPyQwestTransport", "PyQwestTransport"]
+__all__ = ["AsyncPyqwestTransport", "PyqwestTransport"]
 
-from ._transport import AsyncPyQwestTransport, PyQwestTransport
+from ._transport import AsyncPyqwestTransport, PyqwestTransport
