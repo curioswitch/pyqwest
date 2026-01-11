@@ -71,7 +71,7 @@ async def forward(gen: AsyncIterator[T_contra], sender: Sender[T_contra]) -> Non
             if should_continue:
                 continue
             break
-    except BaseException as e:
+    except Exception as e:
         res = sender.send(e)
         if inspect.isawaitable(res):
             await res
