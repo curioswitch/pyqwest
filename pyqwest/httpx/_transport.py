@@ -10,11 +10,11 @@ from h2.events import StreamReset
 
 from pyqwest import (
     Headers,
-    HTTPStreamError,
-    HTTPStreamErrorCode,
     HTTPTransport,
     Request,
     Response,
+    StreamError,
+    StreamErrorCode,
     SyncHTTPTransport,
     SyncRequest,
     SyncResponse,
@@ -58,7 +58,7 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
                     timeout=timeout,  # pyright: ignore[reportCallIssue]
                 )
             )
-        except HTTPStreamError as e:
+        except StreamError as e:
             raise map_stream_error(e) from e
 
         def get_trailers() -> httpx.Headers:
@@ -113,7 +113,7 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
         try:
             async for chunk in self._response.content:
                 yield chunk
-        except HTTPStreamError as e:
+        except StreamError as e:
             raise map_stream_error(e) from e
 
     async def aclose(self) -> None:
@@ -152,7 +152,7 @@ class PyqwestTransport(httpx.BaseTransport):
                     timeout=timeout,  # pyright: ignore[reportCallIssue]
                 )
             )
-        except HTTPStreamError as e:
+        except StreamError as e:
             raise map_stream_error(e) from e
 
         def get_trailers() -> httpx.Headers:
@@ -200,7 +200,7 @@ class IteratorByteStream(httpx.SyncByteStream):
         self._is_stream_consumed = True
         try:
             yield from self._response.content
-        except HTTPStreamError as e:
+        except StreamError as e:
             raise map_stream_error(e) from e
 
     def close(self) -> None:
@@ -245,35 +245,35 @@ def convert_timeout(extensions: dict) -> float | None:
     return httpx_timeout.get("connect")
 
 
-def map_stream_error(e: HTTPStreamError) -> httpx.RemoteProtocolError:
+def map_stream_error(e: StreamError) -> httpx.RemoteProtocolError:
     match e.code:
-        case HTTPStreamErrorCode.NO_ERROR:
+        case StreamErrorCode.NO_ERROR:
             code = ErrorCodes.NO_ERROR
-        case HTTPStreamErrorCode.PROTOCOL_ERROR:
+        case StreamErrorCode.PROTOCOL_ERROR:
             code = ErrorCodes.PROTOCOL_ERROR
-        case HTTPStreamErrorCode.INTERNAL_ERROR:
+        case StreamErrorCode.INTERNAL_ERROR:
             code = ErrorCodes.INTERNAL_ERROR
-        case HTTPStreamErrorCode.FLOW_CONTROL_ERROR:
+        case StreamErrorCode.FLOW_CONTROL_ERROR:
             code = ErrorCodes.FLOW_CONTROL_ERROR
-        case HTTPStreamErrorCode.SETTINGS_TIMEOUT:
+        case StreamErrorCode.SETTINGS_TIMEOUT:
             code = ErrorCodes.SETTINGS_TIMEOUT
-        case HTTPStreamErrorCode.STREAM_CLOSED:
+        case StreamErrorCode.STREAM_CLOSED:
             code = ErrorCodes.STREAM_CLOSED
-        case HTTPStreamErrorCode.FRAME_SIZE_ERROR:
+        case StreamErrorCode.FRAME_SIZE_ERROR:
             code = ErrorCodes.FRAME_SIZE_ERROR
-        case HTTPStreamErrorCode.REFUSED_STREAM:
+        case StreamErrorCode.REFUSED_STREAM:
             code = ErrorCodes.REFUSED_STREAM
-        case HTTPStreamErrorCode.CANCEL:
+        case StreamErrorCode.CANCEL:
             code = ErrorCodes.CANCEL
-        case HTTPStreamErrorCode.COMPRESSION_ERROR:
+        case StreamErrorCode.COMPRESSION_ERROR:
             code = ErrorCodes.COMPRESSION_ERROR
-        case HTTPStreamErrorCode.CONNECT_ERROR:
+        case StreamErrorCode.CONNECT_ERROR:
             code = ErrorCodes.CONNECT_ERROR
-        case HTTPStreamErrorCode.ENHANCE_YOUR_CALM:
+        case StreamErrorCode.ENHANCE_YOUR_CALM:
             code = ErrorCodes.ENHANCE_YOUR_CALM
-        case HTTPStreamErrorCode.INADEQUATE_SECURITY:
+        case StreamErrorCode.INADEQUATE_SECURITY:
             code = ErrorCodes.INADEQUATE_SECURITY
-        case HTTPStreamErrorCode.HTTP_1_1_REQUIRED:
+        case StreamErrorCode.HTTP_1_1_REQUIRED:
             code = ErrorCodes.HTTP_1_1_REQUIRED
         case _:
             code = ErrorCodes.INTERNAL_ERROR

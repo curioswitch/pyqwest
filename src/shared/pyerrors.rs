@@ -8,7 +8,7 @@ use pyo3::{
 pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
     if let Some(e) = errors::find::<h2::Error>(e) {
         if e.is_remote() {
-            return PyErr::new::<HttpStreamError, _>(HttpStreamError::as_args(e, msg));
+            return PyErr::new::<StreamError, _>(StreamError::as_args(e, msg));
         }
     }
 
@@ -22,9 +22,9 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
     }
 }
 
-#[pyclass(module = "pyqwest", name = "HTTPStreamErrorCode", frozen, eq, eq_int)]
+#[pyclass(module = "pyqwest", frozen, eq, eq_int)]
 #[derive(Clone, PartialEq)]
-pub(crate) enum HttpStreamErrorCode {
+pub(crate) enum StreamErrorCode {
     #[pyo3(name = "NO_ERROR")]
     NoError,
     #[pyo3(name = "PROTOCOL_ERROR")]
@@ -55,19 +55,19 @@ pub(crate) enum HttpStreamErrorCode {
     HTTP11Required,
 }
 
-#[pyclass(module = "pyqwest", name = "HTTPStreamError", extends = PyException, frozen)]
-pub(crate) struct HttpStreamError {
+#[pyclass(module = "pyqwest", extends = PyException, frozen)]
+pub(crate) struct StreamError {
     #[pyo3(get)]
     message: Py<PyString>,
     #[pyo3(get)]
-    code: Py<HttpStreamErrorCode>,
+    code: Py<StreamErrorCode>,
 }
 
 #[pymethods]
-impl HttpStreamError {
+impl StreamError {
     #[new]
     #[allow(clippy::needless_pass_by_value)]
-    fn py_new(message: Py<PyString>, code: Py<HttpStreamErrorCode>) -> Self {
+    fn py_new(message: Py<PyString>, code: Py<StreamErrorCode>) -> Self {
         Self { message, code }
     }
 
@@ -76,29 +76,29 @@ impl HttpStreamError {
     }
 }
 
-impl HttpStreamError {
-    fn as_args(e: &h2::Error, msg: &str) -> (String, HttpStreamErrorCode) {
+impl StreamError {
+    fn as_args(e: &h2::Error, msg: &str) -> (String, StreamErrorCode) {
         let code = if let Some(code) = e.reason() {
             match code {
-                h2::Reason::NO_ERROR => HttpStreamErrorCode::NoError,
-                h2::Reason::PROTOCOL_ERROR => HttpStreamErrorCode::ProtocolError,
-                h2::Reason::INTERNAL_ERROR => HttpStreamErrorCode::InternalError,
-                h2::Reason::FLOW_CONTROL_ERROR => HttpStreamErrorCode::FlowControlError,
-                h2::Reason::SETTINGS_TIMEOUT => HttpStreamErrorCode::SettingsTimeout,
-                h2::Reason::STREAM_CLOSED => HttpStreamErrorCode::StreamClosed,
-                h2::Reason::FRAME_SIZE_ERROR => HttpStreamErrorCode::FrameSizeError,
-                h2::Reason::REFUSED_STREAM => HttpStreamErrorCode::RefusedStream,
-                h2::Reason::CANCEL => HttpStreamErrorCode::Cancel,
-                h2::Reason::COMPRESSION_ERROR => HttpStreamErrorCode::CompressionError,
-                h2::Reason::CONNECT_ERROR => HttpStreamErrorCode::ConnectError,
-                h2::Reason::ENHANCE_YOUR_CALM => HttpStreamErrorCode::EnhanceYourCalm,
-                h2::Reason::INADEQUATE_SECURITY => HttpStreamErrorCode::InadequateSecurity,
-                h2::Reason::HTTP_1_1_REQUIRED => HttpStreamErrorCode::HTTP11Required,
+                h2::Reason::NO_ERROR => StreamErrorCode::NoError,
+                h2::Reason::PROTOCOL_ERROR => StreamErrorCode::ProtocolError,
+                h2::Reason::INTERNAL_ERROR => StreamErrorCode::InternalError,
+                h2::Reason::FLOW_CONTROL_ERROR => StreamErrorCode::FlowControlError,
+                h2::Reason::SETTINGS_TIMEOUT => StreamErrorCode::SettingsTimeout,
+                h2::Reason::STREAM_CLOSED => StreamErrorCode::StreamClosed,
+                h2::Reason::FRAME_SIZE_ERROR => StreamErrorCode::FrameSizeError,
+                h2::Reason::REFUSED_STREAM => StreamErrorCode::RefusedStream,
+                h2::Reason::CANCEL => StreamErrorCode::Cancel,
+                h2::Reason::COMPRESSION_ERROR => StreamErrorCode::CompressionError,
+                h2::Reason::CONNECT_ERROR => StreamErrorCode::ConnectError,
+                h2::Reason::ENHANCE_YOUR_CALM => StreamErrorCode::EnhanceYourCalm,
+                h2::Reason::INADEQUATE_SECURITY => StreamErrorCode::InadequateSecurity,
+                h2::Reason::HTTP_1_1_REQUIRED => StreamErrorCode::HTTP11Required,
                 #[allow(clippy::match_same_arms)]
-                _ => HttpStreamErrorCode::InternalError,
+                _ => StreamErrorCode::InternalError,
             }
         } else {
-            HttpStreamErrorCode::InternalError
+            StreamErrorCode::InternalError
         };
 
         (format!("{msg}: {:+}", errors::fmt(e)), code)
