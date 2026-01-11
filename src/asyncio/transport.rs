@@ -10,7 +10,7 @@ use crate::asyncio::awaitable::{EmptyAwaitable, ValueAwaitable};
 use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
 use crate::common::HTTPVersion;
-use crate::shared::pyerrors;
+use crate::pyerrors;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 
 #[pyclass(module = "pyqwest", name = "HTTPTransport", frozen)]

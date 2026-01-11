@@ -1093,8 +1093,12 @@ class StreamErrorCode:
 class StreamError(Exception):
     """An error representing an HTTP/2+ stream error."""
 
-    message: str
-    """The error message."""
+    @property
+    def code(self) -> StreamErrorCode:
+        """The stream error code."""
 
-    code: StreamErrorCode
-    """The stream error code."""
+class ReadError(Exception):
+    """An error representing a read error during response reading."""
+
+class WriteError(Exception):
+    """An error representing a write error during request sending."""

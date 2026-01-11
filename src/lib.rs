@@ -4,8 +4,10 @@ use pyo3::prelude::*;
 mod asyncio;
 mod common;
 mod headers;
+mod pyerrors;
 /// Shared utilities between asyncio and sync modules.
-/// Code exposed to Python should be in common instead.
+/// Code exposed to Python should be in common or pyerrors
+/// instead.
 pub(crate) mod shared;
 mod sync;
 
@@ -48,7 +50,7 @@ mod pyqwest {
     #[pymodule_export]
     use headers::Headers;
     #[pymodule_export]
-    use shared::pyerrors::{StreamError, StreamErrorCode};
+    use pyerrors::{ReadError, StreamError, StreamErrorCode, WriteError};
     #[pymodule_export]
     use sync::client::SyncClient;
     #[pymodule_export]

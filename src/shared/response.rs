@@ -12,7 +12,7 @@ use tokio::sync::{watch, Mutex};
 use crate::{
     common::{FullResponse, HTTPVersion},
     headers::Headers,
-    shared::pyerrors,
+    pyerrors,
 };
 
 pub(crate) struct ResponseHead {

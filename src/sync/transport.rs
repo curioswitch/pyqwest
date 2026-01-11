@@ -8,7 +8,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::common::HTTPVersion;
-use crate::shared::pyerrors;
+use crate::pyerrors;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::SyncResponse;
