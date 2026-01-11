@@ -20,7 +20,7 @@ use crate::{
     shared::request::RequestHead,
 };
 
-#[pyclass(module = "pyqwest._async", frozen)]
+#[pyclass(module = "pyqwest", frozen)]
 pub struct Request {
     head: RequestHead,
     content: Option<Content>,

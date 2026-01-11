@@ -23,7 +23,7 @@ enum Content {
     },
 }
 
-#[pyclass(module = "pyqwest._sync", frozen)]
+#[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct SyncResponse {
     head: ResponseHead,
     content: Content,

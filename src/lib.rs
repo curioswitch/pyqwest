@@ -30,32 +30,36 @@ del _Protocol
     )
 }
 
-/// Entrypoint to pyqwest extension module.
 #[pymodule(gil_used = false)]
-fn pyqwest(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<asyncio::client::Client>()?;
-    m.add_class::<asyncio::request::Request>()?;
-    m.add_class::<asyncio::response::Response>()?;
-    m.add_class::<asyncio::transport::HttpTransport>()?;
-    m.add_function(wrap_pyfunction!(
-        asyncio::transport::get_default_transport,
-        m
-    )?)?;
-    m.add_class::<common::FullResponse>()?;
-    m.add_class::<common::HTTPVersion>()?;
-    m.add_class::<headers::Headers>()?;
-    m.add_class::<sync::client::SyncClient>()?;
-    m.add_class::<sync::request::SyncRequest>()?;
-    m.add_class::<sync::response::SyncResponse>()?;
-    m.add_class::<sync::transport::SyncHttpTransport>()?;
-    m.add_function(wrap_pyfunction!(
-        sync::transport::get_default_sync_transport,
-        m
-    )?)?;
+mod pyqwest {
+    use crate::*;
 
-    m.add_class::<shared::pyerrors::StreamErrorCode>()?;
-    m.add_class::<shared::pyerrors::StreamError>()?;
+    #[pymodule_export]
+    use asyncio::client::Client;
+    #[pymodule_export]
+    use asyncio::request::Request;
+    #[pymodule_export]
+    use asyncio::response::Response;
+    #[pymodule_export]
+    use asyncio::transport::{get_default_transport, HttpTransport};
+    #[pymodule_export]
+    use common::{FullResponse, HTTPVersion};
+    #[pymodule_export]
+    use headers::Headers;
+    #[pymodule_export]
+    use shared::pyerrors::{StreamError, StreamErrorCode};
+    #[pymodule_export]
+    use sync::client::SyncClient;
+    #[pymodule_export]
+    use sync::request::SyncRequest;
+    #[pymodule_export]
+    use sync::response::SyncResponse;
+    #[pymodule_export]
+    use sync::transport::{get_default_sync_transport, SyncHttpTransport};
 
-    add_protocols(py, m)?;
-    Ok(())
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        add_protocols(m.py(), m)?;
+        Ok(())
+    }
 }
