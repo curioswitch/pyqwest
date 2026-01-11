@@ -46,7 +46,7 @@ pub(super) fn into_stream(
     Ok((stream, task.unbind()))
 }
 
-#[pyclass(module = "pyqwest._asyncio", frozen)]
+#[pyclass(module = "pyqwest._async", frozen)]
 struct Sender {
     locals: TaskLocals,
     tx: Mutex<Option<mpsc::Sender<PyResult<Py<PyAny>>>>>,
@@ -90,7 +90,7 @@ impl Sender {
     }
 }
 
-#[pyclass(module = "pyqwest._asyncio", frozen)]
+#[pyclass(module = "pyqwest._async", frozen)]
 struct TaskConsumer;
 
 #[pymethods]

@@ -12,7 +12,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{headers::Headers, shared::request::RequestHead};
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest._sync", frozen)]
 pub struct SyncRequest {
     head: RequestHead,
     content: Option<Content>,
