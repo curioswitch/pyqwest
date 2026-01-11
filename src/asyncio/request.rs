@@ -20,7 +20,7 @@ use crate::{
     shared::request::RequestHead,
 };
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest", frozen)]
 pub struct Request {
     head: RequestHead,
     content: Option<Content>,
@@ -159,7 +159,7 @@ fn wrap_async_iter<'py>(py: Python<'py>, iter: &Py<PyAny>) -> PyResult<Bound<'py
     gen_fn.call1((iter, wrap_fn))
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest._async", frozen)]
 struct BodyChunk {
     bytes: Bytes,
 }

@@ -12,7 +12,7 @@ use pyo3::types::{
 use pyo3::{prelude::*, IntoPyObjectExt as _};
 use std::fmt::Write as _;
 
-#[pyclass(mapping, frozen)]
+#[pyclass(module = "pyqwest", mapping, frozen)]
 pub(crate) struct Headers {
     pub(crate) store: Mutex<HeaderMap<PyHeaderValue>>,
 }
@@ -373,7 +373,7 @@ impl Headers {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest._headers", frozen)]
 struct KeysView {
     headers: Py<Headers>,
 }
@@ -414,7 +414,7 @@ impl KeysView {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "pyqwest._headers", frozen)]
 struct ItemsView {
     headers: Py<Headers>,
 }
@@ -475,7 +475,7 @@ impl ItemsView {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "pyqwest._headers", frozen)]
 struct ValuesView {
     headers: Py<Headers>,
 }
@@ -696,7 +696,7 @@ fn normalize_key(key: &Bound<'_, PyString>) -> PyResult<HeaderName> {
 
 static HEADER_NAMES: PyOnceLock<HeaderNames> = PyOnceLock::new();
 
-#[pyclass]
+#[pyclass(module = "pyqwest", frozen)]
 struct HeaderNames {
     /// The string "accept"
     accept: Py<PyString>,
