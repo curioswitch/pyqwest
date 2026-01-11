@@ -572,7 +572,10 @@ async def test_request_content_error(
     else:
         # With HTTP/2, reqwest seems to squash the original error message.
         msg = "stream error sent by user"
-    with pytest.raises(RuntimeError, match=msg):
+    # There is a race between whether the error is handled on the request
+    # or response side, which looks like a connection error when the server
+    # aborts. We match either.
+    with pytest.raises(RuntimeError, match=f"{msg}|connection"):
         method = "POST"
         url = f"{url}/echo"
         if isinstance(client, SyncClient):
