@@ -41,6 +41,9 @@ async def _echo(
                 return
             case "http.request":
                 body = message["body"]
+                if body == b"reset me":
+                    msg = "Error mid-stream"
+                    raise RuntimeError(msg)
                 if body:
                     await send(
                         {

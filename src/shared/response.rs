@@ -129,7 +129,7 @@ impl ResponseBody {
                 Ok(frame) => frame,
                 Err(e) => {
                     if let Some(e) = errors::find::<h2::Error>(&e) {
-                        if matches!(e.reason(), Some(h2::Reason::NO_ERROR | h2::Reason::CANCEL)) {
+                        if matches!(e.reason(), Some(h2::Reason::NO_ERROR)) {
                             return Ok(None);
                         }
                     }
