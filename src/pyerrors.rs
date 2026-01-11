@@ -1,9 +1,13 @@
 use pyo3::{
+    create_exception,
     exceptions::{PyConnectionError, PyException, PyRuntimeError, PyTimeoutError},
     pyclass, pymethods,
     types::PyString,
     Py, PyErr, Python,
 };
+
+create_exception!(pyqwest, ReadError, PyException);
+create_exception!(pyqwest, WriteError, PyException);
 
 pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
     if let Some(e) = errors::find::<h2::Error>(e) {
@@ -17,6 +21,10 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
         PyTimeoutError::new_err(msg)
     } else if e.is_connect() {
         PyConnectionError::new_err(msg)
+    } else if e.is_request() {
+        WriteError::new_err(msg)
+    } else if e.is_body() {
+        ReadError::new_err(msg)
     } else {
         PyRuntimeError::new_err(msg)
     }
@@ -57,7 +65,6 @@ pub(crate) enum StreamErrorCode {
 
 #[pyclass(module = "pyqwest", extends = PyException, frozen)]
 pub(crate) struct StreamError {
-    #[pyo3(get)]
     message: Py<PyString>,
     #[pyo3(get)]
     code: Py<StreamErrorCode>,

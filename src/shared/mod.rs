@@ -1,5 +1,3 @@
-/// Shared utilities for converting errors to Python.
-pub(crate) mod pyerrors;
 /// Shared utilities for request handling.
 pub(crate) mod request;
 /// Shared utilities for response handling.

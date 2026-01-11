@@ -6,6 +6,7 @@ __all__ = [
     "HTTPTransport",
     "HTTPVersion",
     "Headers",
+    "ReadError",
     "Request",
     "Response",
     "StreamError",
@@ -16,6 +17,7 @@ __all__ = [
     "SyncResponse",
     "SyncTransport",
     "Transport",
+    "WriteError",
     "get_default_sync_transport",
     "get_default_transport",
 ]
@@ -26,6 +28,7 @@ from .pyqwest import (
     Headers,
     HTTPTransport,
     HTTPVersion,
+    ReadError,
     Request,
     Response,
     StreamError,
@@ -36,6 +39,7 @@ from .pyqwest import (
     SyncResponse,
     SyncTransport,
     Transport,
+    WriteError,
     get_default_sync_transport,
     get_default_transport,
 )
