@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, HTTPScope
+    from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, HTTPScope, Scope
 
 
 async def _echo(
@@ -68,8 +68,9 @@ async def _echo(
 
 
 async def app(
-    scope: HTTPScope, receive: ASGIReceiveCallable, send: ASGISendCallable
+    scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
+    assert scope["type"] == "http"  # noqa: S101
     match scope["path"]:
         case "/echo":
             await _echo(scope, receive, send)

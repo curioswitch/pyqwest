@@ -62,4 +62,8 @@ impl RequestHead {
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.headers.clone_ref(py)
     }
+
+    pub(crate) fn timeout(&self) -> Option<f64> {
+        self.timeout
+    }
 }

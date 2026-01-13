@@ -1093,6 +1093,14 @@ class StreamErrorCode:
 class StreamError(Exception):
     """An error representing an HTTP/2+ stream error."""
 
+    def __init__(self, message: str, code: StreamErrorCode) -> None:
+        """Creates a new StreamError.
+
+        Args:
+            message: The error message.
+            code: The stream error code.
+        """
+
     @property
     def code(self) -> StreamErrorCode:
         """The stream error code."""

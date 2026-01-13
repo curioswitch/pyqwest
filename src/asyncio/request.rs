@@ -75,6 +75,11 @@ impl Request {
             None => EmptyAsyncIterator.into_bound_py_any(py),
         }
     }
+
+    #[getter]
+    fn _timeout(&self) -> Option<f64> {
+        self.head.timeout()
+    }
 }
 
 impl Request {
