@@ -9,7 +9,17 @@ import pytest_asyncio
 import trustme
 from pyvoy import PyvoyServer
 
-from pyqwest import Client, HTTPTransport, HTTPVersion, SyncClient, SyncHTTPTransport
+from pyqwest import (
+    Client,
+    HTTPTransport,
+    HTTPVersion,
+    SyncClient,
+    SyncHTTPTransport,
+    Transport,
+)
+from pyqwest.testing import ASGITransport
+
+from .apps.asgi.kitchensink import app as kitchensink_app
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -106,9 +116,34 @@ async def async_transport(
         yield transport
 
 
-@pytest.fixture(scope="session")
-def async_client(async_transport: HTTPTransport) -> Client:
-    return Client(async_transport)
+@pytest_asyncio.fixture(scope="session")
+async def async_asgi_transport(
+    http_version: HTTPVersion | None, http_scheme: str
+) -> AsyncIterator[Transport]:
+    if not http_version:
+        match http_scheme:
+            case "https":
+                http_version = HTTPVersion.HTTP2
+            case _:
+                http_version = HTTPVersion.HTTP1
+    async with ASGITransport(kitchensink_app, http_version=http_version) as transport:
+        yield transport
+
+
+@pytest.fixture(scope="session", params=["async", "async_asgi"])
+def async_client(
+    request: pytest.FixtureRequest,
+    async_transport: HTTPTransport,
+    async_asgi_transport: Transport,
+) -> Client:
+    match request.param:
+        case "async":
+            return Client(async_transport)
+        case "async_asgi":
+            return Client(async_asgi_transport)
+        case _:
+            msg = "Invalid client type"
+            raise ValueError(msg)
 
 
 @pytest.fixture(scope="session")
@@ -126,20 +161,25 @@ def sync_client(sync_transport: SyncHTTPTransport) -> SyncClient:
     return SyncClient(sync_transport)
 
 
-@pytest.fixture(params=["async", "sync"])
+@pytest.fixture(params=["async", "sync", "async_asgi"])
 def client_type(request: pytest.FixtureRequest) -> str:
     return request.param
 
 
 @pytest.fixture
 def transport(
-    async_transport: HTTPTransport, sync_transport: SyncHTTPTransport, client_type: str
-) -> HTTPTransport | SyncHTTPTransport:
+    async_transport: HTTPTransport,
+    sync_transport: SyncHTTPTransport,
+    async_asgi_transport: Transport,
+    client_type: str,
+) -> HTTPTransport | SyncHTTPTransport | Transport:
     match client_type:
         case "async":
             return async_transport
         case "sync":
             return sync_transport
+        case "async_asgi":
+            return async_asgi_transport
         case _:
             msg = "Invalid client type"
             raise ValueError(msg)
@@ -147,13 +187,18 @@ def transport(
 
 @pytest.fixture
 def client(
-    async_client: Client, sync_client: SyncClient, client_type: str
+    async_transport: HTTPTransport,
+    sync_transport: SyncHTTPTransport,
+    async_asgi_transport: Transport,
+    client_type: str,
 ) -> Client | SyncClient:
     match client_type:
         case "async":
-            return async_client
+            return Client(async_transport)
         case "sync":
-            return sync_client
+            return SyncClient(sync_transport)
+        case "async_asgi":
+            return Client(async_asgi_transport)
         case _:
             msg = "Invalid client type"
             raise ValueError(msg)

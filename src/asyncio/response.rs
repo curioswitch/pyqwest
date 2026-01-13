@@ -204,25 +204,38 @@ impl Response {
         if let Some(task) = request_iter_task {
             task.call_method0(py, intern!(py, "cancel"))?;
         }
-        if let Content::Http(content) = &self.content {
-            if content.get().body.try_close() {
-                return EmptyAwaitable.into_bound_py_any(py);
+        match &self.content {
+            Content::Http(content) => {
+                if content.get().body.try_close() {
+                    return EmptyAwaitable.into_bound_py_any(py);
+                }
+                let body = content.get().body.clone();
+                future_into_py(py, async move {
+                    body.close().await;
+                    Ok(())
+                })
             }
-            let body = content.get().body.clone();
-            future_into_py(py, async move {
-                body.close().await;
-                Ok(())
-            })
-        } else {
-            EmptyAwaitable.into_bound_py_any(py)
+            Content::Custom { content, .. } => {
+                if let Ok(close_res) = content.bind(py).call_method0(intern!(py, "close")) {
+                    close_res.into_bound_py_any(py)
+                } else {
+                    EmptyAwaitable.into_bound_py_any(py)
+                }
+            }
         }
     }
 
     #[getter]
-    fn _read_pending(&self) -> bool {
+    fn _read_pending(&self, py: Python<'_>) -> bool {
         match &self.content {
             Content::Http(content) => content.get().body.read_pending(),
-            Content::Custom { .. } => false,
+            Content::Custom { content, .. } => {
+                if let Ok(attr) = content.bind(py).getattr("_read_pending") {
+                    attr.extract::<bool>().unwrap_or(false)
+                } else {
+                    false
+                }
+            }
         }
     }
 }

@@ -64,7 +64,7 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_request_content_timeout(client: Client | SyncClient, url: str) -> None:
+async def test_response_content_timeout(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
     # Anecdotally, the above test will have one of its runs timeout on the response body
@@ -91,7 +91,12 @@ async def test_request_content_timeout(client: Client | SyncClient, url: str) ->
 
 
 @pytest.mark.asyncio
-async def test_connection_error(client: Client | SyncClient, url: str) -> None:
+async def test_connection_error(
+    client: Client | SyncClient, client_type: str, url: str
+) -> None:
+    if client_type == "async_asgi":
+        pytest.skip("ASGI transport doesn't connect to anything")
+
     with socket.socket() as s:
         s.bind(("", 0))
         port = s.getsockname()[1]
