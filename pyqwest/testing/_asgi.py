@@ -46,6 +46,13 @@ class Lifespan:
 
 
 class ASGITransport(Transport):
+    """Transport implementation that directly invokes an ASGI application. Useful for testing.
+
+    The ASGI transport supports lifespan - to use it, make sure to use the transport as an
+    asynchronous context manager. Lifespan startup will be run on entering and shutdown when
+    exiting.
+    """
+
     _app: ASGI3Application
     _http_version: HTTPVersion
     _client: tuple[str, int]
@@ -58,6 +65,14 @@ class ASGITransport(Transport):
         http_version: HTTPVersion = HTTPVersion.HTTP2,
         client: tuple[str, int] = ("127.0.0.1", 111),
     ) -> None:
+        """Creates a new ASGI transport.
+
+        Args:
+            app: The ASGI application to invoke.
+            http_version: The HTTP version to mimic for requests. Note, semantics such as lack of
+                          bidirectional streaming for HTTP/1 are not enforced.
+            client: The (host, port) tuple to use for the client address in the ASGI scope.
+        """
         self._app = guarantee_single_callable(app)
         self._http_version = http_version
         self._client = client
