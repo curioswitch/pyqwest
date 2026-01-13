@@ -1,7 +1,10 @@
+use std::fmt;
 use std::time::Duration;
 
 use pyo3::sync::MutexExt as _;
+use pyo3::types::PyAnyMethods as _;
 use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
+use pyo3::{Bound, PyAny};
 
 use crate::headers::Headers;
 
@@ -65,5 +68,38 @@ impl RequestHead {
 
     pub(crate) fn timeout(&self) -> Option<f64> {
         self.timeout
+    }
+}
+
+pub(crate) type RequestStreamResult<T> = Result<T, RequestStreamError>;
+
+#[derive(Debug)]
+pub(crate) struct RequestStreamError {
+    msg: String,
+}
+
+impl RequestStreamError {
+    pub(crate) fn new(msg: String) -> Self {
+        Self { msg }
+    }
+
+    pub(crate) fn from_py(err: &Bound<'_, PyAny>) -> Self {
+        if let Ok(msg) = err.str() {
+            Self {
+                msg: msg.to_string(),
+            }
+        } else {
+            Self {
+                msg: "Unknown Error".to_string(),
+            }
+        }
+    }
+}
+
+impl std::error::Error for RequestStreamError {}
+
+impl fmt::Display for RequestStreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.msg.fmt(f)
     }
 }

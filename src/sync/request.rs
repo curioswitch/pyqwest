@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use pyo3::{
-    exceptions::PyValueError,
     pybacked::PyBackedBytes,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyIterator, PyTuple},
@@ -10,7 +9,10 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::{headers::Headers, shared::request::RequestHead};
+use crate::{
+    headers::Headers,
+    shared::request::{RequestHead, RequestStreamError, RequestStreamResult},
+};
 
 #[pyclass(module = "pyqwest", frozen)]
 pub struct SyncRequest {
@@ -94,7 +96,7 @@ impl SyncRequest {
                 Some(reqwest::Body::from(Bytes::from_owner(bytes)))
             }
             Some(Content::Iter(iter)) => {
-                let (tx, rx) = mpsc::channel::<PyResult<Bytes>>(1);
+                let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
                 let iter = iter.clone_ref(py);
                 get_runtime().spawn_blocking(move || {
                     Python::attach(|py| {
@@ -102,9 +104,12 @@ impl SyncRequest {
                         loop {
                             let res = match iter.next() {
                                 Some(Ok(item)) => item.extract::<Bytes>().map_err(|e| {
-                                    PyValueError::new_err(format!("Invalid bytes item: {e}"))
+                                    RequestStreamError::new(format!("Invalid bytes item: {e}"))
                                 }),
-                                Some(Err(e)) => Err(e),
+                                Some(Err(e)) => {
+                                    let e_py = e.into_value(py);
+                                    Err(RequestStreamError::from_py(e_py.bind(py).as_any()))
+                                }
                                 None => break,
                             };
                             let errored = res.is_err();
