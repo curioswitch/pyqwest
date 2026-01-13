@@ -175,7 +175,7 @@ class ASGITransport(Transport):
             and request.headers.get("te") == "trailers"
             else None
         )
-        content_iter = ResponseContent(
+        response_content = ResponseContent(
             send_queue,
             request_task,
             trailers,
@@ -187,7 +187,7 @@ class ASGITransport(Transport):
             status=status,
             http_version=self._http_version,
             headers=headers,
-            content=content_iter,
+            content=response_content,
             trailers=trailers,
         )
 
