@@ -175,7 +175,7 @@ fn wrap_body_chunk(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<Py<BodyC
     Py::new(py, BodyChunk { bytes })
 }
 
-fn bytes_from_chunk(item: RequestStreamResult<Py<PyAny>>) -> Result<Bytes, RequestStreamError> {
+fn bytes_from_chunk(item: RequestStreamResult<Py<PyAny>>) -> RequestStreamResult<Bytes> {
     match item {
         Ok(item) => {
             // SAFETY: items originate from wrap_body_gen, which yields BodyChunk instances.
