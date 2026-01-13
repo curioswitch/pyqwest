@@ -291,6 +291,7 @@ class ResponseContent(AsyncIterator[bytes]):
     async def __anext__(self) -> bytes:
         if self._finished:
             raise StopAsyncIteration
+        err: Exception | None = None
         while True:
             self._read_pending = True
             try:
@@ -308,10 +309,11 @@ class ResponseContent(AsyncIterator[bytes]):
                 self._read_pending = False
             if isinstance(message, Exception):
                 if isinstance(message, CancelResponse):
-                    self._finished = True
-                    raise StopAsyncIteration
+                    err = StopAsyncIteration()
+                    break
                 if isinstance(message, WriteError):
-                    raise message
+                    err = message
+                    break
                 msg = "Error reading response body"
                 raise ReadError(msg) from message
             match message["type"]:
@@ -331,6 +333,8 @@ class ResponseContent(AsyncIterator[bytes]):
         with contextlib.suppress(BaseException):
             await self._request_task
             await self._task
+        if err:
+            raise err
         raise StopAsyncIteration
 
     async def close(self) -> None:
