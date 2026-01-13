@@ -85,7 +85,14 @@ class ASGITransport(Transport):
             asyncio.get_event_loop().time() + timeout if timeout is not None else None
         )
         if timeout is not None:
-            return await asyncio.wait_for(self.do_execute(request, deadline), timeout)
+            try:
+                return await asyncio.wait_for(
+                    self.do_execute(request, deadline), timeout
+                )
+            except asyncio.TimeoutError as e:
+                if asyncio.TimeoutError is TimeoutError:
+                    raise
+                raise TimeoutError(str(e)) from e
         return await self.do_execute(request, deadline)
 
     async def do_execute(self, request: Request, deadline: float | None) -> Response:
@@ -314,10 +321,15 @@ class ResponseContent(AsyncIterator[bytes]):
                     timeout = self._deadline - asyncio.get_event_loop().time()
                     if timeout <= 0:
                         msg = "Response body read timed out"
-                        raise asyncio.TimeoutError(msg)
-                    message = await asyncio.wait_for(
-                        self._send_queue.get(), timeout=timeout
-                    )
+                        raise TimeoutError(msg)
+                    try:
+                        message = await asyncio.wait_for(
+                            self._send_queue.get(), timeout=timeout
+                        )
+                    except asyncio.TimeoutError as e:
+                        if asyncio.TimeoutError is TimeoutError:
+                            raise
+                        raise TimeoutError(str(e)) from e
                 else:
                     message = await self._send_queue.get()
             finally:
