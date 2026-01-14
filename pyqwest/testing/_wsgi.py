@@ -317,6 +317,9 @@ class ResponseContent(Iterator[bytes]):
             raise err
         return chunk
 
+    def __del__(self) -> None:
+        self.close()
+
     def close(self) -> None:
         if self._closed:
             return
