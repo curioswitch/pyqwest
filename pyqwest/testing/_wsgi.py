@@ -4,6 +4,7 @@ import contextlib
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from queue import Empty, Queue
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -20,6 +21,7 @@ from pyqwest import (
 
 if TYPE_CHECKING:
     import sys
+    from types import TracebackType
 
     if sys.version_info >= (3, 11):
         from wsgiref.types import WSGIApplication, WSGIEnvironment
@@ -30,12 +32,25 @@ if TYPE_CHECKING:
 class WSGITransport(SyncTransport):
     _app: WSGIApplication
     _http_version: HTTPVersion
+    _executor: ThreadPoolExecutor
+    _close_executor: bool
+    _closed: bool
 
     def __init__(
-        self, app: WSGIApplication, http_version: HTTPVersion = HTTPVersion.HTTP2
+        self,
+        app: WSGIApplication,
+        http_version: HTTPVersion = HTTPVersion.HTTP2,
+        executor: ThreadPoolExecutor | None = None,
     ) -> None:
         self._app = app
         self._http_version = http_version
+        if executor is None:
+            self._executor = ThreadPoolExecutor()
+            self._close_executor = True
+        else:
+            self._executor = executor
+            self._close_executor = False
+        self._closed = False
 
     def execute(self, request: SyncRequest) -> SyncResponse:
         timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
@@ -145,8 +160,7 @@ class WSGITransport(SyncTransport):
                 with contextlib.suppress(Exception):
                     response_iter.close()  # pyright: ignore[reportAttributeAccessIssue]
 
-        app_thread = threading.Thread(target=run_app)
-        app_thread.start()
+        app_future = self._executor.submit(run_app)
 
         response_started.wait()
 
@@ -159,7 +173,7 @@ class WSGITransport(SyncTransport):
             )
 
         response_content = ResponseContent(
-            response_queue, request_input, app_thread, deadline
+            response_queue, request_input, app_future, deadline
         )
 
         status = int(status_str.split(" ", 1)[0])
@@ -171,6 +185,24 @@ class WSGITransport(SyncTransport):
             content=response_content,
             trailers=trailers,
         )
+
+    def __enter__(self) -> WSGITransport:
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._close_executor:
+            self._executor.shutdown()
 
 
 class RequestInput:
@@ -262,12 +294,12 @@ class ResponseContent(Iterator[bytes]):
         self,
         response_queue: Queue[bytes | None | Exception],
         request_input: RequestInput,
-        app_thread: threading.Thread,
+        app_future: Future,
         deadline: float | None,
     ) -> None:
         self._response_queue = response_queue
         self._request_input = request_input
-        self._app_thread = app_thread
+        self._app_future = app_future
         self._closed = False
         self._read_pending = False
         self._deadline = deadline
@@ -313,7 +345,8 @@ class ResponseContent(Iterator[bytes]):
         if err:
             self._closed = True
             self._request_input.close()
-            self._app_thread.join()
+            with contextlib.suppress(Exception):
+                self._app_future.result()
             raise err
         return chunk
 
@@ -326,4 +359,5 @@ class ResponseContent(Iterator[bytes]):
         self._closed = True
         self._request_input.close()
         self._response_queue.put(None)
-        self._app_thread.join()
+        with contextlib.suppress(Exception):
+            self._app_future.result()

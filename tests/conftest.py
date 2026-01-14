@@ -163,14 +163,15 @@ def sync_transport(
 @pytest.fixture(scope="session")
 def sync_wsgi_transport(
     http_version: HTTPVersion | None, http_scheme: str
-) -> SyncTransport:
+) -> Iterator[SyncTransport]:
     if not http_version:
         match http_scheme:
             case "https":
                 http_version = HTTPVersion.HTTP2
             case _:
                 http_version = HTTPVersion.HTTP1
-    return WSGITransport(kitchensink_app_wsgi, http_version=http_version)
+    with WSGITransport(kitchensink_app_wsgi, http_version=http_version) as transport:
+        yield transport
 
 
 @pytest.fixture(scope="session", params=["sync", "sync_wsgi"])
