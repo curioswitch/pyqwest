@@ -17,7 +17,7 @@ use crate::{
         stream::into_stream,
     },
     headers::Headers,
-    shared::request::{RequestHead, RequestStreamError, RequestStreamResult},
+    shared::request::{RequestHead, RequestStreamResult},
 };
 
 #[pyclass(module = "pyqwest", frozen)]

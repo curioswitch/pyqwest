@@ -155,6 +155,8 @@ class ASGITransport(Transport):
         async def run_app() -> None:
             try:
                 await asyncio.wait_for(self._app(scope, receive, send), timeout=timeout)
+            except asyncio.TimeoutError as e:
+                send_queue.put_nowait(TimeoutError(str(e)))
             except Exception as e:
                 send_queue.put_nowait(e)
 
