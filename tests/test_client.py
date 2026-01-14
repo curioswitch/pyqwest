@@ -623,18 +623,12 @@ async def test_response_error(
     # There is a race between whether the error is handled on the request
     # or response side, which looks like a connection error when the server
     # aborts. We match either.
-    with pytest.raises(ReadError):
+    with pytest.raises((ReadError, WriteError)):
         method = "POST"
         url = f"{url}/echo"
         headers = {"x-error-response": "1"}
         request_content = b"Hello"
         if isinstance(client, SyncClient):
-
-            def req_content_sync() -> Iterator[bytes]:
-                yield b"Hello, World!"
-                msg = "Test error"
-                raise RuntimeError(msg)
-
             resp = await asyncio.to_thread(
                 client.stream, method, url, headers=headers, content=request_content
             )
