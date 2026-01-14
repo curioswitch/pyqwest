@@ -99,12 +99,12 @@ impl SyncRequest {
             }
             Some(Content::Iter(iter)) => {
                 let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
-                let itr = iter.clone_ref(py);
+                let read_iter = iter.clone_ref(py);
                 get_runtime().spawn_blocking(move || {
                     Python::attach(|py| {
-                        let mut iter = itr.into_bound(py);
+                        let mut read_iter = read_iter.into_bound(py);
                         loop {
-                            let res = match iter.next() {
+                            let res = match read_iter.next() {
                                 Some(Ok(item)) => item.extract::<Bytes>().map_err(|e| {
                                     RequestStreamError::new(format!("Invalid bytes item: {e}"))
                                 }),
