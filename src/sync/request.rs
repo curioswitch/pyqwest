@@ -71,20 +71,22 @@ impl SyncRequest {
 }
 
 impl SyncRequest {
-    pub(crate) fn as_reqwest_builder(
+    pub(crate) fn new_reqwest_builder(
         &self,
         py: Python<'_>,
         client: &reqwest::Client,
         http3: bool,
-    ) -> PyResult<reqwest::RequestBuilder> {
+    ) -> PyResult<(reqwest::RequestBuilder, Option<Py<PyAny>>)> {
         let mut req_builder = self.head.new_request_builder(py, client, http3)?;
-        if let Some(body) = self.content_into_reqwest(py) {
+        let mut request_iter: Option<Py<PyAny>> = None;
+        if let Some((body, iter)) = self.content_into_reqwest(py) {
             req_builder = req_builder.body(body);
+            request_iter = iter;
         }
-        Ok(req_builder)
+        Ok((req_builder, request_iter))
     }
 
-    fn content_into_reqwest(&self, py: Python<'_>) -> Option<reqwest::Body> {
+    fn content_into_reqwest(&self, py: Python<'_>) -> Option<(reqwest::Body, Option<Py<PyAny>>)> {
         match &self.content {
             Some(Content::Bytes(bytes)) => {
                 // TODO: Replace this dance with clone_ref when released.
@@ -93,16 +95,16 @@ impl SyncRequest {
                 // switch to clone_ref later.
                 let bytes = bytes.into_pyobject(py).unwrap();
                 let bytes = PyBackedBytes::from(bytes);
-                Some(reqwest::Body::from(Bytes::from_owner(bytes)))
+                Some((reqwest::Body::from(Bytes::from_owner(bytes)), None))
             }
             Some(Content::Iter(iter)) => {
                 let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
-                let iter = iter.clone_ref(py);
+                let read_iter = iter.clone_ref(py);
                 get_runtime().spawn_blocking(move || {
                     Python::attach(|py| {
-                        let mut iter = iter.into_bound(py);
+                        let mut read_iter = read_iter.into_bound(py);
                         loop {
-                            let res = match iter.next() {
+                            let res = match read_iter.next() {
                                 Some(Ok(item)) => item.extract::<Bytes>().map_err(|e| {
                                     RequestStreamError::new(format!("Invalid bytes item: {e}"))
                                 }),
@@ -119,7 +121,10 @@ impl SyncRequest {
                         }
                     });
                 });
-                Some(reqwest::Body::wrap_stream(ReceiverStream::new(rx)))
+                Some((
+                    reqwest::Body::wrap_stream(ReceiverStream::new(rx)),
+                    Some(iter.clone_ref(py).into_any()),
+                ))
             }
             None => None,
         }
