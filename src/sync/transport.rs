@@ -115,9 +115,9 @@ impl SyncHttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let req_builder = request.as_reqwest_builder(py, client, self.http3)?;
+        let (req_builder, request_iter) = request.new_reqwest_builder(py, client, self.http3)?;
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
-        let mut response = SyncResponse::pending(py)?;
+        let mut response = SyncResponse::pending(py, request_iter)?;
         get_runtime().spawn(async move {
             match req_builder.send().await {
                 Ok(res) => {

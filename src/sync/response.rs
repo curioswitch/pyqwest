@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use bytes::Bytes;
 use http::HeaderMap;
 use pyo3::{
@@ -27,10 +29,14 @@ enum Content {
 pub(crate) struct SyncResponse {
     head: ResponseHead,
     content: Content,
+    request_iter: Mutex<Option<Py<PyAny>>>,
 }
 
 impl SyncResponse {
-    pub(super) fn pending(py: Python<'_>) -> PyResult<SyncResponse> {
+    pub(super) fn pending(
+        py: Python<'_>,
+        request_iter: Option<Py<PyAny>>,
+    ) -> PyResult<SyncResponse> {
         Ok(SyncResponse {
             head: ResponseHead::pending(py),
             content: Content::Http(Py::new(
@@ -39,6 +45,7 @@ impl SyncResponse {
                     body: ResponseBody::pending(py),
                 },
             )?),
+            request_iter: Mutex::new(request_iter),
         })
     }
 
@@ -83,6 +90,7 @@ impl SyncResponse {
                 content: content.unbind(),
                 trailers,
             },
+            request_iter: Mutex::new(None),
         })
     }
 
@@ -196,19 +204,28 @@ impl SyncResponse {
     }
 
     fn close(&self, py: Python<'_>) {
-        if let Content::Http(content) = &self.content {
-            if content.get().body.try_close() {
-                return;
+        let request_iter = self.request_iter.lock().unwrap().take();
+        if let Some(iter) = request_iter {
+            let _ = iter.bind(py).call_method0("close");
+        }
+        match &self.content {
+            Content::Http(content) => {
+                if content.get().body.try_close() {
+                    return;
+                }
+                let (tx, rx) = oneshot::channel::<()>();
+                let body = content.get().body.clone();
+                get_runtime().spawn(async move {
+                    body.close().await;
+                    tx.send(()).unwrap();
+                });
+                py.detach(|| {
+                    let _ = rx.blocking_recv();
+                });
             }
-            let (tx, rx) = oneshot::channel::<()>();
-            let body = content.get().body.clone();
-            get_runtime().spawn(async move {
-                body.close().await;
-                tx.send(()).unwrap();
-            });
-            py.detach(|| {
-                let _ = rx.blocking_recv();
-            });
+            Content::Custom { content, .. } => {
+                let _ = content.bind(py).call_method0("close");
+            }
         }
     }
 }
