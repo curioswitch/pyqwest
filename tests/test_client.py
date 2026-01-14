@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs
 
 import pytest
 
@@ -438,6 +439,19 @@ async def test_put(client: Client | SyncClient, url: str) -> None:
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.content == b"Hello, World!"
     assert len(resp.trailers) == 0
+
+
+@pytest.mark.asyncio
+async def test_nihongo(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/日本語 英語?q=テスト&ほげ=fo%26o"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.get, url)
+    else:
+        resp = await client.get(url)
+    assert resp.status == 200
+    qs = parse_qs(resp.headers["x-echo-query-string"])
+    assert qs["q"] == ["テスト"]
+    assert qs["ほげ"] == ["fo&o"]
 
 
 @pytest.mark.asyncio

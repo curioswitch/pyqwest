@@ -5,7 +5,7 @@ import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import unquote, urlparse
 
 from pyqwest import (
     Headers,
@@ -81,7 +81,8 @@ class ASGITransport(Transport):
 
     async def execute(self, request: Request) -> Response:
         parsed_url = urlparse(request.url)
-        path = parsed_url.path or "/"
+        raw_path = parsed_url.path or "/"
+        path = unquote(raw_path)
         match self._http_version:
             case HTTPVersion.HTTP1:
                 http_version = "1.1"
@@ -96,8 +97,8 @@ class ASGITransport(Transport):
             "method": request.method,
             "scheme": parsed_url.scheme,
             "path": path,
-            "raw_path": quote_plus(path).encode("utf-8"),
-            "query_string": (parsed_url.query or "").encode("utf-8"),
+            "raw_path": raw_path.encode(),
+            "query_string": parsed_url.query.encode(),
             "headers": [
                 (k.lower().encode("utf-8"), v.encode("utf-8"))
                 for k, v in request.headers.items()
@@ -304,6 +305,7 @@ class ResponseContent(AsyncIterator[bytes]):
         if self._closed:
             raise StopAsyncIteration
         err: Exception | None = None
+        body: bytes | None = None
         while True:
             self._read_pending = True
             try:
@@ -323,21 +325,17 @@ class ResponseContent(AsyncIterator[bytes]):
                         raise ReadError(msg) from message
             match message["type"]:
                 case "http.response.body":
-                    if body := message.get("body", b""):
-                        return body
                     if not message.get("more_body", False) and not self._read_trailers:
-                        break
+                        await self._cleanup()
+                    if (body := message.get("body", b"")) or self._closed:
+                        return body
                 case "http.response.trailers":
                     if self._trailers is not None:
                         for k, v in message.get("headers", []):
                             self._trailers.add(k.decode("utf-8"), v.decode("utf-8"))
                     if not message.get("more_trailers", False):
                         break
-        self._closed = True
-        self._request_task.cancel()
-        with contextlib.suppress(BaseException):
-            await self._request_task
-            await self._task
+        await self._cleanup()
         if err:
             raise err
         raise StopAsyncIteration
@@ -347,6 +345,10 @@ class ResponseContent(AsyncIterator[bytes]):
             return
         self._closed = True
         self._send_queue.put_nowait(CancelResponse())
+        await self._cleanup()
+
+    async def _cleanup(self) -> None:
+        self._closed = True
         self._request_task.cancel()
         with contextlib.suppress(BaseException):
             await self._request_task

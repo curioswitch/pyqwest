@@ -53,11 +53,21 @@ def _echo(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[b
     send_trailers([("x-echo-trailer", "last info")])
 
 
+def _nihongo(
+    environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    query_string = environ["QUERY_STRING"].encode("latin-1").decode("utf-8")
+    start_response("200 OK", [("x-echo-query-string", query_string)])
+    yield b""
+
+
 def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
     path = cast("str", environ["PATH_INFO"]).encode("latin-1").decode("utf-8")
     match path:
         case "/echo":
             return _echo(environ, start_response)
+        case "/日本語 英語":
+            return _nihongo(environ, start_response)
         case _:
             start_response("404 Not Found", [("content-type", "text/plain")])
             return [b"Not Found"]

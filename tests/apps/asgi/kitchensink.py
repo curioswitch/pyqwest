@@ -67,6 +67,20 @@ async def _echo(
     )
 
 
+async def _nihongo(
+    scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": ((b"x-echo-query-string", scope["query_string"]),),
+            "trailers": False,
+        }
+    )
+    await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+
 async def app(
     scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
@@ -74,8 +88,10 @@ async def app(
     match scope["path"]:
         case "/echo":
             await _echo(scope, receive, send)
+        case "/日本語 英語":
+            await _nihongo(scope, receive, send)
         case _:
-            send(
+            await send(
                 {
                     "type": "http.response.start",
                     "status": 404,
