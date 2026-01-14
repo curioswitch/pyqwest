@@ -14,11 +14,13 @@ use pyo3_async_runtimes::{
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::ReceiverStream;
 
+use crate::shared::request::{RequestStreamError, RequestStreamResult};
+
 pub(super) fn into_stream(
     py: Python<'_>,
     gen: Bound<'_, PyAny>,
 ) -> PyResult<(
-    impl futures_core::Stream<Item = PyResult<Py<PyAny>>>,
+    impl futures_core::Stream<Item = RequestStreamResult<Py<PyAny>>>,
     Py<PyAny>,
 )> {
     static FORWARD_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -29,7 +31,7 @@ pub(super) fn into_stream(
 
     let locals = get_current_locals(py)?;
     let event_loop = locals.event_loop(py);
-    let (tx, rx) = mpsc::channel::<PyResult<Py<PyAny>>>(10);
+    let (tx, rx) = mpsc::channel::<RequestStreamResult<Py<PyAny>>>(10);
     let sender = Py::new(
         py,
         Sender {
@@ -49,14 +51,14 @@ pub(super) fn into_stream(
 #[pyclass(module = "pyqwest._async", frozen)]
 struct Sender {
     locals: TaskLocals,
-    tx: Mutex<Option<mpsc::Sender<PyResult<Py<PyAny>>>>>,
+    tx: Mutex<Option<mpsc::Sender<RequestStreamResult<Py<PyAny>>>>>,
 }
 
 #[pymethods]
 impl Sender {
     fn send(&self, py: Python<'_>, item: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let item = if let Ok(item) = item.cast::<PyBaseException>() {
-            Err(PyErr::from_value(item.clone().into_any()))
+            Err(RequestStreamError::from_py(item))
         } else {
             Ok(item.unbind())
         };
