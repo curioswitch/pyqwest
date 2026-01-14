@@ -570,9 +570,11 @@ async def test_request_content_error(
     client: Client | SyncClient, url: str, http_version: HTTPVersion
 ) -> None:
     # There is a race between whether the error is handled on the request
-    # or response side, which looks like a connection error when the server
-    # aborts. We match either.
-    with pytest.raises(Exception, match=r"Request|connection") as exc_info:
+    # or response side, which can look like a connection error when the server
+    # aborts or a response error. We match any.
+    with pytest.raises(
+        Exception, match=r"Request|connection|reading content"
+    ) as exc_info:
         method = "POST"
         url = f"{url}/echo"
         if isinstance(client, SyncClient):
