@@ -11,7 +11,7 @@ use crate::common::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
-use crate::sync::response::{RequestIterHandle, SyncResponse};
+use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
 
 #[pyclass(module = "pyqwest", name = "SyncHTTPTransport", frozen)]
 #[derive(Clone)]
@@ -126,6 +126,7 @@ impl SyncHttpTransport {
                     let _ = tx.send(Ok(response));
                 }
                 Err(e) => {
+                    Python::attach(|py| close_request_iter(py, &request_iter));
                     let _ = tx.send(Err(pyerrors::from_reqwest(&e, "Request failed")));
                 }
             }

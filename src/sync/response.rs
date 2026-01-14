@@ -27,7 +27,7 @@ enum Content {
 
 pub(super) type RequestIterHandle = Arc<Mutex<Option<Py<PyAny>>>>;
 
-fn close_request_iter(py: Python<'_>, request_iter: &RequestIterHandle) {
+pub(super) fn close_request_iter(py: Python<'_>, request_iter: &RequestIterHandle) {
     let request_iter = request_iter.lock().unwrap().take();
     if let Some(iter) = request_iter {
         let _ = iter.bind(py).call_method0("close");
