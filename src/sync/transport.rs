@@ -130,10 +130,13 @@ impl SyncHttpTransport {
                 }
             }
         });
-        let res = py.detach(|| {
-            rx.blocking_recv()
-                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
-        })??;
+        let res = py
+            .detach(|| {
+                rx.blocking_recv()
+                    .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
+                    .and_then(|inner| inner)
+            })
+            .inspect_err(|_| close_request_iter(py, &request_iter))?;
         res.into_bound_py_any(py)
     }
 
