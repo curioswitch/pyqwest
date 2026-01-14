@@ -4,7 +4,8 @@ import asyncio
 import json
 import threading
 import time
-from queue import Queue
+from collections.abc import Iterator
+from queue import Empty, Queue
 from typing import TYPE_CHECKING
 
 import pytest
@@ -20,7 +21,7 @@ from pyqwest import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator
 
 
 pytestmark = [
@@ -44,12 +45,41 @@ async def request_body(queue: asyncio.Queue) -> AsyncIterator[bytes]:
         yield item
 
 
-def sync_request_body(queue: Queue) -> Iterator[bytes]:
-    while True:
-        item: bytes | None = queue.get()
+class SyncRequestBody(Iterator[bytes]):
+    _queue: Queue[bytes | None]
+
+    def __init__(self) -> None:
+        self._queue = Queue()
+        self._closed = False
+        self._pending_read = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        if self._closed:
+            raise StopIteration
+        while True:
+            self._pending_read = True
+            try:
+                item = self._queue.get(timeout=0.01)
+                break
+            except Empty:
+                if self._closed:
+                    self._pending_read = False
+                    raise StopIteration  # noqa: B904
+        self._pending_read = False
+
         if item is None:
-            return
-        yield item
+            raise StopIteration
+        return item
+
+    def put(self, item: bytes) -> None:
+        self._queue.put(item)
+
+    def close(self) -> None:
+        self._closed = True
+        self._queue.put(None)
 
 
 @pytest.mark.asyncio
@@ -165,24 +195,24 @@ async def test_bidi_sync(
     sync_client: SyncClient, url: str, http_version: HTTPVersion | None
 ) -> None:
     client = sync_client
-    queue = Queue()
 
     def run():
+        request_body = SyncRequestBody()
         with client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
-            content=sync_request_body(queue),
+            content=request_body,
         ) as resp:
             assert resp.status == 200
             content = resp.content
-            queue.put(b"Hello!")
+            request_body.put(b"Hello!")
             chunk = next(content)
             assert chunk == b"Hello!"
-            queue.put(b" World!")
+            request_body.put(b" World!")
             chunk = next(content)
             assert chunk == b" World!"
-            queue.put(None)
+            request_body.close()
             chunk = next(content, None)
             assert chunk is None
             if supports_trailers(http_version, url):
@@ -489,14 +519,14 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
 @pytest.mark.asyncio
 async def test_close_no_read_sync(sync_client: SyncClient, url: str) -> None:
     client = sync_client
-    queue = Queue()
 
     def run():
+        request_body = SyncRequestBody()
         resp = client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
-            content=sync_request_body(queue),
+            content=request_body,
         )
         assert resp.status == 200
         content = resp.content
@@ -538,14 +568,14 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
 @pytest.mark.asyncio
 async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> None:
     client = sync_client
-    queue = Queue()
+    request_body = SyncRequestBody()
 
     def run():
         resp = client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
-            content=sync_request_body(queue),
+            content=request_body,
         )
         assert resp.status == 200
         content = resp.content
@@ -565,6 +595,9 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
         resp.close()
         read_thread.join()
         assert last_read is None
+        while request_body._pending_read:
+            time.sleep(0.001)
+        assert request_body._closed
 
     await asyncio.to_thread(run)
 
