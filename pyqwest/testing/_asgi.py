@@ -80,22 +80,6 @@ class ASGITransport(Transport):
         self._lifespan = None
 
     async def execute(self, request: Request) -> Response:
-        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
-        deadline = (
-            asyncio.get_event_loop().time() + timeout if timeout is not None else None
-        )
-        if timeout is not None:
-            try:
-                return await asyncio.wait_for(
-                    self.do_execute(request, deadline), timeout
-                )
-            except asyncio.TimeoutError as e:
-                if asyncio.TimeoutError is TimeoutError:
-                    raise
-                raise TimeoutError(str(e)) from e
-        return await self.do_execute(request, deadline)
-
-    async def do_execute(self, request: Request, deadline: float | None) -> Response:
         parsed_url = urlparse(request.url)
         path = parsed_url.path or "/"
         match self._http_version:
@@ -166,9 +150,11 @@ class ASGITransport(Transport):
         async def send(message: ASGISendEvent) -> None:
             await send_queue.put(message)
 
+        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
+
         async def run_app() -> None:
             try:
-                await self._app(scope, receive, send)
+                await asyncio.wait_for(self._app(scope, receive, send), timeout=timeout)
             except Exception as e:
                 send_queue.put_nowait(e)
 
@@ -176,6 +162,8 @@ class ASGITransport(Transport):
         message = await send_queue.get()
         if isinstance(message, Exception):
             await app_task
+            if isinstance(message, TimeoutError):
+                raise message
             return Response(
                 status=500,
                 http_version=self._http_version,
@@ -202,7 +190,6 @@ class ASGITransport(Transport):
             request_task,
             trailers,
             app_task,
-            deadline,
             read_trailers=message.get("trailers", False),
         )
         return Response(
@@ -293,7 +280,6 @@ class ResponseContent(AsyncIterator[bytes]):
         request_task: asyncio.Task[None],
         trailers: Headers | None,
         task: asyncio.Task[None],
-        deadline: float | None,
         *,
         read_trailers: bool,
     ) -> None:
@@ -301,7 +287,6 @@ class ResponseContent(AsyncIterator[bytes]):
         self._request_task = request_task
         self._trailers = trailers
         self._task = task
-        self._deadline = deadline
         self._read_trailers = read_trailers
 
         self._read_pending = False
@@ -317,32 +302,20 @@ class ResponseContent(AsyncIterator[bytes]):
         while True:
             self._read_pending = True
             try:
-                if self._deadline is not None:
-                    timeout = self._deadline - asyncio.get_event_loop().time()
-                    if timeout <= 0:
-                        msg = "Response body read timed out"
-                        raise TimeoutError(msg)
-                    try:
-                        message = await asyncio.wait_for(
-                            self._send_queue.get(), timeout=timeout
-                        )
-                    except asyncio.TimeoutError as e:
-                        if asyncio.TimeoutError is TimeoutError:
-                            raise
-                        raise TimeoutError(str(e)) from e
-                else:
-                    message = await self._send_queue.get()
+                message = await self._send_queue.get()
             finally:
                 self._read_pending = False
             if isinstance(message, Exception):
-                if isinstance(message, CancelResponse):
-                    err = StopAsyncIteration()
-                    break
-                if isinstance(message, WriteError):
-                    err = message
-                    break
-                msg = "Error reading response body"
-                raise ReadError(msg) from message
+                match message:
+                    case CancelResponse():
+                        err = StopAsyncIteration()
+                        break
+                    case WriteError() | TimeoutError():
+                        err = message
+                        break
+                    case Exception():
+                        msg = "Error reading response body"
+                        raise ReadError(msg) from message
             match message["type"]:
                 case "http.response.body":
                     if body := message.get("body", b""):
