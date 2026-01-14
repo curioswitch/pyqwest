@@ -171,7 +171,7 @@ impl SyncResponse {
                 let res = py
                     .detach(|| rx.blocking_recv())
                     .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
-                    .and_then(|inner| inner);
+                    .flatten();
                 close_request_iter(py, &self.request_iter);
                 let (body, trailers) = res?;
                 FullResponse {
@@ -259,33 +259,22 @@ impl SyncContentGenerator {
     }
 
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Bytes>> {
-        let res = py.detach(|| {
-            let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
-            let body = self.body.clone();
-            get_runtime().spawn(async move {
-                let chunk = body.chunk().await;
-                tx.send(chunk).unwrap();
-            });
-            rx.blocking_recv()
-                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
-        });
-        let res = match res {
-            Ok(inner) => inner,
-            Err(err) => {
-                close_request_iter(py, &self.request_iter);
-                return Err(err);
-            }
-        };
-        match res {
-            Ok(Some(chunk)) => Ok(Some(chunk)),
-            Ok(None) => {
-                close_request_iter(py, &self.request_iter);
-                Ok(None)
-            }
-            Err(err) => {
-                close_request_iter(py, &self.request_iter);
-                Err(err)
-            }
+        let res = py
+            .detach(|| {
+                let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
+                let body = self.body.clone();
+                get_runtime().spawn(async move {
+                    let chunk = body.chunk().await;
+                    tx.send(chunk).unwrap();
+                });
+                rx.blocking_recv()
+                    .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
+            })
+            .flatten()
+            .inspect_err(|_| close_request_iter(py, &self.request_iter))?;
+        if res.is_none() {
+            close_request_iter(py, &self.request_iter);
         }
+        Ok(res)
     }
 }

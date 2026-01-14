@@ -134,7 +134,7 @@ impl SyncHttpTransport {
             .detach(|| {
                 rx.blocking_recv()
                     .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
-                    .and_then(|inner| inner)
+                    .flatten()
             })
             .inspect_err(|_| close_request_iter(py, &request_iter))?;
         res.into_bound_py_any(py)
