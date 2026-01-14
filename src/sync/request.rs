@@ -68,6 +68,11 @@ impl SyncRequest {
             None => Ok(PyTuple::empty(py).into_any().try_iter()?.into_any()),
         }
     }
+
+    #[getter]
+    fn _timeout(&self) -> Option<f64> {
+        self.head.timeout()
+    }
 }
 
 impl SyncRequest {

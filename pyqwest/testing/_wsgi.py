@@ -1,0 +1,363 @@
+from __future__ import annotations
+
+import contextlib
+import threading
+import time
+from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from queue import Empty, Queue
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
+
+from pyqwest import (
+    Headers,
+    HTTPVersion,
+    ReadError,
+    SyncRequest,
+    SyncResponse,
+    SyncTransport,
+    WriteError,
+)
+
+if TYPE_CHECKING:
+    import sys
+    from types import TracebackType
+
+    if sys.version_info >= (3, 11):
+        from wsgiref.types import WSGIApplication, WSGIEnvironment
+    else:
+        from _typeshed.wsgi import WSGIApplication, WSGIEnvironment
+
+
+class WSGITransport(SyncTransport):
+    _app: WSGIApplication
+    _http_version: HTTPVersion
+    _executor: ThreadPoolExecutor
+    _close_executor: bool
+    _closed: bool
+
+    def __init__(
+        self,
+        app: WSGIApplication,
+        http_version: HTTPVersion = HTTPVersion.HTTP2,
+        executor: ThreadPoolExecutor | None = None,
+    ) -> None:
+        self._app = app
+        self._http_version = http_version
+        if executor is None:
+            self._executor = ThreadPoolExecutor()
+            self._close_executor = True
+        else:
+            self._executor = executor
+            self._close_executor = False
+        self._closed = False
+
+    def execute(self, request: SyncRequest) -> SyncResponse:
+        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
+        deadline = time.monotonic() + timeout if timeout is not None else None
+
+        parsed_url = urlparse(request.url)
+        path = (parsed_url.path or "/").encode().decode("latin-1")
+        query = parsed_url.query.encode().decode("latin-1")
+
+        match self._http_version:
+            case HTTPVersion.HTTP1:
+                server_protocol = "HTTP/1.1"
+            case HTTPVersion.HTTP2:
+                server_protocol = "HTTP/2"
+            case HTTPVersion.HTTP3:
+                server_protocol = "HTTP/3"
+
+        trailers = Headers()
+        trailers_supported = (
+            self._http_version == HTTPVersion.HTTP2
+            and request.headers.get("te", "") == "trailers"
+        )
+
+        def send_trailers(headers: list[tuple[str, str]]) -> None:
+            if not trailers_supported:
+                return
+            for k, v in headers:
+                trailers.add(k, v)
+
+        request_input = RequestInput(request.content, self._http_version)
+        environ: WSGIEnvironment = {
+            "REQUEST_METHOD": request.method,
+            "SCRIPT_NAME": "",
+            "PATH_INFO": path,
+            "QUERY_STRING": query,
+            "SERVER_NAME": parsed_url.hostname or "",
+            "SERVER_PORT": str(
+                parsed_url.port or (443 if parsed_url.scheme == "https" else 80)
+            ),
+            "SERVER_PROTOCOL": server_protocol,
+            "wsgi.url_scheme": parsed_url.scheme,
+            "wsgi.version": (1, 0),
+            "wsgi.multithread": True,
+            "wsgi.multiprocess": False,
+            "wsgi.run_once": False,
+            "wsgi.input": request_input,
+            "wsgi.ext.http.send_trailers": send_trailers,
+        }
+
+        for k, v in request.headers.items():
+            match k:
+                case "content-type":
+                    environ["CONTENT_TYPE"] = v
+                case "content-length":
+                    environ["CONTENT_LENGTH"] = v
+                case _:
+                    name = f"HTTP_{k.upper().replace('-', '_')}"
+                    value = f"{existing},{v}" if (existing := environ.get(name)) else v
+                    environ[name] = value
+
+        response_queue: Queue[bytes | None | Exception] = Queue()
+
+        status_str: str = ""
+        headers: list[tuple[str, str]] = []
+        exc: (
+            tuple[type[BaseException], BaseException, object]
+            | tuple[None, None, None]
+            | None
+        ) = None
+        response_started = threading.Event()
+
+        def start_response(
+            status: str,
+            response_headers: list[tuple[str, str]],
+            exc_info: tuple[type[BaseException], BaseException, object]
+            | tuple[None, None, None]
+            | None = None,
+        ) -> Callable[[bytes], object]:
+            nonlocal status_str, headers, exc
+            status_str = status
+            headers = response_headers
+            exc = exc_info
+
+            def write(body: bytes) -> None:
+                if not response_started.is_set():
+                    response_started.set()
+                if body:
+                    response_queue.put(body)
+
+            return write
+
+        def run_app() -> None:
+            response_iter = self._app(environ, start_response)
+            try:
+                for chunk in response_iter:
+                    if chunk:
+                        if not response_started.is_set():
+                            response_started.set()
+                        response_queue.put(chunk)
+            except Exception as e:
+                response_queue.put(e)
+            else:
+                if not response_started.is_set():
+                    response_started.set()
+                response_queue.put(None)
+            finally:
+                with contextlib.suppress(Exception):
+                    response_iter.close()  # pyright: ignore[reportAttributeAccessIssue]
+
+        app_future = self._executor.submit(run_app)
+
+        response_started.wait()
+
+        if exc and exc[0]:
+            return SyncResponse(
+                status=500,
+                http_version=self._http_version,
+                headers=Headers((("content-type", "text/plain"),)),
+                content=str(exc[0]).encode(),
+            )
+
+        response_content = ResponseContent(
+            response_queue, request_input, app_future, deadline
+        )
+
+        status = int(status_str.split(" ", 1)[0])
+
+        return SyncResponse(
+            status=status,
+            http_version=self._http_version,
+            headers=Headers(headers),
+            content=response_content,
+            trailers=trailers,
+        )
+
+    def __enter__(self) -> WSGITransport:
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._close_executor:
+            self._executor.shutdown()
+
+
+class RequestInput:
+    def __init__(self, content: Iterator[bytes], http_version: HTTPVersion) -> None:
+        self._content = content
+        self._http_version = http_version
+        self._closed = False
+        self._buffer = bytearray()
+
+    def read(self, size: int = -1) -> bytes:
+        return self._do_read(size)
+
+    def readline(self, size: int = -1) -> bytes:
+        if self._closed or size == 0:
+            return b""
+
+        line = bytearray()
+        while True:
+            sz = size - len(line) if size >= 0 else -1
+            read_bytes = self._do_read(sz)
+            if not read_bytes:
+                return bytes(line)
+            if len(line) + len(read_bytes) == size:
+                return line + read_bytes
+            newline_index = read_bytes.find(b"\n")
+            if newline_index == -1:
+                line.extend(read_bytes)
+                continue
+            res = line + read_bytes[: newline_index + 1]
+            self._buffer.extend(read_bytes[newline_index + 1 :])
+            return bytes(res)
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        return list(self)
+
+    def _do_read(self, size: int) -> bytes:
+        if self._closed or size == 0:
+            return b""
+
+        try:
+            while True:
+                chunk = next(self._content)
+                if size < 0:
+                    continue
+                if len(self._buffer) + len(chunk) >= size:
+                    to_read = size - len(self._buffer)
+                    res = self._buffer + chunk[:to_read]
+                    self._buffer.clear()
+                    self._buffer.extend(chunk[to_read:])
+                    return res
+                if len(self._buffer) == 0:
+                    return chunk
+                res = self._buffer + chunk
+                self._buffer.clear()
+                return bytes(res)
+        except StopIteration:
+            self.close()
+            res = bytes(self._buffer)
+            self._buffer = bytearray()
+            return res
+        except Exception as e:
+            self.close()
+            if self._http_version != HTTPVersion.HTTP2:
+                msg = f"Request failed: {chunk}"
+            else:
+                # With HTTP/2, reqwest seems to squash the original error message.
+                msg = "Request failed: stream error sent by user"
+            raise WriteError(msg) from e
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        with contextlib.suppress(Exception):
+            self._content.close()  # pyright: ignore[reportAttributeAccessIssue]
+
+
+class ResponseContent(Iterator[bytes]):
+    def __init__(
+        self,
+        response_queue: Queue[bytes | None | Exception],
+        request_input: RequestInput,
+        app_future: Future,
+        deadline: float | None,
+    ) -> None:
+        self._response_queue = response_queue
+        self._request_input = request_input
+        self._app_future = app_future
+        self._closed = False
+        self._read_pending = False
+        self._deadline = deadline
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        if self._closed:
+            raise StopIteration
+        err: Exception | None = None
+        self._read_pending = True
+        chunk = b""
+        try:
+            if self._deadline:
+                while True:
+                    time_left = self._deadline - time.monotonic()
+                    if time_left <= 0:
+                        msg = "Response read timed out"
+                        message = TimeoutError(msg)
+                        break
+                    try:
+                        message = self._response_queue.get(timeout=time_left)
+                        break
+                    except Empty:
+                        continue
+            else:
+                message = self._response_queue.get()
+        finally:
+            self._read_pending = False
+        if isinstance(message, Exception):
+            match message:
+                case WriteError() | TimeoutError():
+                    err = message
+                case _:
+                    msg = "Request Failed: Error reading response body"
+                    err = ReadError(msg)
+        elif message is None:
+            err = StopIteration()
+        else:
+            chunk = message
+
+        if err:
+            self._closed = True
+            self._request_input.close()
+            with contextlib.suppress(Exception):
+                self._app_future.result()
+            raise err
+        return chunk
+
+    def __del__(self) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._request_input.close()
+        self._response_queue.put(None)
+        with contextlib.suppress(Exception):
+            self._app_future.result()

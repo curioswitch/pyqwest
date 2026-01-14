@@ -102,7 +102,10 @@ class ASGITransport(Transport):
                 (k.lower().encode("utf-8"), v.encode("utf-8"))
                 for k, v in request.headers.items()
             ],
-            "server": (parsed_url.hostname or "", parsed_url.port or 80),
+            "server": (
+                parsed_url.hostname or "",
+                parsed_url.port or (443 if parsed_url.scheme == "https" else 80),
+            ),
             "client": self._client,
             "extensions": _extensions,
             "state": self._state,
@@ -292,13 +295,13 @@ class ResponseContent(AsyncIterator[bytes]):
         self._read_trailers = read_trailers
 
         self._read_pending = False
-        self._finished = False
+        self._closed = False
 
     def __aiter__(self) -> AsyncIterator[bytes]:
         return self
 
     async def __anext__(self) -> bytes:
-        if self._finished:
+        if self._closed:
             raise StopAsyncIteration
         err: Exception | None = None
         while True:
@@ -330,7 +333,7 @@ class ResponseContent(AsyncIterator[bytes]):
                             self._trailers.add(k.decode("utf-8"), v.decode("utf-8"))
                     if not message.get("more_trailers", False):
                         break
-        self._finished = True
+        self._closed = True
         self._request_task.cancel()
         with contextlib.suppress(BaseException):
             await self._request_task
@@ -340,6 +343,9 @@ class ResponseContent(AsyncIterator[bytes]):
         raise StopAsyncIteration
 
     async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self._send_queue.put_nowait(CancelResponse())
         self._request_task.cancel()
         with contextlib.suppress(BaseException):

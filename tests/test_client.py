@@ -4,8 +4,6 @@ import asyncio
 import json
 import threading
 import time
-from collections.abc import Iterator
-from queue import Empty, Queue
 from typing import TYPE_CHECKING
 
 import pytest
@@ -20,8 +18,10 @@ from pyqwest import (
     WriteError,
 )
 
+from ._util import SyncRequestBody
+
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
 
 
 pytestmark = [
@@ -43,43 +43,6 @@ async def request_body(queue: asyncio.Queue) -> AsyncIterator[bytes]:
         if item is None:
             return
         yield item
-
-
-class SyncRequestBody(Iterator[bytes]):
-    _queue: Queue[bytes | None]
-
-    def __init__(self) -> None:
-        self._queue = Queue()
-        self._closed = False
-        self._pending_read = False
-
-    def __iter__(self) -> Iterator[bytes]:
-        return self
-
-    def __next__(self) -> bytes:
-        if self._closed:
-            raise StopIteration
-        while True:
-            self._pending_read = True
-            try:
-                item = self._queue.get(timeout=0.01)
-                break
-            except Empty:
-                if self._closed:
-                    item = None
-                    break
-        self._pending_read = False
-
-        if item is None:
-            raise StopIteration
-        return item
-
-    def put(self, item: bytes) -> None:
-        self._queue.put(item)
-
-    def close(self) -> None:
-        self._closed = True
-        self._queue.put(None)
 
 
 @pytest.mark.asyncio
@@ -607,9 +570,11 @@ async def test_request_content_error(
     client: Client | SyncClient, url: str, http_version: HTTPVersion
 ) -> None:
     # There is a race between whether the error is handled on the request
-    # or response side, which looks like a connection error when the server
-    # aborts. We match either.
-    with pytest.raises(Exception, match=r"Request|connection") as exc_info:
+    # or response side, which can look like a connection error when the server
+    # aborts or a response error. We match any.
+    with pytest.raises(
+        Exception, match=r"Request|connection|reading content"
+    ) as exc_info:
         method = "POST"
         url = f"{url}/echo"
         if isinstance(client, SyncClient):
@@ -658,18 +623,12 @@ async def test_response_error(
     # There is a race between whether the error is handled on the request
     # or response side, which looks like a connection error when the server
     # aborts. We match either.
-    with pytest.raises(ReadError):
+    with pytest.raises((ReadError, WriteError)):
         method = "POST"
         url = f"{url}/echo"
         headers = {"x-error-response": "1"}
         request_content = b"Hello"
         if isinstance(client, SyncClient):
-
-            def req_content_sync() -> Iterator[bytes]:
-                yield b"Hello, World!"
-                msg = "Test error"
-                raise RuntimeError(msg)
-
             resp = await asyncio.to_thread(
                 client.stream, method, url, headers=headers, content=request_content
             )
@@ -681,3 +640,5 @@ async def test_response_error(
             content = b""
             async for chunk in resp.content:
                 content += chunk
+    # Make sure we got response headers before the error
+    assert resp.status == 200

@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    import sys
+    from collections.abc import Callable, Iterable
+
+    if sys.version_info >= (3, 11):
+        from wsgiref.types import InputStream as WSGIInputStream
+        from wsgiref.types import StartResponse, WSGIEnvironment
+    else:
+        from _typeshed.wsgi import InputStream as WSGIInputStream
+        from _typeshed.wsgi import StartResponse, WSGIEnvironment
+
+
+def _echo(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
+    send_trailers: Callable[[list[tuple[str, str]]], None] = environ[
+        "wsgi.ext.http.send_trailers"
+    ]
+
+    headers = []
+    for key, value in environ.items():
+        if key.startswith("HTTP_"):
+            for v in str(value).split(","):
+                headers.append((f"x-echo-{key[5:].replace('_', '-').lower()}", v))  # noqa: PERF401
+    if ct := environ.get("CONTENT_TYPE"):
+        headers.append(("x-echo-content-type", ct))
+        headers.append(("content-type", ct))
+    if qs := environ.get("QUERY_STRING"):
+        headers.append(("x-echo-query-string", qs))
+    if method := environ.get("REQUEST_METHOD"):
+        headers.append(("x-echo-method", method))
+    if client_cert_name := environ.get("wsgi.ext.tls.client_cert_name"):
+        headers.append(("x-echo-tls-client-name", client_cert_name))
+
+    start_response("200 OK", headers)(b"")
+
+    if environ.get("HTTP_X_ERROR_RESPONSE"):
+        msg = "Error before body"
+        raise RuntimeError(msg)
+
+    request_body = cast("WSGIInputStream", environ["wsgi.input"])
+    while True:
+        body = request_body.read(1024)
+        if body == b"reset me":
+            msg = "Error mid-stream"
+            raise RuntimeError(msg)
+        if not body:
+            break
+        yield body
+
+    send_trailers([("x-echo-trailer", "last info")])
+
+
+def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
+    path = cast("str", environ["PATH_INFO"]).encode("latin-1").decode("utf-8")
+    match path:
+        case "/echo":
+            return _echo(environ, start_response)
+        case _:
+            start_response("404 Not Found", [("content-type", "text/plain")])
+            return [b"Not Found"]
