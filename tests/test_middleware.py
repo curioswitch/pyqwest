@@ -19,6 +19,7 @@ from pyqwest import (
     SyncTransport,
     Transport,
 )
+from pyqwest.testing import ASGITransport, WSGITransport
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -38,7 +39,10 @@ async def read_content(content: AsyncIterator[bytes]) -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_override_request(url: str, transport: HTTPTransport | SyncHTTPTransport):
+async def test_override_request(
+    url: str,
+    transport: HTTPTransport | SyncHTTPTransport | ASGITransport | WSGITransport,
+):
     method = "POST"
     url = f"{url}/echo"
     headers = [
@@ -47,7 +51,7 @@ async def test_override_request(url: str, transport: HTTPTransport | SyncHTTPTra
         ("x-hello", "python"),
     ]
     req_content = b"Hello, World!"
-    if isinstance(transport, SyncHTTPTransport):
+    if isinstance(transport, SyncHTTPTransport | WSGITransport):
 
         class SyncOverride(SyncTransport):
             def execute(self, request: SyncRequest) -> SyncResponse:
@@ -91,7 +95,8 @@ async def test_override_request(url: str, transport: HTTPTransport | SyncHTTPTra
 
 @pytest.mark.asyncio
 async def test_override_response(
-    url: str, transport: HTTPTransport | SyncHTTPTransport
+    url: str,
+    transport: HTTPTransport | SyncHTTPTransport | ASGITransport | WSGITransport,
 ):
     method = "POST"
     url = f"{url}/echo"
@@ -101,7 +106,7 @@ async def test_override_response(
         ("x-hello", "python"),
     ]
     req_content = b"Hello, World!"
-    if isinstance(transport, SyncHTTPTransport):
+    if isinstance(transport, SyncHTTPTransport | WSGITransport):
 
         class SyncOverride(SyncTransport):
             def execute(self, request: SyncRequest) -> SyncResponse:
@@ -155,13 +160,14 @@ async def test_override_response(
 
 @pytest.mark.asyncio
 async def test_override_response_content(
-    url: str, transport: HTTPTransport | SyncHTTPTransport
+    url: str,
+    transport: HTTPTransport | SyncHTTPTransport | ASGITransport | WSGITransport,
 ):
     method = "POST"
     url = f"{url}/echo"
     headers = [("content-type", "text/plain"), ("te", "trailers")]
     req_content = b"Hello, World!"
-    if isinstance(transport, SyncHTTPTransport):
+    if isinstance(transport, SyncHTTPTransport | WSGITransport):
 
         class SyncOverride(SyncTransport):
             def execute(self, request: SyncRequest) -> SyncResponse:
@@ -215,13 +221,14 @@ async def test_override_response_content(
 
 @pytest.mark.asyncio
 async def test_override_response_trailers(
-    url: str, transport: HTTPTransport | SyncHTTPTransport
+    url: str,
+    transport: HTTPTransport | SyncHTTPTransport | ASGITransport | WSGITransport,
 ):
     method = "POST"
     url = f"{url}/echo"
     headers = [("content-type", "text/plain"), ("te", "trailers")]
     req_content = b"Hello, World!"
-    if isinstance(transport, SyncHTTPTransport):
+    if isinstance(transport, SyncHTTPTransport | WSGITransport):
 
         class SyncOverride(SyncTransport):
             def execute(self, request: SyncRequest) -> SyncResponse:
@@ -267,7 +274,8 @@ async def test_override_response_trailers(
 
 @pytest.mark.asyncio
 async def test_override_response_execute(
-    url: str, transport: HTTPTransport | SyncHTTPTransport
+    url: str,
+    transport: HTTPTransport | SyncHTTPTransport | ASGITransport | WSGITransport,
 ):
     method = "POST"
     url = f"{url}/echo"
@@ -277,7 +285,7 @@ async def test_override_response_execute(
         ("x-hello", "python"),
     ]
     req_content = b"Hello, World!"
-    if isinstance(transport, SyncHTTPTransport):
+    if isinstance(transport, SyncHTTPTransport | WSGITransport):
 
         class SyncOverride(SyncTransport):
             def execute(self, request: SyncRequest) -> SyncResponse:

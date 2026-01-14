@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable, Iterable
 
     if sys.version_info >= (3, 11):
@@ -22,7 +22,8 @@ def _echo(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[b
     headers = []
     for key, value in environ.items():
         if key.startswith("HTTP_"):
-            headers.append((f"x-echo-{key[5:].replace('_', '-').lower()}", value))
+            for v in str(value).split(","):
+                headers.append((f"x-echo-{key[5:].replace('_', '-').lower()}", v))  # noqa: PERF401
     if ct := environ.get("CONTENT_TYPE"):
         headers.append(("x-echo-content-type", ct))
         headers.append(("content-type", ct))
@@ -33,7 +34,7 @@ def _echo(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[b
     if client_cert_name := environ.get("wsgi.ext.tls.client_cert_name"):
         headers.append(("x-echo-tls-client-name", client_cert_name))
 
-    start_response("200 OK", headers)
+    start_response("200 OK", headers)(b"")
 
     if environ.get("HTTP_X_ERROR_RESPONSE"):
         msg = "Error before body"
@@ -50,3 +51,13 @@ def _echo(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[b
         yield body
 
     send_trailers([("x-echo-trailer", "last info")])
+
+
+def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
+    path = cast("str", environ["PATH_INFO"]).encode("latin-1").decode("utf-8")
+    match path:
+        case "/echo":
+            return _echo(environ, start_response)
+        case _:
+            start_response("404 Not Found", [("content-type", "text/plain")])
+            return [b"Not Found"]

@@ -196,10 +196,16 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn _read_pending(&self) -> bool {
+    fn _read_pending(&self, py: Python<'_>) -> bool {
         match &self.content {
             Content::Http(content) => content.get().body.read_pending(),
-            Content::Custom { .. } => false,
+            Content::Custom { content, .. } => {
+                if let Ok(attr) = content.bind(py).getattr("_read_pending") {
+                    attr.extract::<bool>().unwrap_or(false)
+                } else {
+                    false
+                }
+            }
         }
     }
 

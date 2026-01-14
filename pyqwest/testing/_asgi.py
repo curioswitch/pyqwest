@@ -5,7 +5,7 @@ import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote, quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse
 
 from pyqwest import (
     Headers,
@@ -97,7 +97,7 @@ class ASGITransport(Transport):
             "scheme": parsed_url.scheme,
             "path": path,
             "raw_path": quote_plus(path).encode("utf-8"),
-            "query_string": (quote(parsed_url.query) or "").encode("utf-8"),
+            "query_string": (parsed_url.query or "").encode("utf-8"),
             "headers": [
                 (k.lower().encode("utf-8"), v.encode("utf-8"))
                 for k, v in request.headers.items()
@@ -295,13 +295,13 @@ class ResponseContent(AsyncIterator[bytes]):
         self._read_trailers = read_trailers
 
         self._read_pending = False
-        self._finished = False
+        self._closed = False
 
     def __aiter__(self) -> AsyncIterator[bytes]:
         return self
 
     async def __anext__(self) -> bytes:
-        if self._finished:
+        if self._closed:
             raise StopAsyncIteration
         err: Exception | None = None
         while True:
@@ -333,7 +333,7 @@ class ResponseContent(AsyncIterator[bytes]):
                             self._trailers.add(k.decode("utf-8"), v.decode("utf-8"))
                     if not message.get("more_trailers", False):
                         break
-        self._finished = True
+        self._closed = True
         self._request_task.cancel()
         with contextlib.suppress(BaseException):
             await self._request_task
@@ -343,6 +343,9 @@ class ResponseContent(AsyncIterator[bytes]):
         raise StopAsyncIteration
 
     async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self._send_queue.put_nowait(CancelResponse())
         self._request_task.cancel()
         with contextlib.suppress(BaseException):

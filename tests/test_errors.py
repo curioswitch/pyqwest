@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from queue import Queue
 from typing import TYPE_CHECKING
 
 import pytest
 
 from pyqwest import Client, SyncClient
 
+from ._util import SyncRequestBody
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
+    from queue import Queue
 
 
 pytestmark = [
@@ -48,9 +50,9 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
             if isinstance(client, SyncClient):
 
                 def run():
-                    queue = Queue()
+                    request_content = SyncRequestBody()
                     resp = client.stream(
-                        method, url, content=sync_request_body(queue), timeout=0
+                        method, url, content=request_content, timeout=0
                     )
                     next(resp.content)
 
@@ -73,10 +75,8 @@ async def test_response_content_timeout(client: Client | SyncClient, url: str) -
         if isinstance(client, SyncClient):
 
             def run():
-                queue = Queue()
-                resp = client.stream(
-                    method, url, content=sync_request_body(queue), timeout=0.03
-                )
+                request_content = SyncRequestBody()
+                resp = client.stream(method, url, content=request_content, timeout=0.03)
                 assert resp.status == 200
                 next(resp.content)
 
@@ -94,8 +94,8 @@ async def test_response_content_timeout(client: Client | SyncClient, url: str) -
 async def test_connection_error(
     client: Client | SyncClient, client_type: str, url: str
 ) -> None:
-    if client_type == "async_asgi":
-        pytest.skip("ASGI transport doesn't connect to anything")
+    if client_type in ("async_asgi", "sync_wsgi"):
+        pytest.skip("Mock transports don't connect to anything")
 
     with socket.socket() as s:
         s.bind(("", 0))
