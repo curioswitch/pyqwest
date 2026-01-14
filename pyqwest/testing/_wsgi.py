@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from queue import Empty, Queue
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from pyqwest import (
     Headers,
@@ -57,7 +57,8 @@ class WSGITransport(SyncTransport):
         deadline = time.monotonic() + timeout if timeout is not None else None
 
         parsed_url = urlparse(request.url)
-        path = (parsed_url.path or "/").encode().decode("latin-1")
+        raw_path = parsed_url.path or "/"
+        path = unquote(raw_path).encode().decode("latin-1")
         query = parsed_url.query.encode().decode("latin-1")
 
         match self._http_version:
