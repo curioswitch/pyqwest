@@ -66,8 +66,8 @@ class SyncRequestBody(Iterator[bytes]):
                 break
             except Empty:
                 if self._closed:
-                    self._pending_read = False
-                    raise StopIteration  # noqa: B904
+                    item = None
+                    break
         self._pending_read = False
 
         if item is None:
