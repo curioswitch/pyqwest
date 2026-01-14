@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
@@ -11,7 +11,7 @@ use crate::common::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
-use crate::sync::response::SyncResponse;
+use crate::sync::response::{RequestIterHandle, SyncResponse};
 
 #[pyclass(module = "pyqwest", name = "SyncHTTPTransport", frozen)]
 #[derive(Clone)]
@@ -116,8 +116,9 @@ impl SyncHttpTransport {
             ));
         };
         let (req_builder, request_iter) = request.new_reqwest_builder(py, client, self.http3)?;
+        let request_iter: RequestIterHandle = Arc::new(Mutex::new(request_iter));
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
-        let mut response = SyncResponse::pending(py, request_iter)?;
+        let mut response = SyncResponse::pending(py, request_iter.clone())?;
         get_runtime().spawn(async move {
             match req_builder.send().await {
                 Ok(res) => {

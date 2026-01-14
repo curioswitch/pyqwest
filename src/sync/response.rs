@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use http::HeaderMap;
@@ -25,17 +25,26 @@ enum Content {
     },
 }
 
+pub(super) type RequestIterHandle = Arc<Mutex<Option<Py<PyAny>>>>;
+
+fn close_request_iter(py: Python<'_>, request_iter: &RequestIterHandle) {
+    let request_iter = request_iter.lock().unwrap().take();
+    if let Some(iter) = request_iter {
+        let _ = iter.bind(py).call_method0("close");
+    }
+}
+
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct SyncResponse {
     head: ResponseHead,
     content: Content,
-    request_iter: Mutex<Option<Py<PyAny>>>,
+    request_iter: RequestIterHandle,
 }
 
 impl SyncResponse {
     pub(super) fn pending(
         py: Python<'_>,
-        request_iter: Option<Py<PyAny>>,
+        request_iter: RequestIterHandle,
     ) -> PyResult<SyncResponse> {
         Ok(SyncResponse {
             head: ResponseHead::pending(py),
@@ -43,9 +52,10 @@ impl SyncResponse {
                 py,
                 SyncContentGenerator {
                     body: ResponseBody::pending(py),
+                    request_iter: request_iter.clone(),
                 },
             )?),
-            request_iter: Mutex::new(request_iter),
+            request_iter,
         })
     }
 
@@ -90,7 +100,7 @@ impl SyncResponse {
                 content: content.unbind(),
                 trailers,
             },
-            request_iter: Mutex::new(None),
+            request_iter: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -158,9 +168,12 @@ impl SyncResponse {
                 let body = content.get().body.clone();
                 let (tx, rx) = oneshot::channel::<PyResult<(Bytes, HeaderMap)>>();
                 get_runtime().spawn(async move { tx.send(body.read_full().await) });
-                let (body, trailers) = py
+                let res = py
                     .detach(|| rx.blocking_recv())
-                    .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))??;
+                    .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
+                    .and_then(|inner| inner);
+                close_request_iter(py, &self.request_iter);
+                let (body, trailers) = res?;
                 FullResponse {
                     status,
                     headers,
@@ -210,10 +223,7 @@ impl SyncResponse {
     }
 
     fn close(&self, py: Python<'_>) {
-        let request_iter = self.request_iter.lock().unwrap().take();
-        if let Some(iter) = request_iter {
-            let _ = iter.bind(py).call_method0("close");
-        }
+        close_request_iter(py, &self.request_iter);
         match &self.content {
             Content::Http(content) => {
                 if content.get().body.try_close() {
@@ -239,6 +249,7 @@ impl SyncResponse {
 #[pyclass(module = "pyqwest._sync", frozen)]
 struct SyncContentGenerator {
     body: ResponseBody,
+    request_iter: RequestIterHandle,
 }
 
 #[pymethods]
@@ -248,7 +259,7 @@ impl SyncContentGenerator {
     }
 
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Bytes>> {
-        py.detach(|| {
+        let res = py.detach(|| {
             let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
             let body = self.body.clone();
             get_runtime().spawn(async move {
@@ -257,6 +268,24 @@ impl SyncContentGenerator {
             });
             rx.blocking_recv()
                 .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
-        })?
+        });
+        let res = match res {
+            Ok(inner) => inner,
+            Err(err) => {
+                close_request_iter(py, &self.request_iter);
+                return Err(err);
+            }
+        };
+        match res {
+            Ok(Some(chunk)) => Ok(Some(chunk)),
+            Ok(None) => {
+                close_request_iter(py, &self.request_iter);
+                Ok(None)
+            }
+            Err(err) => {
+                close_request_iter(py, &self.request_iter);
+                Err(err)
+            }
+        }
     }
 }

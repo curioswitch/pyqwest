@@ -37,5 +37,7 @@ class SyncRequestBody(Iterator[bytes]):
         self._queue.put(item)
 
     def close(self) -> None:
+        if self._closed:
+            return
         self._closed = True
         self._queue.put(None)
