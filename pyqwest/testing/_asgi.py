@@ -5,7 +5,7 @@ import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote, quote_plus, urlparse
 
 from pyqwest import (
     Headers,
@@ -97,12 +97,15 @@ class ASGITransport(Transport):
             "scheme": parsed_url.scheme,
             "path": path,
             "raw_path": quote_plus(path).encode("utf-8"),
-            "query_string": (parsed_url.query or "").encode("utf-8"),
+            "query_string": (quote(parsed_url.query) or "").encode("utf-8"),
             "headers": [
                 (k.lower().encode("utf-8"), v.encode("utf-8"))
                 for k, v in request.headers.items()
             ],
-            "server": (parsed_url.hostname or "", parsed_url.port or 80),
+            "server": (
+                parsed_url.hostname or "",
+                parsed_url.port or (443 if parsed_url.scheme == "https" else 80),
+            ),
             "client": self._client,
             "extensions": _extensions,
             "state": self._state,
