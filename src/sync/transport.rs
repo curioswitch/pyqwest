@@ -126,7 +126,6 @@ impl SyncHttpTransport {
                     let _ = tx.send(Ok(response));
                 }
                 Err(e) => {
-                    Python::attach(|py| close_request_iter(py, &request_iter));
                     let _ = tx.send(Err(pyerrors::from_reqwest(&e, "Request failed")));
                 }
             }
