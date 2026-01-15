@@ -340,7 +340,7 @@ class ResponseContent(AsyncIterator[bytes]):
             raise err
         raise StopAsyncIteration
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         if self._closed:
             return
         self._closed = True

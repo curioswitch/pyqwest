@@ -44,8 +44,8 @@ impl ValueAwaitable {
 
 /// An awaitable that raises the given error when awaited.
 #[pyclass(module = "pyqwest._async")]
-struct ErrorAwaitable {
-    error: Option<PyErr>,
+pub(super) struct ErrorAwaitable {
+    pub(super) error: Option<PyErr>,
 }
 
 #[pymethods]

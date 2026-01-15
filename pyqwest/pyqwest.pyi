@@ -603,7 +603,7 @@ class Response:
         for full access to the response.
         """
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         """Closes the response, releasing any underlying resources.
 
         Note that if your code is guaranteed to fully consume the response content,

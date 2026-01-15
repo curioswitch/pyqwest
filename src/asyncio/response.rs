@@ -1,5 +1,6 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use arc_swap::ArcSwapOption;
 use pyo3::{
     exceptions::PyStopAsyncIteration,
     intern, pyclass, pymethods,
@@ -10,7 +11,9 @@ use pyo3::{
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::{
-    asyncio::awaitable::{EmptyAsyncIterator, EmptyAwaitable, ValueAsyncIterator, ValueAwaitable},
+    asyncio::awaitable::{
+        EmptyAsyncIterator, EmptyAwaitable, ErrorAwaitable, ValueAsyncIterator, ValueAwaitable,
+    },
     common::{FullResponse, HTTPVersion},
     headers::Headers,
     shared::response::{ResponseBody, ResponseHead, RustFullResponse},
@@ -18,16 +21,14 @@ use crate::{
 
 enum Content {
     Http(Py<ContentGenerator>),
-    Custom {
-        content: Py<PyAny>,
-        trailers: Py<Headers>,
-    },
+    Custom(Py<PyAny>),
 }
 
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct Response {
     pub(super) head: ResponseHead,
     content: Content,
+    trailers: Py<Headers>,
     request_iter_task: Mutex<Option<Py<PyAny>>>,
 }
 
@@ -36,14 +37,14 @@ impl Response {
         py: Python<'_>,
         request_iter_task: Option<Py<PyAny>>,
     ) -> PyResult<Response> {
+        let trailers = Py::new(py, Headers::empty())?;
         Ok(Response {
             head: ResponseHead::pending(py),
             content: Content::Http(Py::new(
                 py,
-                ContentGenerator {
-                    body: ResponseBody::pending(py),
-                },
+                ContentGenerator::new(ResponseBody::pending(trailers.clone_ref(py))),
             )?),
+            trailers,
             request_iter_task: Mutex::new(request_iter_task),
         })
     }
@@ -53,7 +54,10 @@ impl Response {
         let (head, body) = response.into_parts();
         self.head.fill(head);
         if let Content::Http(content) = &self.content {
-            content.get().body.fill(body).await;
+            let content_body = content.get().body.load();
+            // SAFETY: We do not return the response to the user before calling fill so it
+            // cannot be closed yet.
+            content_body.as_ref().unwrap().fill(body).await;
         } else {
             unreachable!("fill is only called on HTTP responses");
         }
@@ -65,8 +69,9 @@ impl Response {
         let Content::Http(content) = self.content else {
             unreachable!("into_full_response is only called on HTTP responses")
         };
-        let body = content.get().body.clone();
-        let (bytes, trailers) = body.read_full().await.unwrap();
+        let body = content.get().body.load();
+        // SAFETY - we only call into_full_response without allowing the user to close this response.
+        let (bytes, trailers) = body.as_ref().unwrap().read_full().await.unwrap();
         RustFullResponse {
             status,
             headers,
@@ -101,10 +106,8 @@ impl Response {
         let trailers = Headers::from_option(py, trailers)?;
         Ok(Self {
             head: ResponseHead::new(py, status, http_version, headers)?,
-            content: Content::Custom {
-                content: content.unbind(),
-                trailers,
-            },
+            content: Content::Custom(content.unbind()),
+            trailers,
             request_iter_task: Mutex::new(None),
         })
     }
@@ -123,7 +126,7 @@ impl Response {
         _exc_value: Py<PyAny>,
         _traceback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.close(py)
+        self.aclose(py)
     }
 
     #[getter]
@@ -143,17 +146,14 @@ impl Response {
 
     #[getter]
     fn trailers(&self, py: Python<'_>) -> Py<Headers> {
-        match &self.content {
-            Content::Http(content) => content.get().body.trailers(py),
-            Content::Custom { trailers, .. } => trailers.clone_ref(py),
-        }
+        self.trailers.clone_ref(py)
     }
 
     #[getter]
     fn content(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.content {
             Content::Http(content) => Ok(content.clone_ref(py).into_any()),
-            Content::Custom { content, .. } => {
+            Content::Custom(content) => {
                 let content = content.bind(py);
                 if let Ok(bytes) = content.cast::<PyBytes>() {
                     ValueAsyncIterator {
@@ -172,51 +172,53 @@ impl Response {
         let headers = self.head.headers(py);
         match &self.content {
             Content::Http(content) => {
-                let body = content.get().body.clone();
-                future_into_py(py, async move {
-                    let (bytes, trailers) = body.read_full().await?;
-                    Ok(RustFullResponse {
+                let body = content.get().body.load();
+                if let Some(body) = body.as_ref() {
+                    let body = body.clone();
+                    future_into_py(py, async move {
+                        let (bytes, trailers) = body.read_full().await?;
+                        Ok(RustFullResponse {
+                            status,
+                            headers,
+                            body: bytes,
+                            trailers,
+                        })
+                    })
+                } else {
+                    FullResponse::py_new(
                         status,
                         headers,
-                        body: bytes,
-                        trailers,
-                    })
-                })
+                        PyBytes::new(py, b"").unbind(),
+                        self.trailers.clone_ref(py),
+                    )
+                    .into_bound_py_any(py)
+                }
             }
-            Content::Custom { content, trailers } => {
+            Content::Custom(content) => {
                 if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
                     FullResponse::py_new(
                         status,
                         headers,
                         bytes.clone().unbind(),
-                        trailers.clone_ref(py),
+                        self.trailers.clone_ref(py),
                     )
                     .into_bound_py_any(py)
                 } else {
-                    new_full_response(py, status, &headers, content, trailers)
+                    new_full_response(py, status, &headers, content, &self.trailers)
                 }
             }
         }
     }
 
-    fn close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let request_iter_task = self.request_iter_task.lock().unwrap().take();
         if let Some(task) = request_iter_task {
             task.call_method0(py, intern!(py, "cancel"))?;
         }
         match &self.content {
-            Content::Http(content) => {
-                if content.get().body.try_close() {
-                    return EmptyAwaitable.into_bound_py_any(py);
-                }
-                let body = content.get().body.clone();
-                future_into_py(py, async move {
-                    body.close().await;
-                    Ok(())
-                })
-            }
-            Content::Custom { content, .. } => {
-                if let Ok(close_res) = content.bind(py).call_method0(intern!(py, "close")) {
+            Content::Http(content) => content.get().aclose(py),
+            Content::Custom(content) => {
+                if let Ok(close_res) = content.bind(py).call_method0(intern!(py, "aclose")) {
                     close_res.into_bound_py_any(py)
                 } else {
                     EmptyAwaitable.into_bound_py_any(py)
@@ -228,8 +230,15 @@ impl Response {
     #[getter]
     fn _read_pending(&self, py: Python<'_>) -> bool {
         match &self.content {
-            Content::Http(content) => content.get().body.read_pending(),
-            Content::Custom { content, .. } => {
+            Content::Http(content) => {
+                let body = content.get().body.load();
+                if let Some(body) = body.as_ref() {
+                    body.read_pending()
+                } else {
+                    false
+                }
+            }
+            Content::Custom(content) => {
                 if let Ok(attr) = content.bind(py).getattr("_read_pending") {
                     attr.extract::<bool>().unwrap_or(false)
                 } else {
@@ -242,7 +251,15 @@ impl Response {
 
 #[pyclass(module = "pyqwest._async", frozen)]
 struct ContentGenerator {
-    body: ResponseBody,
+    body: ArcSwapOption<ResponseBody>,
+}
+
+impl ContentGenerator {
+    fn new(body: ResponseBody) -> Self {
+        ContentGenerator {
+            body: ArcSwapOption::from_pointee(body),
+        }
+    }
 }
 
 #[pymethods]
@@ -252,7 +269,14 @@ impl ContentGenerator {
     }
 
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let body = self.body.clone();
+        let body = self.body.load();
+        let Some(body) = body.as_ref() else {
+            return ErrorAwaitable {
+                error: Some(PyStopAsyncIteration::new_err(())),
+            }
+            .into_bound_py_any(py);
+        };
+        let body = body.clone();
         future_into_py(py, async move {
             let chunk = body.chunk().await?;
             if let Some(bytes) = chunk {
@@ -260,6 +284,19 @@ impl ContentGenerator {
             } else {
                 Err(PyStopAsyncIteration::new_err(()))
             }
+        })
+    }
+
+    fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let Some(body) = self.body.swap(None) else {
+            return EmptyAwaitable.into_bound_py_any(py);
+        };
+        if body.try_close() {
+            return EmptyAwaitable.into_bound_py_any(py);
+        }
+        future_into_py(py, async move {
+            body.close().await;
+            Ok(())
         })
     }
 }

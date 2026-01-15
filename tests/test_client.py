@@ -485,7 +485,7 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
     assert resp.status == 200
     content = resp.content
 
-    await resp.close()
+    await resp.aclose()
     chunk = await anext(content, None)
     assert chunk is None
 
@@ -537,7 +537,7 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
     while not resp._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
         await asyncio.sleep(0.001)
 
-    await resp.close()
+    await resp.aclose()
     chunk = await read_task
     assert chunk is None
 
