@@ -66,8 +66,12 @@ async def test_override_request(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
-        content = b"".join(resp.content)
+        def run():
+            with client.stream(method, url, headers, req_content) as resp:
+                content = b"".join(resp.content)
+            return resp, content
+
+        resp, content = await asyncio.to_thread(run)
     else:
 
         class Override(Transport):
@@ -82,8 +86,8 @@ async def test_override_request(
                 return await transport.execute(request)
 
         client = Client(Override())
-        resp = await client.stream(method, url, headers, req_content)
-        content = await read_content(resp.content)
+        async with client.stream(method, url, headers, req_content) as resp:
+            content = await read_content(resp.content)
 
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "PUT"
@@ -126,8 +130,12 @@ async def test_override_response(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
-        content = b"".join(resp.content)
+        def run():
+            with client.stream(method, url, headers, req_content) as resp:
+                content = b"".join(resp.content)
+            return resp, content
+
+        resp, content = await asyncio.to_thread(run)
     else:
 
         class Override(Transport):
@@ -147,8 +155,8 @@ async def test_override_response(
                 )
 
         client = Client(Override())
-        resp = await client.stream(method, url, headers, req_content)
-        content = await read_content(resp.content)
+        async with client.stream(method, url, headers, req_content) as resp:
+            content = await read_content(resp.content)
 
     assert resp.status == 201
     assert resp.headers.getall("override-1") == ["yes", "definitely"]
@@ -187,8 +195,12 @@ async def test_override_response_content(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
-        content = b"".join(resp.content)
+        def run():
+            with client.stream(method, url, headers, req_content) as resp:
+                content = b"".join(resp.content)
+            return resp, content
+
+        resp, content = await asyncio.to_thread(run)
     else:
 
         class Override(Transport):
@@ -208,8 +220,8 @@ async def test_override_response_content(
                 )
 
         client = Client(Override())
-        resp = await client.stream(method, url, headers, req_content)
-        content = await read_content(resp.content)
+        async with client.stream(method, url, headers, req_content) as resp:
+            content = await read_content(resp.content)
 
     assert resp.status == 200
     assert resp.headers["x-echo-content-type"] == "text/plain"
@@ -244,8 +256,12 @@ async def test_override_response_trailers(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
-        content = b"".join(resp.content)
+        def run():
+            with client.stream(method, url, headers, req_content) as resp:
+                content = b"".join(resp.content)
+            return resp, content
+
+        resp, content = await asyncio.to_thread(run)
     else:
 
         class Override(Transport):
@@ -261,8 +277,8 @@ async def test_override_response_trailers(
                 )
 
         client = Client(Override())
-        resp = await client.stream(method, url, headers, req_content)
-        content = await read_content(resp.content)
+        async with client.stream(method, url, headers, req_content) as resp:
+            content = await read_content(resp.content)
 
     assert resp.status == 200
     assert resp.headers["x-echo-content-type"] == "text/plain"

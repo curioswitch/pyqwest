@@ -107,16 +107,16 @@ impl SyncResponse {
         })
     }
 
-    fn __enter__(slf: Py<SyncResponse>) -> Py<SyncResponse> {
+    pub(super) fn __enter__(slf: Py<SyncResponse>) -> Py<SyncResponse> {
         slf
     }
 
-    fn __exit__(
+    pub(super) fn __exit__(
         &self,
         py: Python<'_>,
-        _exc_type: Py<PyAny>,
-        _exc_value: Py<PyAny>,
-        _traceback: Py<PyAny>,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_value: Option<&Bound<'_, PyAny>>,
+        _traceback: Option<&Bound<'_, PyAny>>,
     ) {
         self.close(py);
     }

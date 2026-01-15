@@ -51,18 +51,18 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
 
                 def run():
                     request_content = SyncRequestBody()
-                    resp = client.stream(
+                    with client.stream(
                         method, url, content=request_content, timeout=0
-                    )
-                    next(resp.content)
+                    ) as resp:
+                        next(resp.content)
 
                 await asyncio.to_thread(run)
             else:
                 queue = asyncio.Queue()
-                resp = await client.stream(
+                async with client.stream(
                     method, url, content=request_body(queue), timeout=0
-                )
-                await anext(resp.content)
+                ) as resp:
+                    await anext(resp.content)
 
 
 @pytest.mark.asyncio
@@ -76,18 +76,20 @@ async def test_response_content_timeout(client: Client | SyncClient, url: str) -
 
             def run():
                 request_content = SyncRequestBody()
-                resp = client.stream(method, url, content=request_content, timeout=0.03)
-                assert resp.status == 200
-                next(resp.content)
+                with client.stream(
+                    method, url, content=request_content, timeout=0.03
+                ) as resp:
+                    assert resp.status == 200
+                    next(resp.content)
 
             await asyncio.to_thread(run)
         else:
             queue = asyncio.Queue()
-            resp = await client.stream(
+            async with client.stream(
                 method, url, content=request_body(queue), timeout=0.03
-            )
-            assert resp.status == 200
-            await anext(resp.content)
+            ) as resp:
+                assert resp.status == 200
+                await anext(resp.content)
 
 
 @pytest.mark.asyncio
@@ -110,4 +112,5 @@ async def test_connection_error(
 
             await asyncio.to_thread(run)
         else:
-            await client.stream(method, url)
+            async with client.stream(method, url):
+                pass

@@ -46,10 +46,13 @@ async def test_mtls(
             http_version=http_version,
         ) as transport:
             client = SyncClient(transport)
-            resp = await asyncio.to_thread(
-                client.stream, method, url, headers, req_content
-            )
-            content = b"".join(resp.content)
+
+            def run():
+                with client.stream(method, url, headers, req_content) as resp:
+                    content = b"".join(resp.content)
+                return resp, content
+
+            resp, content = await asyncio.to_thread(run)
     else:
         async with HTTPTransport(
             tls_ca_cert=certs.ca,
@@ -58,10 +61,10 @@ async def test_mtls(
             http_version=http_version,
         ) as transport:
             client = Client(transport)
-            resp = await client.stream(method, url, headers, req_content)
-            content = b""
-            async for chunk in resp.content:
-                content += chunk
+            async with client.stream(method, url, headers, req_content) as resp:
+                content = b""
+                async for chunk in resp.content:
+                    content += chunk
 
     assert resp.status == 200
     assert (

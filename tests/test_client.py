@@ -59,13 +59,18 @@ async def test_basic(
     ]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.stream, method, url, headers, req_content)
-        content = b"".join(resp.content)
+
+        def run():
+            with client.stream(method, url, headers, req_content) as resp:
+                content = b"".join(resp.content)
+            return (resp, content)
+
+        resp, content = await asyncio.to_thread(run)
     else:
-        resp = await client.stream(method, url, headers, req_content)
-        content = b""
-        async for chunk in resp.content:
-            content += chunk
+        async with client.stream(method, url, headers, req_content) as resp:
+            content = b""
+            async for chunk in resp.content:
+                content += chunk
     assert resp.status == 200
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
@@ -90,20 +95,23 @@ async def test_iterable_body(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(
-            client.stream, method, url, content=[b"Hello, ", b"World!"]
-        )
-        content = b"".join(resp.content)
+
+        def run():
+            with client.stream(method, url, content=[b"Hello, ", b"World!"]) as resp:
+                content = b"".join(resp.content)
+            return (resp, content)
+
+        resp, content = await asyncio.to_thread(run)
     else:
 
         async def req_content() -> AsyncIterator[bytes]:
             yield b"Hello, "
             yield b"World!"
 
-        resp = await client.stream(method, url, content=req_content())
-        content = b""
-        async for chunk in resp.content:
-            content += chunk
+        async with client.stream(method, url, content=req_content()) as resp:
+            content = b""
+            async for chunk in resp.content:
+                content += chunk
     assert resp.status == 200
     assert content == b"Hello, World!"
 
@@ -113,13 +121,18 @@ async def test_empty_request(client: Client | SyncClient, url: str) -> None:
     method = "GET"
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.stream, method, url)
-        content = b"".join(resp.content)
+
+        def run():
+            with client.stream(method, url) as resp:
+                content = b"".join(resp.content)
+            return (resp, content)
+
+        resp, content = await asyncio.to_thread(run)
     else:
-        resp = await client.stream(method, url)
-        content = b""
-        async for chunk in resp.content:
-            content += chunk
+        async with client.stream(method, url) as resp:
+            content = b""
+            async for chunk in resp.content:
+                content += chunk
     assert resp.status == 200
     assert content == b""
 
@@ -131,7 +144,7 @@ async def test_bidi(
     client = async_client
     queue = asyncio.Queue()
 
-    async with await client.stream(
+    async with client.stream(
         "POST",
         f"{url}/echo",
         headers=Headers({"content-type": "text/plain", "te": "trailers"}),
@@ -200,20 +213,23 @@ async def test_large_body(
         ("te", "trailers"),
     ]
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(
-            client.stream, method, url, headers, [b"Hello!"] * 100
-        )
-        content = b"".join(resp.content)
+
+        def run():
+            with client.stream(method, url, headers, [b"Hello!"] * 100) as resp:
+                content = b"".join(resp.content)
+            return (resp, content)
+
+        resp, content = await asyncio.to_thread(run)
     else:
 
         async def async_req_content() -> AsyncIterator[bytes]:
             for _ in range(100):
                 yield b"Hello!"
 
-        resp = await client.stream(method, url, headers, async_req_content())
-        content = b""
-        async for chunk in resp.content:
-            content += chunk
+        async with client.stream(method, url, headers, async_req_content()) as resp:
+            content = b""
+            async for chunk in resp.content:
+                content += chunk
     assert resp.status == 200
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
@@ -244,9 +260,9 @@ async def test_read_full(
 
         def run():
             nonlocal resp, resp2
-            res = client.stream(method, url, headers, [b"Hello!"] * 100)
-            resp = res.read_full()
-            resp2 = res.read_full()
+            with client.stream(method, url, headers, [b"Hello!"] * 100) as res:
+                resp = res.read_full()
+                resp2 = res.read_full()
 
         await asyncio.to_thread(run)
     else:
@@ -255,9 +271,9 @@ async def test_read_full(
             for _ in range(100):
                 yield b"Hello!"
 
-        res = await client.stream(method, url, headers, async_req_content())
-        resp = await res.read_full()
-        resp2 = await res.read_full()
+        async with client.stream(method, url, headers, async_req_content()) as res:
+            resp = await res.read_full()
+            resp2 = await res.read_full()
     assert resp.status == 200
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
@@ -299,11 +315,11 @@ async def test_read_full_cancel(client: Client | SyncClient, url: str) -> None:
         res = await asyncio.to_thread(
             client.stream, method, url, headers, request_content
         )
-        resp_task = asyncio.create_task(asyncio.to_thread(res.read_full))
-        while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
-            await asyncio.sleep(0.001)
+        with res as res:
+            resp_task = asyncio.create_task(asyncio.to_thread(res.read_full))
+            while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
+                await asyncio.sleep(0.001)
 
-        res.close()
         with pytest.raises(ReadError):
             await resp_task
     else:
@@ -312,13 +328,11 @@ async def test_read_full_cancel(client: Client | SyncClient, url: str) -> None:
             await asyncio.sleep(10)
             yield b""
 
-        res = await client.stream(method, url, headers, async_req_content())
+        async with client.stream(method, url, headers, async_req_content()) as res:
+            resp_task = asyncio.create_task(res.read_full())
+            while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
+                await asyncio.sleep(0.001)
 
-        resp_task = asyncio.create_task(res.read_full())
-        while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
-            await asyncio.sleep(0.001)
-
-        await res.aclose()
         with pytest.raises(ReadError):
             await resp_task
 
@@ -516,16 +530,15 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
         async def aclose(self) -> None:
             generator_cancelled.set()
 
-    resp = await client.stream(
+    async with client.stream(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
         content=RequestGenerator(),
-    )
-    assert resp.status == 200
-    content = resp.content
+    ) as resp:
+        assert resp.status == 200
+        content = resp.content
 
-    await resp.aclose()
     chunk = await anext(content, None)
     assert chunk is None
     await resp.aclose()
@@ -540,16 +553,15 @@ async def test_close_no_read_sync(sync_client: SyncClient, url: str) -> None:
 
     def run():
         request_body = SyncRequestBody()
-        resp = client.stream(
+        with client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
             content=request_body,
-        )
-        assert resp.status == 200
-        content = resp.content
+        ) as resp:
+            assert resp.status == 200
+            content = resp.content
 
-        resp.close()
         chunk = next(content, None)
         assert chunk is None
         resp.close()
@@ -562,24 +574,23 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()
 
-    resp = await client.stream(
+    async with client.stream(
         "POST",
         f"{url}/echo",
         headers={"content-type": "text/plain", "te": "trailers"},
         content=request_body(queue),
-    )
-    assert resp.status == 200
-    content = resp.content
+    ) as resp:
+        assert resp.status == 200
+        content = resp.content
 
-    async def read_content() -> bytes | None:
-        return await anext(content, None)
+        async def read_content() -> bytes | None:
+            return await anext(content, None)
 
-    read_task = asyncio.create_task(read_content())
+        read_task = asyncio.create_task(read_content())
 
-    while not resp._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
-        await asyncio.sleep(0.001)
+        while not resp._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
+            await asyncio.sleep(0.001)
 
-    await resp.aclose()
     with pytest.raises(ReadError):
         await read_task
     assert not resp._read_pending  # pyright: ignore[reportAttributeAccessIssue]
@@ -591,31 +602,30 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
     request_body = SyncRequestBody()
 
     def run():
-        resp = client.stream(
+        with client.stream(
             "POST",
             f"{url}/echo",
             headers=Headers({"content-type": "text/plain", "te": "trailers"}),
             content=request_body,
-        )
-        assert resp.status == 200
-        content = resp.content
+        ) as resp:
+            assert resp.status == 200
+            content = resp.content
 
-        last_read: bytes | Exception | None = b"init"
+            last_read: bytes | Exception | None = b"init"
 
-        def read_content() -> bytes | None:
-            nonlocal last_read
-            try:
-                last_read = next(content, None)
-            except Exception as e:
-                last_read = e
+            def read_content() -> bytes | None:
+                nonlocal last_read
+                try:
+                    last_read = next(content, None)
+                except Exception as e:
+                    last_read = e
 
-        read_thread = threading.Thread(target=read_content)
-        read_thread.start()
+            read_thread = threading.Thread(target=read_content)
+            read_thread.start()
 
-        while not resp._read_pending:  # pyright: ignore[reportAttributeAccessIssue]
-            time.sleep(0.001)
+            while not resp._read_pending:  # pyright: ignore[reportAttributeAccessIssue]
+                time.sleep(0.001)
 
-        resp.close()
         read_thread.join()
         assert isinstance(last_read, ReadError)
         while request_body._pending_read:
@@ -644,10 +654,12 @@ async def test_request_content_error(
                 msg = "Test error"
                 raise RuntimeError(msg)
 
-            resp = await asyncio.to_thread(
-                client.stream, method, url, content=req_content_sync()
-            )
-            content = b"".join(resp.content)
+            def run():
+                request_content = req_content_sync()
+                with client.stream(method, url, content=request_content) as resp:
+                    b"".join(resp.content)
+
+            await asyncio.to_thread(run)
         else:
 
             async def req_content() -> AsyncIterator[bytes]:
@@ -655,10 +667,10 @@ async def test_request_content_error(
                 msg = "Test error"
                 raise RuntimeError(msg)
 
-            resp = await client.stream(method, url, content=req_content())
-            content = b""
-            async for chunk in resp.content:
-                content += chunk
+            async with client.stream(method, url, content=req_content()) as resp:
+                content = b""
+                async for chunk in resp.content:
+                    content += chunk
     if isinstance(exc_info.value, WriteError):
         if http_version is None:
             msg = "Request failed"
@@ -689,16 +701,21 @@ async def test_response_error(
         headers = {"x-error-response": "1"}
         request_content = b"Hello"
         if isinstance(client, SyncClient):
-            resp = await asyncio.to_thread(
-                client.stream, method, url, headers=headers, content=request_content
-            )
-            content = b"".join(resp.content)
+
+            def run():
+                nonlocal resp
+                with client.stream(
+                    method, url, headers=headers, content=request_content
+                ) as resp:
+                    b"".join(resp.content)
+
+            await asyncio.to_thread(run)
         else:
-            resp = await client.stream(
+            async with client.stream(
                 method, url, headers=headers, content=request_content
-            )
-            content = b""
-            async for chunk in resp.content:
-                content += chunk
+            ) as resp:
+                content = b""
+                async for chunk in resp.content:
+                    content += chunk
     # Make sure we got response headers before the error
     assert resp.status == 200
