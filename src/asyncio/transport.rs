@@ -13,7 +13,7 @@ use crate::common::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 
-#[pyclass(module = "pyqwest", name = "HTTPTransport", frozen)]
+#[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen)]
 #[derive(Clone)]
 pub struct HttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
@@ -94,7 +94,7 @@ impl HttpTransport {
         _exc_value: Py<PyAny>,
         _traceback: Py<PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.close();
+        self.aclose();
         EmptyAwaitable.into_py_any(py)
     }
 
@@ -106,7 +106,7 @@ impl HttpTransport {
         self.do_execute(py, request.get())
     }
 
-    fn close(&self) {
+    fn aclose(&self) {
         if self.close {
             self.client.store(None);
         }

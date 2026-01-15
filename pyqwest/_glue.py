@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
-from .pyqwest import FullResponse, Headers, Request, Transport
+from ._pyqwest import FullResponse, Headers, Request, Transport
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable

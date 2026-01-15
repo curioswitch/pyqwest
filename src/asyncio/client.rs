@@ -10,7 +10,7 @@ enum Transport {
     Custom(Py<PyAny>),
 }
 
-#[pyclass(module = "pyqwest", frozen)]
+#[pyclass(module = "_pyqwest.async", frozen)]
 pub(crate) struct Client {
     transport: Transport,
 }

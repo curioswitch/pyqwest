@@ -40,6 +40,21 @@ async def test_response_content_bytes():
 
 
 @pytest.mark.asyncio
+async def test_response_content_bytes_read_full():
+    response = await Response(
+        status=500,
+        http_version=HTTPVersion.HTTP2,
+        headers=Headers({"content-type": "text/plain"}),
+        content=b"Sample body",
+        trailers=Headers({"x-trailer": "info"}),
+    ).read_full()
+
+    assert response.status == 500
+    assert response.headers == {"content-type": "text/plain"}
+    assert response.content == b"Sample body"
+
+
+@pytest.mark.asyncio
 async def test_response_content_iterator():
     async def content() -> AsyncIterator[bytes]:
         yield b"Part 1, "
@@ -99,6 +114,20 @@ def test_sync_response_content_bytes():
     content = response.content
     assert next(content) == b"Sample body"
     assert next(content, None) is None
+
+
+def test_sync_response_content_bytes_read_full():
+    response = SyncResponse(
+        status=500,
+        http_version=HTTPVersion.HTTP2,
+        headers=Headers({"content-type": "text/plain"}),
+        content=b"Sample body",
+        trailers=Headers({"x-trailer": "info"}),
+    ).read_full()
+
+    assert response.status == 500
+    assert response.headers == {"content-type": "text/plain"}
+    assert response.content == b"Sample body"
 
 
 def test_sync_response_content_iterator():

@@ -5,7 +5,7 @@ use pyo3::{
 };
 
 /// An awaitable that returns `None` when awaited.
-#[pyclass(module = "pyqwest._async", frozen)]
+#[pyclass(module = "_pyqwest.async", frozen)]
 pub(super) struct EmptyAwaitable;
 
 #[pymethods]
@@ -21,7 +21,7 @@ impl EmptyAwaitable {
 }
 
 /// An awaitable that returns the given value when awaited.
-#[pyclass(module = "pyqwest._async")]
+#[pyclass(module = "_pyqwest.async")]
 pub(super) struct ValueAwaitable {
     pub(super) value: Option<Py<PyAny>>,
 }
@@ -43,7 +43,7 @@ impl ValueAwaitable {
 }
 
 /// An awaitable that raises the given error when awaited.
-#[pyclass(module = "pyqwest._async")]
+#[pyclass(module = "_pyqwest.async")]
 pub(super) struct ErrorAwaitable {
     pub(super) error: Option<PyErr>,
 }
@@ -65,7 +65,7 @@ impl ErrorAwaitable {
 }
 
 /// An `AsyncIterator` that yields no items.
-#[pyclass(module = "pyqwest._async", frozen)]
+#[pyclass(module = "_pyqwest.async", frozen)]
 pub(super) struct EmptyAsyncIterator;
 
 #[pymethods]
@@ -83,7 +83,7 @@ impl EmptyAsyncIterator {
 }
 
 /// An `AsyncIterator` that yields a single value.
-#[pyclass(module = "pyqwest._async")]
+#[pyclass(module = "_pyqwest.async")]
 pub(super) struct ValueAsyncIterator {
     pub(super) value: Option<Py<PyAny>>,
 }

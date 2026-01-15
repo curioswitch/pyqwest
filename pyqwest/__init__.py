@@ -22,15 +22,14 @@ __all__ = [
     "get_default_transport",
 ]
 
-from .pyqwest import (
-    Client,
+from ._coro import Client, Response
+from ._pyqwest import (
     FullResponse,
     Headers,
     HTTPTransport,
     HTTPVersion,
     ReadError,
     Request,
-    Response,
     StreamError,
     StreamErrorCode,
     SyncClient,
@@ -44,4 +43,4 @@ from .pyqwest import (
     get_default_transport,
 )
 
-__doc__ = pyqwest.__doc__  # noqa: F821
+__doc__ = _pyqwest.__doc__  # noqa: F821

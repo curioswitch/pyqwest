@@ -1,5 +1,6 @@
 from collections.abc import (
     AsyncIterator,
+    Awaitable,
     ItemsView,
     Iterable,
     Iterator,
@@ -189,12 +190,6 @@ class HTTPVersion:
     """HTTP/3"""
 
 class Client:
-    """An asynchronous HTTP client.
-
-    A client is a lightweight wrapper around a Transport, providing convenience methods
-    for common HTTP operations with buffering.
-    """
-
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
 
@@ -203,12 +198,12 @@ class Client:
                        transport will be used.
         """
 
-    async def get(
+    def get(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a GET HTTP request.
 
         Args:
@@ -221,13 +216,13 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def post(
+    def post(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a POST HTTP request.
 
         Args:
@@ -241,12 +236,12 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def delete(
+    def delete(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a DELETE HTTP request.
 
         Args:
@@ -259,12 +254,12 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def head(
+    def head(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a HEAD HTTP request.
 
         Args:
@@ -277,12 +272,12 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def options(
+    def options(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a OPTIONS HTTP request.
 
         Args:
@@ -295,13 +290,13 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def patch(
+    def patch(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a PATCH HTTP request.
 
         Args:
@@ -315,13 +310,13 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def put(
+    def put(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes a PUT HTTP request.
 
         Args:
@@ -335,14 +330,14 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def execute(
+    def execute(
         self,
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> FullResponse:
+    ) -> Awaitable[FullResponse]:
         """Executes an HTTP request, returning the full buffered response.
 
         Args:
@@ -357,14 +352,14 @@ class Client:
             TimeoutError: If the request times out.
         """
 
-    async def stream(
+    def stream(
         self,
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> Response:
+    ) -> Awaitable[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
         Args:
@@ -389,7 +384,7 @@ class Transport(Protocol):
     - Add middleware wrapping transports
     """
 
-    async def execute(self, request: Request) -> Response:
+    def execute(self, request: Request) -> Awaitable[Response]:
         """Executes a request."""
 
 class HTTPTransport:
@@ -447,20 +442,20 @@ class HTTPTransport:
                             you have any DNS resolution issues.
         """
 
-    async def __aenter__(self) -> HTTPTransport:
+    def __aenter__(self) -> Awaitable[HTTPTransport]:
         """Enters the context manager for the transport to automatically close it when
         leaving.
         """
 
-    async def __aexit__(
+    def __aexit__(
         self,
         _exc_type: type[BaseException] | None,
         _exc_value: BaseException | None,
         _traceback: TracebackType | None,
-    ) -> None:
+    ) -> Awaitable[None]:
         """Exits the context manager for the transport, closing it."""
 
-    async def execute(self, request: Request) -> Response:
+    def execute(self, request: Request) -> Awaitable[Response]:
         """Executes the given request, returning the response.
 
         Args:
@@ -471,7 +466,7 @@ class HTTPTransport:
             TimeoutError: If the request times out.
         """
 
-    async def close(self) -> None:
+    def aclose(self) -> Awaitable[None]:
         """Closes the transport, releasing any underlying resources."""
 
 def get_default_transport() -> HTTPTransport:
@@ -555,7 +550,7 @@ class Response:
             trailers: The response trailers.
         """
 
-    async def __aenter__(self) -> Response:
+    def __aenter__(self) -> Awaitable[Response]:
         """Enters the context manager for the response to automatically close it when
         leaving.
 
@@ -563,12 +558,12 @@ class Response:
         it is not necessary to explicitly close the response.
         """
 
-    async def __aexit__(
+    def __aexit__(
         self,
         _exc_type: type[BaseException] | None,
         _exc_value: BaseException | None,
         _traceback: TracebackType | None,
-    ) -> None:
+    ) -> Awaitable[None]:
         """Exits the context manager for the response, closing it."""
 
     @property
@@ -595,7 +590,7 @@ class Response:
         consuming the content iterator.
         """
 
-    async def read_full(self) -> FullResponse:
+    def read_full(self) -> Awaitable[FullResponse] | FullResponse:
         """Reads the full response content, returning a FullResponse with it.
 
         After calling this method, the content iterator on this object will be empty.
@@ -603,7 +598,7 @@ class Response:
         for full access to the response.
         """
 
-    async def aclose(self) -> None:
+    def aclose(self) -> Awaitable[None]:
         """Closes the response, releasing any underlying resources.
 
         Note that if your code is guaranteed to fully consume the response content,

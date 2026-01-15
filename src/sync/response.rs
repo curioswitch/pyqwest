@@ -31,7 +31,7 @@ pub(super) fn close_request_iter(py: Python<'_>, request_iter: &RequestIterHandl
     }
 }
 
-#[pyclass(module = "pyqwest", frozen)]
+#[pyclass(module = "_pyqwest", frozen)]
 pub(crate) struct SyncResponse {
     head: ResponseHead,
     content: Content,
@@ -243,7 +243,7 @@ impl SyncResponse {
     }
 }
 
-#[pyclass(module = "pyqwest._sync", frozen)]
+#[pyclass(module = "_pyqwest.sync", frozen)]
 struct SyncContentGenerator {
     body: ArcSwapOption<ResponseBody>,
     request_iter: RequestIterHandle,

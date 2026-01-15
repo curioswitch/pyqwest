@@ -16,10 +16,11 @@ fn add_protocols(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     py.run(
         c_str!(
             r#"
+from collections.abc import Awaitable as _Awaitable
 from typing import Protocol as _Protocol
 
 class Transport(_Protocol):
-    async def execute(self, request: Request) -> Response: ...
+    def execute(self, request: Request) -> _Awaitable[Response]: ...
 
 class SyncTransport(_Protocol):
     def execute(self, request: SyncRequest) -> SyncResponse: ...
@@ -32,7 +33,7 @@ del _Protocol
     )
 }
 
-#[pymodule(gil_used = false)]
+#[pymodule(name = "_pyqwest", gil_used = false)]
 mod pyqwest {
     #[allow(clippy::wildcard_imports)]
     use crate::*;
