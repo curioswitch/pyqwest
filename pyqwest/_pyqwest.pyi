@@ -466,7 +466,7 @@ class HTTPTransport:
             TimeoutError: If the request times out.
         """
 
-    def close(self) -> Awaitable[None]:
+    def aclose(self) -> Awaitable[None]:
         """Closes the transport, releasing any underlying resources."""
 
 def get_default_transport() -> HTTPTransport:

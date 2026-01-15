@@ -94,7 +94,7 @@ impl HttpTransport {
         _exc_value: Py<PyAny>,
         _traceback: Py<PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.close();
+        self.aclose();
         EmptyAwaitable.into_py_any(py)
     }
 
@@ -106,7 +106,7 @@ impl HttpTransport {
         self.do_execute(py, request.get())
     }
 
-    fn close(&self) {
+    fn aclose(&self) {
         if self.close {
             self.client.store(None);
         }
