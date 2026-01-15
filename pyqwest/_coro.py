@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterable, Mapping
-from types import TracebackType
+import inspect
+from typing import TYPE_CHECKING
 
-from .pyqwest import Client as NativeClient
-from .pyqwest import FullResponse, Headers, HTTPVersion, Transport
-from .pyqwest import Response as NativeResponse
+from ._pyqwest import Client as NativeClient
+from ._pyqwest import FullResponse, Headers, HTTPVersion, Transport
+from ._pyqwest import Response as NativeResponse
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterable, Mapping
+    from types import TracebackType
 
 # We expose plain-Python wrappers for the async methods as the easiest way
 # of making them coroutines rather than methods that return Futures,
@@ -320,7 +324,10 @@ class Response:
         It is expected that this method is called to replace Response with FullResponse
         for full access to the response.
         """
-        return await self._response.read_full()
+        res = self._response.read_full()
+        if inspect.isawaitable(res):
+            return await res
+        return res
 
     async def aclose(self) -> None:
         """Closes the response, releasing any underlying resources.

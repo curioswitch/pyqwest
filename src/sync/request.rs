@@ -14,7 +14,7 @@ use crate::{
     shared::request::{RequestHead, RequestStreamError, RequestStreamResult},
 };
 
-#[pyclass(module = "pyqwest", frozen)]
+#[pyclass(module = "_pyqwest", frozen)]
 pub struct SyncRequest {
     head: RequestHead,
     content: Option<Content>,

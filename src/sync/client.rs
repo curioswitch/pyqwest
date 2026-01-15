@@ -9,7 +9,7 @@ enum Transport {
     Custom(Py<PyAny>),
 }
 
-#[pyclass(module = "pyqwest", frozen)]
+#[pyclass(module = "_pyqwest", frozen)]
 pub struct SyncClient {
     transport: Transport,
 }

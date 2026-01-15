@@ -13,7 +13,7 @@ use crate::common::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 
-#[pyclass(module = "pyqwest", name = "HTTPTransport", frozen)]
+#[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen)]
 #[derive(Clone)]
 pub struct HttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,

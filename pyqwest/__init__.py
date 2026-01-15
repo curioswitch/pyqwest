@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 from ._coro import Client, Response
-from .pyqwest import (
+from ._pyqwest import (
     FullResponse,
     Headers,
     HTTPTransport,
@@ -43,4 +43,4 @@ from .pyqwest import (
     get_default_transport,
 )
 
-__doc__ = pyqwest.__doc__  # noqa: F821
+__doc__ = _pyqwest.__doc__  # noqa: F821

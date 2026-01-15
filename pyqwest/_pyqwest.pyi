@@ -590,7 +590,7 @@ class Response:
         consuming the content iterator.
         """
 
-    def read_full(self) -> Awaitable[FullResponse]:
+    def read_full(self) -> Awaitable[FullResponse] | FullResponse:
         """Reads the full response content, returning a FullResponse with it.
 
         After calling this method, the content iterator on this object will be empty.

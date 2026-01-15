@@ -24,7 +24,7 @@ enum Content {
     Custom(Py<PyAny>),
 }
 
-#[pyclass(module = "pyqwest", frozen)]
+#[pyclass(module = "_pyqwest.async", frozen)]
 pub(crate) struct Response {
     pub(super) head: ResponseHead,
     content: Content,
@@ -248,7 +248,7 @@ impl Response {
     }
 }
 
-#[pyclass(module = "pyqwest._async", frozen)]
+#[pyclass(module = "_pyqwest.async", frozen)]
 struct ContentGenerator {
     body: ArcSwapOption<ResponseBody>,
 }

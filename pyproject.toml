@@ -50,6 +50,7 @@ build-backend = "maturin"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+module-name = "pyqwest._pyqwest"
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true

@@ -32,7 +32,7 @@ del _Protocol
     )
 }
 
-#[pymodule(gil_used = false)]
+#[pymodule(name = "_pyqwest", gil_used = false)]
 mod pyqwest {
     #[allow(clippy::wildcard_imports)]
     use crate::*;
