@@ -284,6 +284,50 @@ async def test_read_full(
 
 
 @pytest.mark.asyncio
+async def test_read_full_cancel(client: Client | SyncClient, url: str) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+        ("te", "trailers"),
+    ]
+    if isinstance(client, SyncClient):
+        request_content = SyncRequestBody()
+
+        res = await asyncio.to_thread(
+            client.stream, method, url, headers, request_content
+        )
+        resp_task = asyncio.create_task(asyncio.to_thread(res.read_full))
+        while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
+            await asyncio.sleep(0.001)
+
+        res.close()
+        with pytest.raises(ReadError):
+            await resp_task
+    else:
+
+        async def async_req_content() -> AsyncIterator[bytes]:
+            await asyncio.sleep(10)
+            yield b""
+
+        res = await client.stream(method, url, headers, async_req_content())
+
+        # Workaround read_full not a coroutine
+        async def read_full() -> FullResponse:
+            return await res.read_full()
+
+        resp_task = asyncio.create_task(read_full())
+        while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
+            await asyncio.sleep(0.001)
+
+        await res.aclose()
+        with pytest.raises(ReadError):
+            await resp_task
+
+
+@pytest.mark.asyncio
 async def test_execute(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
@@ -540,8 +584,8 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
         await asyncio.sleep(0.001)
 
     await resp.aclose()
-    chunk = await read_task
-    assert chunk is None
+    with pytest.raises(ReadError):
+        await read_task
     assert not resp._read_pending  # pyright: ignore[reportAttributeAccessIssue]
 
 
@@ -560,11 +604,14 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
         assert resp.status == 200
         content = resp.content
 
-        last_read: bytes | None = b"init"
+        last_read: bytes | Exception | None = b"init"
 
         def read_content() -> bytes | None:
             nonlocal last_read
-            last_read = next(content, None)
+            try:
+                last_read = next(content, None)
+            except Exception as e:
+                last_read = e
 
         read_thread = threading.Thread(target=read_content)
         read_thread.start()
@@ -574,7 +621,7 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
 
         resp.close()
         read_thread.join()
-        assert last_read is None
+        assert isinstance(last_read, ReadError)
         while request_body._pending_read:
             time.sleep(0.001)
         assert request_body._closed

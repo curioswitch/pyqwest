@@ -320,6 +320,8 @@ class ResponseContent(AsyncIterator[bytes]):
                     case WriteError() | TimeoutError():
                         err = message
                         break
+                    case ReadError():
+                        raise message
                     case Exception():
                         msg = "Error reading response body"
                         raise ReadError(msg) from message
@@ -344,7 +346,7 @@ class ResponseContent(AsyncIterator[bytes]):
         if self._closed:
             return
         self._closed = True
-        self._send_queue.put_nowait(CancelResponse())
+        self._send_queue.put_nowait(ReadError("Response body read cancelled"))
         await self._cleanup()
 
     async def _cleanup(self) -> None:

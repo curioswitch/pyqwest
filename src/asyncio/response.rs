@@ -64,19 +64,17 @@ impl Response {
     }
 
     pub(super) async fn into_full_response(self) -> RustFullResponse {
-        let status = self.head.status();
-        let headers = self.head.headers;
         let Content::Http(content) = self.content else {
             unreachable!("into_full_response is only called on HTTP responses")
         };
         let body = content.get().body.load();
         // SAFETY - we only call into_full_response without allowing the user to close this response.
-        let (bytes, trailers) = body.as_ref().unwrap().read_full().await.unwrap();
+        let bytes = body.as_ref().unwrap().read_full().await.unwrap();
         RustFullResponse {
-            status,
-            headers,
+            status: self.head.status(),
+            headers: self.head.headers,
             body: bytes,
-            trailers,
+            trailers: self.trailers,
         }
     }
 }
@@ -175,8 +173,9 @@ impl Response {
                 let body = content.get().body.load();
                 if let Some(body) = body.as_ref() {
                     let body = body.clone();
+                    let trailers = self.trailers.clone_ref(py);
                     future_into_py(py, async move {
-                        let (bytes, trailers) = body.read_full().await?;
+                        let bytes = body.read_full().await?;
                         Ok(RustFullResponse {
                             status,
                             headers,
