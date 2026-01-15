@@ -591,14 +591,6 @@ class Response:
         consuming the content iterator.
         """
 
-    def read_full(self) -> Awaitable[FullResponse] | FullResponse:
-        """Reads the full response content, returning a FullResponse with it.
-
-        After calling this method, the content iterator on this object will be empty.
-        It is expected that this method is called to replace Response with FullResponse
-        for full access to the response.
-        """
-
     def aclose(self) -> Awaitable[None]:
         """Closes the response, releasing any underlying resources.
 
@@ -1009,14 +1001,6 @@ class SyncResponse:
 
         Because trailers complete the response, this will only be filled after fully
         consuming the content iterator.
-        """
-
-    def read_full(self) -> FullResponse:
-        """Reads the full response content, returning a FullResponse with it.
-
-        After calling this method, the content iterator on this object will be empty.
-        It is expected that this method is called to replace Response with FullResponse
-        for full access to the response.
         """
 
     def close(self) -> None:
