@@ -288,7 +288,7 @@ impl SyncContentGenerator {
         Ok(res)
     }
 
-    fn close<'py>(&self, py: Python<'py>) {
+    fn close(&self, py: Python<'_>) {
         let Some(body) = self.body.swap(None) else {
             return;
         };
