@@ -1,4 +1,4 @@
-use pyo3::{intern, prelude::*, IntoPyObjectExt};
+use pyo3::{intern, prelude::*, IntoPyObjectExt as _};
 
 use crate::headers::Headers;
 use crate::sync::request::SyncRequest;
@@ -184,7 +184,7 @@ struct ResponseContextManager {
 
 #[pymethods]
 impl ResponseContextManager {
-    fn __enter__<'py>(&self, py: Python<'py>) -> Py<SyncResponse> {
+    fn __enter__(&self, py: Python<'_>) -> Py<SyncResponse> {
         self.response.clone_ref(py)
     }
 
@@ -197,6 +197,6 @@ impl ResponseContextManager {
     ) {
         self.response
             .get()
-            .__exit__(py, exc_type, exc_value, traceback)
+            .__exit__(py, exc_type, exc_value, traceback);
     }
 }

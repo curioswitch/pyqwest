@@ -104,9 +104,9 @@ impl SyncHttpTransport {
 }
 
 impl SyncHttpTransport {
-    pub(super) fn do_execute<'py>(
+    pub(super) fn do_execute(
         &self,
-        py: Python<'py>,
+        py: Python<'_>,
         request: &SyncRequest,
     ) -> PyResult<SyncResponse> {
         let client_guard = self.client.load();
