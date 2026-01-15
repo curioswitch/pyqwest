@@ -86,12 +86,12 @@ pub(crate) struct ResponseBody {
 }
 
 impl ResponseBody {
-    pub(crate) fn pending(py: Python<'_>) -> Self {
+    pub(crate) fn pending(trailers: Py<Headers>) -> Self {
         let (cancel_tx, _) = watch::channel(false);
         ResponseBody {
             inner: Arc::new(ResponseBodyInner {
                 body: Mutex::new(None),
-                trailers: Py::new(py, Headers::empty()).unwrap(),
+                trailers,
                 read_lock: Mutex::new(()),
                 cancel_tx,
             }),
@@ -149,10 +149,6 @@ impl ResponseBody {
                 Err(Err(_)) => (),
             }
         }
-    }
-
-    pub(crate) fn trailers(&self, py: Python<'_>) -> Py<Headers> {
-        self.inner.trailers.clone_ref(py)
     }
 
     pub(crate) async fn close(&self) {

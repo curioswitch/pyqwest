@@ -485,9 +485,10 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
     assert resp.status == 200
     content = resp.content
 
-    await resp.close()
+    await resp.aclose()
     chunk = await anext(content, None)
     assert chunk is None
+    await resp.aclose()
 
     await asyncio.wait_for(request_cancelled.wait(), timeout=1.0)
     await asyncio.wait_for(generator_cancelled.wait(), timeout=1.0)
@@ -511,6 +512,7 @@ async def test_close_no_read_sync(sync_client: SyncClient, url: str) -> None:
         resp.close()
         chunk = next(content, None)
         assert chunk is None
+        resp.close()
 
     await asyncio.to_thread(run)
 
@@ -537,9 +539,10 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
     while not resp._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
         await asyncio.sleep(0.001)
 
-    await resp.close()
+    await resp.aclose()
     chunk = await read_task
     assert chunk is None
+    assert not resp._read_pending  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @pytest.mark.asyncio

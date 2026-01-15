@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use arc_swap::ArcSwapOption;
 use bytes::Bytes;
 use http::HeaderMap;
 use pyo3::{
@@ -19,10 +20,7 @@ use crate::{
 
 enum Content {
     Http(Py<SyncContentGenerator>),
-    Custom {
-        content: Py<PyAny>,
-        trailers: Py<Headers>,
-    },
+    Custom(Py<PyAny>),
 }
 
 pub(super) type RequestIterHandle = Arc<Mutex<Option<Py<PyAny>>>>;
@@ -38,6 +36,7 @@ pub(super) fn close_request_iter(py: Python<'_>, request_iter: &RequestIterHandl
 pub(crate) struct SyncResponse {
     head: ResponseHead,
     content: Content,
+    trailers: Py<Headers>,
     request_iter: RequestIterHandle,
 }
 
@@ -46,15 +45,19 @@ impl SyncResponse {
         py: Python<'_>,
         request_iter: RequestIterHandle,
     ) -> PyResult<SyncResponse> {
+        let trailers = Py::new(py, Headers::empty())?;
         Ok(SyncResponse {
             head: ResponseHead::pending(py),
             content: Content::Http(Py::new(
                 py,
                 SyncContentGenerator {
-                    body: ResponseBody::pending(py),
+                    body: ArcSwapOption::from_pointee(ResponseBody::pending(
+                        trailers.clone_ref(py),
+                    )),
                     request_iter: request_iter.clone(),
                 },
             )?),
+            trailers,
             request_iter,
         })
     }
@@ -64,7 +67,10 @@ impl SyncResponse {
         let (head, body) = response.into_parts();
         self.head.fill(head);
         if let Content::Http(content) = &self.content {
-            content.get().body.fill(body).await;
+            let content_body = content.get().body.load();
+            // SAFETY: We do not return the response to the user before calling fill so it
+            // cannot be closed yet.
+            content_body.as_ref().unwrap().fill(body).await;
         } else {
             unreachable!("fill is only called on HTTP responses");
         }
@@ -96,10 +102,8 @@ impl SyncResponse {
         let trailers: Py<Headers> = Headers::from_option(py, trailers)?;
         Ok(Self {
             head: ResponseHead::new(py, status, http_version, headers)?,
-            content: Content::Custom {
-                content: content.unbind(),
-                trailers,
-            },
+            content: Content::Custom(content.unbind()),
+            trailers,
             request_iter: Arc::new(Mutex::new(None)),
         })
     }
@@ -135,17 +139,14 @@ impl SyncResponse {
 
     #[getter]
     fn trailers(&self, py: Python<'_>) -> Py<Headers> {
-        match &self.content {
-            Content::Http(content) => content.get().body.trailers(py),
-            Content::Custom { trailers, .. } => trailers.clone_ref(py),
-        }
+        self.trailers.clone_ref(py)
     }
 
     #[getter]
     fn content(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.content {
             Content::Http(content) => Ok(content.clone_ref(py).into_any()),
-            Content::Custom { content, .. } => {
+            Content::Custom(content) => {
                 let content = content.bind(py);
                 if let Ok(bytes) = content.cast::<PyBytes>() {
                     Ok(PyTuple::new(py, [bytes])?
@@ -165,28 +166,39 @@ impl SyncResponse {
         let headers = self.head.headers(py);
         match &self.content {
             Content::Http(content) => {
-                let body = content.get().body.clone();
-                let (tx, rx) = oneshot::channel::<PyResult<(Bytes, HeaderMap)>>();
-                get_runtime().spawn(async move { tx.send(body.read_full().await) });
-                let res = py
-                    .detach(|| rx.blocking_recv())
-                    .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
-                    .flatten();
-                close_request_iter(py, &self.request_iter);
-                let (body, trailers) = res?;
-                FullResponse {
-                    status,
-                    headers,
-                    content: PyBytes::new(py, &body).unbind(),
-                    trailers: {
-                        let py_trailers = Headers::empty();
-                        py_trailers.fill(trailers);
-                        py_trailers.into_pyobject(py)?.unbind()
-                    },
+                let body = content.get().body.load();
+                if let Some(body) = body.as_ref() {
+                    let body = body.clone();
+                    let (tx, rx) = oneshot::channel::<PyResult<(Bytes, HeaderMap)>>();
+                    get_runtime().spawn(async move { tx.send(body.read_full().await) });
+                    let res = py
+                        .detach(|| rx.blocking_recv())
+                        .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
+                        .flatten();
+                    close_request_iter(py, &self.request_iter);
+                    let (body, trailers) = res?;
+                    FullResponse {
+                        status,
+                        headers,
+                        content: PyBytes::new(py, &body).unbind(),
+                        trailers: {
+                            let py_trailers = Headers::empty();
+                            py_trailers.fill(trailers);
+                            py_trailers.into_pyobject(py)?.unbind()
+                        },
+                    }
+                    .into_bound_py_any(py)
+                } else {
+                    FullResponse::py_new(
+                        status,
+                        headers,
+                        PyBytes::new(py, b"").unbind(),
+                        self.trailers.clone_ref(py),
+                    )
+                    .into_bound_py_any(py)
                 }
-                .into_bound_py_any(py)
             }
-            Content::Custom { content, trailers } => {
+            Content::Custom(content) => {
                 let mut body = Vec::new();
                 if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
                     body.extend_from_slice(bytes.as_bytes());
@@ -201,9 +213,19 @@ impl SyncResponse {
                     status,
                     headers,
                     content: PyBytes::new(py, &body).unbind(),
-                    trailers: trailers.clone_ref(py),
+                    trailers: self.trailers.clone_ref(py),
                 }
                 .into_bound_py_any(py)
+            }
+        }
+    }
+
+    fn close(&self, py: Python<'_>) {
+        close_request_iter(py, &self.request_iter);
+        match &self.content {
+            Content::Http(content) => content.get().close(py),
+            Content::Custom(content) => {
+                let _ = content.bind(py).call_method0("close");
             }
         }
     }
@@ -211,8 +233,15 @@ impl SyncResponse {
     #[getter]
     fn _read_pending(&self, py: Python<'_>) -> bool {
         match &self.content {
-            Content::Http(content) => content.get().body.read_pending(),
-            Content::Custom { content, .. } => {
+            Content::Http(content) => {
+                let body = content.get().body.load();
+                if let Some(body) = body.as_ref() {
+                    body.read_pending()
+                } else {
+                    false
+                }
+            }
+            Content::Custom(content) => {
                 if let Ok(attr) = content.bind(py).getattr("_read_pending") {
                     attr.extract::<bool>().unwrap_or(false)
                 } else {
@@ -221,34 +250,11 @@ impl SyncResponse {
             }
         }
     }
-
-    fn close(&self, py: Python<'_>) {
-        close_request_iter(py, &self.request_iter);
-        match &self.content {
-            Content::Http(content) => {
-                if content.get().body.try_close() {
-                    return;
-                }
-                let (tx, rx) = oneshot::channel::<()>();
-                let body = content.get().body.clone();
-                get_runtime().spawn(async move {
-                    body.close().await;
-                    tx.send(()).unwrap();
-                });
-                py.detach(|| {
-                    let _ = rx.blocking_recv();
-                });
-            }
-            Content::Custom { content, .. } => {
-                let _ = content.bind(py).call_method0("close");
-            }
-        }
-    }
 }
 
 #[pyclass(module = "pyqwest._sync", frozen)]
 struct SyncContentGenerator {
-    body: ResponseBody,
+    body: ArcSwapOption<ResponseBody>,
     request_iter: RequestIterHandle,
 }
 
@@ -259,10 +265,14 @@ impl SyncContentGenerator {
     }
 
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Bytes>> {
+        let body = self.body.load();
+        let Some(body) = body.as_ref() else {
+            return Ok(None);
+        };
+        let body = body.clone();
         let res = py
             .detach(|| {
                 let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
-                let body = self.body.clone();
                 get_runtime().spawn(async move {
                     let chunk = body.chunk().await;
                     tx.send(chunk).unwrap();
@@ -276,5 +286,22 @@ impl SyncContentGenerator {
             close_request_iter(py, &self.request_iter);
         }
         Ok(res)
+    }
+
+    fn close(&self, py: Python<'_>) {
+        let Some(body) = self.body.swap(None) else {
+            return;
+        };
+        if body.try_close() {
+            return;
+        }
+        let (tx, rx) = oneshot::channel::<()>();
+        get_runtime().spawn(async move {
+            body.close().await;
+            tx.send(()).unwrap();
+        });
+        py.detach(|| {
+            let _ = rx.blocking_recv();
+        });
     }
 }
