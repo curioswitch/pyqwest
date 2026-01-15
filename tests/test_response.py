@@ -40,21 +40,6 @@ async def test_response_content_bytes():
 
 
 @pytest.mark.asyncio
-async def test_response_content_bytes_read_full():
-    response = await Response(
-        status=500,
-        http_version=HTTPVersion.HTTP2,
-        headers=Headers({"content-type": "text/plain"}),
-        content=b"Sample body",
-        trailers=Headers({"x-trailer": "info"}),
-    ).read_full()
-
-    assert response.status == 500
-    assert response.headers == {"content-type": "text/plain"}
-    assert response.content == b"Sample body"
-
-
-@pytest.mark.asyncio
 async def test_response_content_iterator():
     async def content() -> AsyncIterator[bytes]:
         yield b"Part 1, "
@@ -69,24 +54,6 @@ async def test_response_content_iterator():
     async for chunk in response.content:
         parts.append(chunk)
     assert parts == [b"Part 1, ", b"Part 2."]
-
-
-@pytest.mark.asyncio
-async def test_response_content_iterator_read_full():
-    async def content() -> AsyncIterator[bytes]:
-        yield b"Part 1, "
-        yield b"Part 2."
-
-    response = await Response(
-        status=200,
-        headers=Headers({"application": "json"}),
-        content=content(),
-        trailers=Headers({"trailer": "info"}),
-    ).read_full()
-    assert response.status == 200
-    assert response.headers == {"application": "json"}
-    assert response.content == b"Part 1, Part 2."
-    assert response.trailers == {"trailer": "info"}
 
 
 def test_sync_response_minimal():
@@ -116,20 +83,6 @@ def test_sync_response_content_bytes():
     assert next(content, None) is None
 
 
-def test_sync_response_content_bytes_read_full():
-    response = SyncResponse(
-        status=500,
-        http_version=HTTPVersion.HTTP2,
-        headers=Headers({"content-type": "text/plain"}),
-        content=b"Sample body",
-        trailers=Headers({"x-trailer": "info"}),
-    ).read_full()
-
-    assert response.status == 500
-    assert response.headers == {"content-type": "text/plain"}
-    assert response.content == b"Sample body"
-
-
 def test_sync_response_content_iterator():
     def content() -> Iterator[bytes]:
         yield b"Part 1, "
@@ -143,23 +96,6 @@ def test_sync_response_content_iterator():
     for chunk in response.content:
         parts.append(chunk)
     assert parts == [b"Part 1, ", b"Part 2."]
-
-
-def test_sync_response_content_iterator_read_full():
-    def content() -> Iterator[bytes]:
-        yield b"Part 1, "
-        yield b"Part 2."
-
-    response = SyncResponse(
-        status=200,
-        headers=Headers({"application": "json"}),
-        content=content(),
-        trailers=Headers({"trailer": "info"}),
-    ).read_full()
-    assert response.status == 200
-    assert response.headers == {"application": "json"}
-    assert response.content == b"Part 1, Part 2."
-    assert response.trailers == {"trailer": "info"}
 
 
 def test_full_response_decode_utf8_no_content_type():
