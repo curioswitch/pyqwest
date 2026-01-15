@@ -2,12 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
 use bytes::Bytes;
-use http::HeaderMap;
 use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyBytes, PyBytesMethods as _, PyTuple},
-    Bound, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
+    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
@@ -164,38 +163,30 @@ impl SyncResponse {
     pub(super) fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let status = self.head.status();
         let headers = self.head.headers(py);
+        let trailers = self.trailers.clone_ref(py);
         match &self.content {
             Content::Http(content) => {
                 let body = content.get().body.load();
                 if let Some(body) = body.as_ref() {
                     let body = body.clone();
-                    let (tx, rx) = oneshot::channel::<PyResult<(Bytes, HeaderMap)>>();
+                    let (tx, rx) = oneshot::channel::<PyResult<Bytes>>();
                     get_runtime().spawn(async move { tx.send(body.read_full().await) });
                     let res = py
                         .detach(|| rx.blocking_recv())
                         .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
                         .flatten();
                     close_request_iter(py, &self.request_iter);
-                    let (body, trailers) = res?;
-                    FullResponse {
-                        status,
-                        headers,
-                        content: PyBytes::new(py, &body).unbind(),
-                        trailers: {
-                            let py_trailers = Headers::empty();
-                            py_trailers.fill(trailers);
-                            py_trailers.into_pyobject(py)?.unbind()
-                        },
-                    }
-                    .into_bound_py_any(py)
-                } else {
+                    let body = res?;
                     FullResponse::py_new(
                         status,
                         headers,
-                        PyBytes::new(py, b"").unbind(),
-                        self.trailers.clone_ref(py),
+                        PyBytes::new(py, &body).unbind(),
+                        trailers,
                     )
                     .into_bound_py_any(py)
+                } else {
+                    FullResponse::py_new(status, headers, PyBytes::new(py, b"").unbind(), trailers)
+                        .into_bound_py_any(py)
                 }
             }
             Content::Custom(content) => {
@@ -213,7 +204,7 @@ impl SyncResponse {
                     status,
                     headers,
                     content: PyBytes::new(py, &body).unbind(),
-                    trailers: self.trailers.clone_ref(py),
+                    trailers,
                 }
                 .into_bound_py_any(py)
             }

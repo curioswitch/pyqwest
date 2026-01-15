@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http::{response::Parts, HeaderMap};
+use http::response::Parts;
 use http_body::Frame;
 use http_body_util::BodyExt as _;
 use pyo3::{
@@ -12,7 +12,7 @@ use tokio::sync::{watch, Mutex};
 use crate::{
     common::{FullResponse, HTTPVersion},
     headers::Headers,
-    pyerrors,
+    pyerrors::{self, ReadError},
 };
 
 pub(crate) struct ResponseHead {
@@ -118,7 +118,7 @@ impl ResponseBody {
         loop {
             let res = tokio::select! {
                 _ = cancel_rx.changed() => {
-                    return Ok(None);
+                    return Err(ReadError::new_err("Response body read cancelled"));
                 }
                 res = body.frame() => res,
             };
@@ -152,13 +152,13 @@ impl ResponseBody {
     }
 
     pub(crate) async fn close(&self) {
-        let _ = self.inner.cancel_tx.send(true);
         let _read_guard = self.inner.read_lock.lock().await;
         let mut body = self.inner.body.lock().await;
         *body = None;
     }
 
     pub(crate) fn try_close(&self) -> bool {
+        let _ = self.inner.cancel_tx.send(true);
         let Ok(_read_guard) = self.inner.read_lock.try_lock() else {
             return false;
         };
@@ -170,26 +170,31 @@ impl ResponseBody {
         }
     }
 
-    pub(crate) async fn read_full(&self) -> PyResult<(Bytes, HeaderMap)> {
+    pub(crate) async fn read_full(&self) -> PyResult<Bytes> {
         let _read_guard = self.inner.read_lock.lock().await;
+        let mut cancel_rx = self.inner.cancel_tx.subscribe();
+        if *cancel_rx.borrow() {
+            return Ok(Bytes::new());
+        }
         let Some(body) = ({
             let mut body_guard = self.inner.body.lock().await;
             body_guard.take()
         }) else {
-            return Ok((Bytes::new(), HeaderMap::new()));
+            return Ok(Bytes::new());
         };
-        let collected = body
-            .collect()
-            .await
-            .map_err(|e| pyerrors::from_reqwest(&e, "Error reading content"))?;
+        let collected = tokio::select! {
+            _ = cancel_rx.changed() => {
+                return Err(ReadError::new_err("Read cancelled"));
+            }
+            res = body.collect() => res,
+        };
+        let collected =
+            collected.map_err(|e| pyerrors::from_reqwest(&e, "Error reading content"))?;
 
-        let trailers = if let Some(trailers) = collected.trailers() {
+        if let Some(trailers) = collected.trailers() {
             self.inner.trailers.get().fill(trailers.clone());
-            trailers.clone()
-        } else {
-            HeaderMap::new()
-        };
-        Ok((collected.to_bytes(), trailers))
+        }
+        Ok(collected.to_bytes())
     }
 
     pub(crate) fn read_pending(&self) -> bool {
@@ -204,7 +209,7 @@ pub(crate) struct RustFullResponse {
     pub(crate) status: u16,
     pub(crate) headers: Py<Headers>,
     pub(crate) body: Bytes,
-    pub(crate) trailers: HeaderMap,
+    pub(crate) trailers: Py<Headers>,
 }
 
 impl<'py> IntoPyObject<'py> for RustFullResponse {
@@ -214,13 +219,11 @@ impl<'py> IntoPyObject<'py> for RustFullResponse {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let body = PyBytes::new(py, &self.body);
-        let trailers = Headers::empty();
-        trailers.fill(self.trailers);
         FullResponse {
             status: self.status,
-            headers: self.headers.clone_ref(py),
+            headers: self.headers,
             content: body.unbind(),
-            trailers: trailers.into_pyobject(py)?.unbind(),
+            trailers: self.trailers,
         }
         .into_pyobject(py)
     }
