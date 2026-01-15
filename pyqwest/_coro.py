@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from ._pyqwest import Client as NativeClient
@@ -204,6 +205,7 @@ class Client:
             method, url, headers=headers, content=content, timeout=timeout
         )
 
+    @asynccontextmanager
     async def stream(
         self,
         method: str,
@@ -211,7 +213,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
         timeout: float | None = None,
-    ) -> Response:
+    ) -> AsyncIterator[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
         Args:
@@ -230,7 +232,8 @@ class Client:
         )
         response = Response.__new__(Response)
         response._response = native_response  # noqa: SLF001
-        return response
+        async with response:
+            yield response
 
 
 class Response:

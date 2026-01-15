@@ -93,7 +93,7 @@ impl SyncHttpTransport {
         py: Python<'py>,
         request: &Bound<'py, SyncRequest>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.do_execute(py, request.get())
+        self.do_execute(py, request.get())?.into_bound_py_any(py)
     }
 
     fn close(&self) {
@@ -108,7 +108,7 @@ impl SyncHttpTransport {
         &self,
         py: Python<'py>,
         request: &SyncRequest,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    ) -> PyResult<SyncResponse> {
         let client_guard = self.client.load();
         let Some(client) = client_guard.as_ref() else {
             return Err(PyRuntimeError::new_err(
@@ -130,14 +130,12 @@ impl SyncHttpTransport {
                 }
             }
         });
-        let res = py
-            .detach(|| {
-                rx.blocking_recv()
-                    .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
-                    .flatten()
-            })
-            .inspect_err(|_| close_request_iter(py, &request_iter))?;
-        res.into_bound_py_any(py)
+        py.detach(|| {
+            rx.blocking_recv()
+                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
+                .flatten()
+        })
+        .inspect_err(|_| close_request_iter(py, &request_iter))
     }
 
     pub(super) fn py_default(py: Python<'_>) -> Self {

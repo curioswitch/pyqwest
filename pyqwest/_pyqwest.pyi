@@ -9,6 +9,7 @@ from collections.abc import (
     Sequence,
     ValuesView,
 )
+from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import Protocol, TypeAlias, TypeVar, overload
 
@@ -781,7 +782,7 @@ class SyncClient:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
         timeout: float | None = None,
-    ) -> SyncResponse:
+    ) -> AbstractContextManager[SyncResponse]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
         Args:
