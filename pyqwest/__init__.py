@@ -22,15 +22,14 @@ __all__ = [
     "get_default_transport",
 ]
 
+from ._coro import Client, Response
 from .pyqwest import (
-    Client,
     FullResponse,
     Headers,
     HTTPTransport,
     HTTPVersion,
     ReadError,
     Request,
-    Response,
     StreamError,
     StreamErrorCode,
     SyncClient,

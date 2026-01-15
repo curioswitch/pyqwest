@@ -314,11 +314,7 @@ async def test_read_full_cancel(client: Client | SyncClient, url: str) -> None:
 
         res = await client.stream(method, url, headers, async_req_content())
 
-        # Workaround read_full not a coroutine
-        async def read_full() -> FullResponse:
-            return await res.read_full()
-
-        resp_task = asyncio.create_task(read_full())
+        resp_task = asyncio.create_task(res.read_full())
         while not res._read_pending:  # pyright: ignore[reportAttributeAccessIssue]  # noqa: ASYNC110
             await asyncio.sleep(0.001)
 
