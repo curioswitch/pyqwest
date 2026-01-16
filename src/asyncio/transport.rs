@@ -99,8 +99,7 @@ impl HttpTransport {
         _exc_value: Py<PyAny>,
         _traceback: Py<PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.aclose();
-        EmptyAwaitable.into_py_any(py)
+        self.aclose(py)
     }
 
     fn execute<'py>(
@@ -111,10 +110,11 @@ impl HttpTransport {
         self.do_execute(py, request.get())
     }
 
-    fn aclose(&self) {
+    fn aclose(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if self.close {
             self.client.store(None);
         }
+        EmptyAwaitable.into_py_any(py)
     }
 }
 
