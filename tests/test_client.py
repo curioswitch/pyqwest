@@ -198,12 +198,14 @@ async def test_large_body(
 ) -> None:
     method = "POST"
     url = f"{url}/echo"
-    headers = [
-        ("content-type", "text/plain"),
-        ("x-hello", "rust"),
-        ("x-hello", "python"),
-        ("te", "trailers"),
-    ]
+    headers = Headers(
+        [
+            ("content-type", "text/plain"),
+            ("x-hello", "rust"),
+            ("x-hello", "python"),
+            ("te", "trailers"),
+        ]
+    )
     if isinstance(client, SyncClient):
 
         def run():
@@ -303,9 +305,11 @@ async def test_get(client: Client | SyncClient, url: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_post(client: Client | SyncClient, url: str) -> None:
+async def test_post(
+    client: Client | SyncClient, url: str, http_version: HTTPVersion
+) -> None:
     url = f"{url}/echo"
-    headers = [("content-type", "text/plain")]
+    headers = [("content-type", "text/plain"), ("te", "trailers")]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
         resp = await asyncio.to_thread(client.post, url, headers, req_content)
@@ -316,7 +320,10 @@ async def test_post(client: Client | SyncClient, url: str) -> None:
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.content == b"Hello, World!"
-    assert len(resp.trailers) == 0
+    if supports_trailers(http_version, url):
+        assert resp.trailers["x-echo-trailer"] == "last info"
+    else:
+        assert len(resp.trailers) == 0
 
 
 @pytest.mark.asyncio

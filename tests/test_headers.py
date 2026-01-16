@@ -20,6 +20,7 @@ def test_headers_no_duplicates() -> None:
     assert len(keys) == 0
     assert list(keys) == []
     assert "foo" not in keys
+    assert 10 not in h
     assert 10 not in keys
     assert len(values) == 0
     assert "foo" not in values
@@ -58,6 +59,7 @@ def test_headers_no_duplicates() -> None:
     assert "bar" not in values
     assert 10 not in values
     assert list(items) == [("content-type", "application/json"), ("x-test", "foo")]
+    assert h == h
     assert h == Headers({"Content-Type": "application/json", "X-Test": "foo"})
     assert h == {("content-type", "application/json"), ("x-test", "foo")}
     assert h == [("Content-Type", "application/json"), ("X-Test", "foo")]
@@ -90,6 +92,9 @@ def test_headers_no_duplicates() -> None:
 
     with pytest.raises(ValueError, match="Invalid header name"):
         h["日本語"] = "value"
+
+    with pytest.raises(ValueError, match="Invalid header value"):
+        h["value"] = "\x00value"
 
 
 def test_headers_duplicates() -> None:

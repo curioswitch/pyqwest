@@ -120,6 +120,9 @@ class ASGITransport(Transport):
         async def read_request_content() -> None:
             try:
                 async for chunk in request.content:
+                    if not isinstance(chunk, bytes):
+                        msg = "Request not bytes object"
+                        raise WriteError(msg)  # noqa: TRY301
                     await receive_queue.put(chunk)
                 await receive_queue.put(None)
             except Exception as e:

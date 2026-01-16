@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from queue import Queue
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,8 +16,10 @@ from pyqwest import (
     get_default_transport,
 )
 
+from ._util import SyncRequestBody
+
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator
 
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
@@ -64,7 +65,7 @@ async def test_default_sync_client(url: str) -> None:
 # tested but it's worth adding coverage for them anyways.
 @pytest.mark.asyncio
 async def test_transport_options(url: str) -> None:
-    transport = HTTPTransport(
+    async with HTTPTransport(
         timeout=0.001,
         connect_timeout=10,
         read_timeout=20,
@@ -75,26 +76,34 @@ async def test_transport_options(url: str) -> None:
         enable_brotli=True,
         enable_zstd=True,
         use_system_dns=True,
-    )
+    ) as transport:
 
-    async def request_content() -> AsyncIterator[bytes]:
-        await asyncio.sleep(1)
-        yield b"hello"
+        async def request_content() -> AsyncIterator[bytes]:
+            await asyncio.sleep(1)
+            yield b"hello"
 
-    url = f"{url}/echo"
-    with pytest.raises(TimeoutError):
-        async with await transport.execute(
-            Request("POST", url, content=request_content())
-        ) as res:
-            async for _ in res.content:
-                pass
+        url = f"{url}/echo"
+        with pytest.raises(TimeoutError):
+            async with await transport.execute(
+                Request("POST", url, content=request_content())
+            ) as res:
+                async for _ in res.content:
+                    pass
+
+    await transport.aclose()  # double close allowed
+
+    with pytest.raises(RuntimeError, match="already closed transport"):
+        await transport.execute(Request("GET", url))
+
+    with pytest.raises(RuntimeError, match="already closed transport"):
+        await Client(transport).get(url)
 
 
 # Most options are performance related and can't really be
 # tested but it's worth adding coverage for them anyways.
 @pytest.mark.asyncio
 async def test_sync_transport_options(url: str) -> None:
-    transport = SyncHTTPTransport(
+    with SyncHTTPTransport(
         timeout=0.001,
         connect_timeout=10,
         read_timeout=20,
@@ -105,22 +114,21 @@ async def test_sync_transport_options(url: str) -> None:
         enable_brotli=True,
         enable_zstd=True,
         use_system_dns=True,
-    )
+    ) as transport:
+        request_content = SyncRequestBody()
 
-    queue = Queue()
+        url = f"{url}/echo"
+        with (
+            pytest.raises(TimeoutError),
+            transport.execute_sync(
+                SyncRequest("POST", url, content=request_content)
+            ) as res,
+        ):
+            b"".join(res.content)
 
-    def request_content() -> Iterator[bytes]:
-        queue.get()
-        yield b""
+    transport.close()  # double close allowed
+    with pytest.raises(RuntimeError, match="already closed transport"):
+        transport.execute_sync(SyncRequest("GET", url))
 
-    url = f"{url}/echo"
-    with (
-        pytest.raises(TimeoutError),
-        transport.execute_sync(
-            SyncRequest("POST", url, content=request_content())
-        ) as res,
-    ):
-        b"".join(res.content)
-
-    # Make sure the generator cleans up
-    queue.put(None)
+    with pytest.raises(RuntimeError, match="already closed transport"):
+        SyncClient(transport).get(url)

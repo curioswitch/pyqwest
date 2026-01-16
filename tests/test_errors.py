@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pyqwest import Client, SyncClient
+from pyqwest import Client, SyncClient, WriteError
 
 from ._util import SyncRequestBody
 
@@ -114,3 +114,27 @@ async def test_connection_error(
         else:
             async with client.stream(method, url):
                 pass
+
+
+@pytest.mark.asyncio
+async def test_request_not_bytes(client: Client | SyncClient, url: str) -> None:
+    method = "POST"
+    url = f"{url}/echo"
+    with pytest.raises(WriteError):
+        if isinstance(client, SyncClient):
+
+            def request_content_sync():
+                yield cast("bytes", 10)
+
+            def run():
+                with client.stream(method, url, content=request_content_sync()) as resp:
+                    next(resp.content)
+
+            await asyncio.to_thread(run)
+        else:
+
+            async def request_content():
+                yield cast("bytes", 10)
+
+            async with client.stream(method, url, content=request_content()) as resp:
+                await anext(resp.content)
