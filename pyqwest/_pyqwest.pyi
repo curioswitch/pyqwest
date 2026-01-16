@@ -215,6 +215,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def post(
@@ -235,6 +237,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def delete(
@@ -253,6 +257,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def head(
@@ -271,6 +277,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def options(
@@ -289,6 +297,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def patch(
@@ -309,6 +319,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def put(
@@ -329,6 +341,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def execute(
@@ -351,6 +365,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def stream(
@@ -373,6 +389,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
 @runtime_checkable
@@ -466,6 +484,8 @@ class HTTPTransport:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def aclose(self) -> Awaitable[None]:
@@ -630,6 +650,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def post(
@@ -650,6 +672,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def delete(
@@ -668,6 +692,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def head(
@@ -686,6 +712,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def options(
@@ -704,6 +732,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def patch(
@@ -724,6 +754,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def put(
@@ -744,6 +776,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def execute(
@@ -766,6 +800,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
     def stream(
@@ -788,6 +824,8 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
 
 @runtime_checkable

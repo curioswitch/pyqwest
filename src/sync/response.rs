@@ -211,7 +211,7 @@ impl SyncResponse {
         let status = self.head.status();
         let headers = self.head.headers(py);
         let trailers = self.trailers.clone_ref(py);
-        match &self.content {
+        let content = match &self.content {
             Content::Http(content) => {
                 let body = content.get().body.load();
                 if let Some(body) = body.as_ref() {
@@ -224,28 +224,14 @@ impl SyncResponse {
                         .flatten();
                     close_request_iter(py, &self.request_iter, &self.constants);
                     let body = res?;
-                    FullResponse::new(
-                        status,
-                        headers,
-                        PyBytes::new(py, &body).unbind(),
-                        trailers,
-                        self.constants.clone(),
-                    )
-                    .into_bound_py_any(py)
+                    PyBytes::new(py, &body).unbind()
                 } else {
-                    FullResponse::new(
-                        status,
-                        headers,
-                        self.constants.empty_bytes.clone_ref(py),
-                        trailers,
-                        self.constants.clone(),
-                    )
-                    .into_bound_py_any(py)
+                    self.constants.empty_bytes.clone_ref(py)
                 }
             }
             Content::Custom(content) => {
-                let content = if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
-                    bytes.clone()
+                if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
+                    bytes.clone().unbind()
                 } else {
                     self.constants
                         .read_content_sync
@@ -253,17 +239,12 @@ impl SyncResponse {
                         .call1((content.bind(py).try_iter()?,))?
                         .cast::<PyBytes>()?
                         .clone()
-                };
-                FullResponse::new(
-                    status,
-                    headers,
-                    content.unbind(),
-                    trailers,
-                    self.constants.clone(),
-                )
-                .into_bound_py_any(py)
+                        .unbind()
+                }
             }
-        }
+        };
+        FullResponse::new(status, headers, content, trailers, self.constants.clone())
+            .into_bound_py_any(py)
     }
 }
 
