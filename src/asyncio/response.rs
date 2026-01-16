@@ -75,6 +75,7 @@ impl Response {
             unreachable!("into_full_response is only called on HTTP responses")
         };
         let body = content.get().body.load();
+        // SAFETY - we only call into_full_response without allowing the user to close this response.
         let bytes = body.as_ref().unwrap().read_full().await?;
         Ok(RustFullResponse {
             status: self.head.status(),
