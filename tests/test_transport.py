@@ -83,8 +83,11 @@ async def test_transport_options(url: str) -> None:
 
     url = f"{url}/echo"
     with pytest.raises(TimeoutError):
-        res = await transport.execute(Request("POST", url, content=request_content()))
-        await res.read_full()
+        async with await transport.execute(
+            Request("POST", url, content=request_content())
+        ) as res:
+            async for _ in res.content:
+                pass
 
 
 # Most options are performance related and can't really be
@@ -115,7 +118,7 @@ async def test_sync_transport_options(url: str) -> None:
         pytest.raises(TimeoutError),
         transport.execute(SyncRequest("POST", url, content=request_content())) as res,
     ):
-        res.read_full()
+        b"".join(res.content)
 
     # Make sure the generator cleans up
     queue.put(None)

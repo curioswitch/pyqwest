@@ -13,7 +13,7 @@ use crate::{
     asyncio::awaitable::{
         EmptyAsyncIterator, EmptyAwaitable, ErrorAwaitable, ValueAsyncIterator, ValueAwaitable,
     },
-    common::{FullResponse, HTTPVersion},
+    common::HTTPVersion,
     headers::Headers,
     shared::{
         constants::Constants,
@@ -168,59 +168,6 @@ impl Response {
                     .into_py_any(py)
                 } else {
                     Ok(content.clone().into_any().unbind())
-                }
-            }
-        }
-    }
-
-    fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let status = self.head.status();
-        let headers = self.head.headers(py);
-        match &self.content {
-            Content::Http(content) => {
-                let body = content.get().body.load();
-                if let Some(body) = body.as_ref() {
-                    let body = body.clone();
-                    let trailers = self.trailers.clone_ref(py);
-                    let constants = self.constants.clone();
-                    future_into_py(py, async move {
-                        let bytes = body.read_full().await?;
-                        Ok(RustFullResponse {
-                            status,
-                            headers,
-                            body: bytes,
-                            trailers,
-                            constants,
-                        })
-                    })
-                } else {
-                    FullResponse::new(
-                        status,
-                        headers,
-                        self.constants.empty_bytes.clone_ref(py),
-                        self.trailers.clone_ref(py),
-                        self.constants.clone(),
-                    )
-                    .into_bound_py_any(py)
-                }
-            }
-            Content::Custom(content) => {
-                if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
-                    FullResponse::new(
-                        status,
-                        headers,
-                        bytes.clone().unbind(),
-                        self.trailers.clone_ref(py),
-                        self.constants.clone(),
-                    )
-                    .into_bound_py_any(py)
-                } else {
-                    self.constants.new_full_response.bind(py).call1((
-                        status,
-                        &headers,
-                        content,
-                        &self.trailers,
-                    ))
                 }
             }
         }

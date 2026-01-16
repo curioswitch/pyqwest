@@ -173,6 +173,39 @@ impl SyncResponse {
         }
     }
 
+    fn close(&self, py: Python<'_>) {
+        close_request_iter(py, &self.request_iter, &self.constants);
+        match &self.content {
+            Content::Http(content) => content.get().close(py),
+            Content::Custom(content) => {
+                let _ = content.bind(py).call_method0("close");
+            }
+        }
+    }
+
+    #[getter]
+    fn _read_pending(&self, py: Python<'_>) -> bool {
+        match &self.content {
+            Content::Http(content) => {
+                let body = content.get().body.load();
+                if let Some(body) = body.as_ref() {
+                    body.read_pending()
+                } else {
+                    false
+                }
+            }
+            Content::Custom(content) => {
+                if let Ok(attr) = content.bind(py).getattr("_read_pending") {
+                    attr.extract::<bool>().unwrap_or(false)
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl SyncResponse {
     pub(super) fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let status = self.head.status();
         let headers = self.head.headers(py);
@@ -228,37 +261,6 @@ impl SyncResponse {
                     self.constants.clone(),
                 )
                 .into_bound_py_any(py)
-            }
-        }
-    }
-
-    fn close(&self, py: Python<'_>) {
-        close_request_iter(py, &self.request_iter, &self.constants);
-        match &self.content {
-            Content::Http(content) => content.get().close(py),
-            Content::Custom(content) => {
-                let _ = content.bind(py).call_method0("close");
-            }
-        }
-    }
-
-    #[getter]
-    fn _read_pending(&self, py: Python<'_>) -> bool {
-        match &self.content {
-            Content::Http(content) => {
-                let body = content.get().body.load();
-                if let Some(body) = body.as_ref() {
-                    body.read_pending()
-                } else {
-                    false
-                }
-            }
-            Content::Custom(content) => {
-                if let Ok(attr) = content.bind(py).getattr("_read_pending") {
-                    attr.extract::<bool>().unwrap_or(false)
-                } else {
-                    false
-                }
             }
         }
     }
