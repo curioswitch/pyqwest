@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     else:
         from _typeshed.wsgi import WSGIApplication, WSGIEnvironment
 
+_UNSET_STATUS = "unset"
+
 
 class WSGITransport(SyncTransport):
     _app: WSGIApplication
@@ -54,6 +57,10 @@ class WSGITransport(SyncTransport):
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
         timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
+        if timeout is not None and (timeout < 0 or not math.isfinite(timeout)):
+            msg = "Timeout must be non-negative"
+            raise ValueError(msg)
+
         deadline = time.monotonic() + timeout if timeout is not None else None
 
         parsed_url = urlparse(request.url)
@@ -116,7 +123,7 @@ class WSGITransport(SyncTransport):
 
         response_queue: Queue[bytes | None | Exception] = Queue()
 
-        status_str: str = ""
+        status_str: str = _UNSET_STATUS
         headers: list[tuple[str, str]] = []
         exc: (
             tuple[type[BaseException], BaseException, object]
@@ -156,16 +163,25 @@ class WSGITransport(SyncTransport):
             except Exception as e:
                 response_queue.put(e)
             else:
-                if not response_started.is_set():
-                    response_started.set()
                 response_queue.put(None)
             finally:
+                if not response_started.is_set():
+                    request_input.close()
+                    response_started.set()
                 with contextlib.suppress(Exception):
                     response_iter.close()  # pyright: ignore[reportAttributeAccessIssue]
 
         app_future = self._executor.submit(run_app)
 
         response_started.wait()
+
+        if status_str is _UNSET_STATUS:
+            return SyncResponse(
+                status=500,
+                http_version=self._http_version,
+                headers=Headers((("content-type", "text/plain"),)),
+                content=b"WSGI application did not call start_response",
+            )
 
         if exc and exc[0]:
             return SyncResponse(
@@ -258,6 +274,7 @@ class RequestInput:
             while True:
                 chunk = next(self._content)
                 if size < 0:
+                    self._buffer.extend(chunk)
                     continue
                 if len(self._buffer) + len(chunk) >= size:
                     to_read = size - len(self._buffer)

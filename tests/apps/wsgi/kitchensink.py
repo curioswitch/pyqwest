@@ -61,6 +61,14 @@ def _nihongo(
     yield b""
 
 
+def _read_all(
+    environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    request_body = cast("WSGIInputStream", environ["wsgi.input"]).read()
+    start_response("200 OK", [])
+    yield bytes(request_body)
+
+
 def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
     path = cast("str", environ["PATH_INFO"]).encode("latin-1").decode("utf-8")
     match path:
@@ -68,6 +76,10 @@ def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[byt
             return _echo(environ, start_response)
         case "/日本語 英語":
             return _nihongo(environ, start_response)
+        case "/read_all":
+            return _read_all(environ, start_response)
+        case "/no_start":
+            return []
         case _:
             start_response("404 Not Found", [("content-type", "text/plain")])
             return [b"Not Found"]

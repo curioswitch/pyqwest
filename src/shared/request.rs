@@ -26,6 +26,13 @@ impl RequestHead {
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
         let url = reqwest::Url::parse(url)
             .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
+        if let Some(timeout) = timeout {
+            if timeout < 0.0 || !timeout.is_finite() {
+                return Err(PyValueError::new_err(
+                    "Timeout must be non-negative".to_string(),
+                ));
+            }
+        }
         Ok(Self {
             method,
             url,

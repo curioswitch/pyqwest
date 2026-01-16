@@ -81,6 +81,27 @@ async def _nihongo(
     await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
+async def _read_all(
+    _scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    await send(
+        {"type": "http.response.start", "status": 200, "headers": (), "trailers": False}
+    )
+    buf = bytearray()
+    while True:
+        message = await _receive()
+        match message["type"]:
+            case "http.disconnect":
+                return
+            case "http.request":
+                body = message["body"]
+                if body:
+                    buf.extend(body)
+                if not message["more_body"]:
+                    break
+    await send({"type": "http.response.body", "body": bytes(buf), "more_body": False})
+
+
 async def app(
     scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
@@ -90,6 +111,8 @@ async def app(
             await _echo(scope, receive, send)
         case "/日本語 英語":
             await _nihongo(scope, receive, send)
+        case "/read_all":
+            await _read_all(scope, receive, send)
         case _:
             await send(
                 {

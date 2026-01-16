@@ -163,7 +163,7 @@ impl HttpTransport {
                 .await
                 .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
             response.fill(res).await;
-            let full_response = response.into_full_response().await;
+            let full_response = response.into_full_response().await?;
             Ok(full_response)
         })
     }
