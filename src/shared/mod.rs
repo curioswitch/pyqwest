@@ -1,3 +1,5 @@
+/// Shared utilities for bytes buffers.
+pub(crate) mod buffer;
 /// Shared constants.
 pub(crate) mod constants;
 /// Shared utilities for request handling.

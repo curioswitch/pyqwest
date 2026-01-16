@@ -5,7 +5,7 @@ use bytes::Bytes;
 use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyBytes, PyBytesMethods as _, PyTuple},
+    types::{PyAnyMethods as _, PyBytes, PyTuple},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -15,6 +15,7 @@ use crate::{
     common::{FullResponse, HTTPVersion},
     headers::Headers,
     shared::{
+        buffer::BytesMemoryView,
         constants::Constants,
         response::{ResponseBody, ResponseHead},
     },
@@ -243,20 +244,20 @@ impl SyncResponse {
                 }
             }
             Content::Custom(content) => {
-                let mut body = Vec::new();
-                if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
-                    body.extend_from_slice(bytes.as_bytes());
+                let content = if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
+                    bytes.clone()
                 } else {
-                    for chunk in content.bind(py).try_iter()? {
-                        let chunk_py = chunk?;
-                        let bytes = chunk_py.cast::<PyBytes>()?;
-                        body.extend_from_slice(bytes.as_bytes());
-                    }
-                }
+                    self.constants
+                        .read_content_sync
+                        .bind(py)
+                        .call1((content.bind(py).try_iter()?,))?
+                        .cast::<PyBytes>()?
+                        .clone()
+                };
                 FullResponse::new(
                     status,
                     headers,
-                    PyBytes::new(py, &body).unbind(),
+                    content.unbind(),
                     trailers,
                     self.constants.clone(),
                 )
@@ -279,7 +280,7 @@ impl SyncContentGenerator {
         slf
     }
 
-    fn __next__(&self, py: Python<'_>) -> PyResult<Option<Bytes>> {
+    fn __next__(&self, py: Python<'_>) -> PyResult<Option<BytesMemoryView>> {
         let body = self.body.load();
         let Some(body) = body.as_ref() else {
             return Ok(None);
@@ -300,7 +301,7 @@ impl SyncContentGenerator {
         if res.is_none() {
             close_request_iter(py, &self.request_iter, &self.constants);
         }
-        Ok(res)
+        Ok(res.map(BytesMemoryView::new))
     }
 
     fn close(&self, py: Python<'_>) {

@@ -90,6 +90,8 @@ class ASGITransport(Transport):
                 http_version = "2"
             case HTTPVersion.HTTP3:
                 http_version = "3"
+            case _:
+                http_version = "1.1"
         scope: HTTPScope = {
             "type": "http",
             "asgi": _asgi,

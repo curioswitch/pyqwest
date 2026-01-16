@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 from ._pyqwest import FullResponse, Headers, Request, Transport
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
 T_contra = TypeVar("T_contra", contravariant=True)
 U = TypeVar("U")
@@ -28,7 +28,10 @@ async def wrap_body_gen(
 
 
 async def new_full_response(
-    status: int, headers: Headers, content: AsyncIterator[bytes], trailers: Headers
+    status: int,
+    headers: Headers,
+    content: AsyncIterator[memoryview | bytes | bytearray],
+    trailers: Headers,
 ) -> FullResponse:
     buf = bytearray()
     try:
@@ -49,6 +52,21 @@ async def execute_and_read_full(transport: Transport, request: Request) -> FullR
     return await new_full_response(
         resp.status, resp.headers, resp.content, resp.trailers
     )
+
+
+def read_content_sync(content: Iterator[bytes | memoryview]) -> bytes:
+    buf = bytearray()
+    try:
+        for chunk in content:
+            buf.extend(chunk)
+    finally:
+        try:
+            close = content.close  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+        else:
+            close()
+    return bytes(buf)
 
 
 # Vendored from pyo3-async-runtimes to apply some fixes

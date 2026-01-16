@@ -16,6 +16,8 @@ from typing import Protocol, TypeAlias, TypeVar, overload, runtime_checkable
 _T = TypeVar("_T")
 JSON: TypeAlias = Mapping[str, JSON] | Sequence[JSON] | str | int | float | bool | None
 
+Buffer: TypeAlias = bytes | memoryview | bytearray
+
 class Headers:
     """Container of HTTP headers.
 
@@ -71,9 +73,7 @@ class Headers:
     def __len__(self) -> int:
         """Returns the number of unique header names."""
 
-    def __eq__(
-        self, other: Headers | Mapping[str, str] | Iterable[tuple[str, str]]
-    ) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Compares the headers for equality with another Headers object,
         mapping, or iterable of key-value pairs.
 
@@ -533,7 +533,7 @@ class Response:
         status: int,
         http_version: HTTPVersion | None = None,
         headers: Headers | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: bytes | AsyncIterator[Buffer] | None = None,
         trailers: Headers | None = None,
     ) -> None:
         """Creates a new Response object.
@@ -581,7 +581,7 @@ class Response:
         """Returns the response headers."""
 
     @property
-    def content(self) -> AsyncIterator[bytes]:
+    def content(self) -> AsyncIterator[Buffer]:
         """Returns an asynchronous iterator over the response content."""
 
     @property
@@ -946,7 +946,7 @@ class SyncResponse:
         status: int,
         http_version: HTTPVersion | None = None,
         headers: Headers | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: bytes | Iterable[Buffer] | None = None,
         trailers: Headers | None = None,
     ) -> None:
         """Creates a new SyncResponse object.
@@ -994,7 +994,7 @@ class SyncResponse:
         """Returns the response headers."""
 
     @property
-    def content(self) -> Iterator[bytes]:
+    def content(self) -> Iterator[Buffer]:
         """Returns an iterator over the response content."""
 
     @property

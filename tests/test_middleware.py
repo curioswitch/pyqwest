@@ -28,7 +28,7 @@ pytestmark = [
 ]
 
 
-async def read_content(content: AsyncIterator[bytes]) -> bytes:
+async def read_content(content: AsyncIterator[bytes | bytearray | memoryview]) -> bytes:
     body = bytearray()
     async for chunk in content:
         body.extend(chunk)
@@ -37,7 +37,6 @@ async def read_content(content: AsyncIterator[bytes]) -> bytes:
 
 @pytest.mark.asyncio
 async def test_override_request(url: str, transport: SyncTransport | Transport):
-    method = "POST"
     url = f"{url}/echo"
     headers = [
         ("content-type", "text/plain"),
@@ -60,12 +59,7 @@ async def test_override_request(url: str, transport: SyncTransport | Transport):
 
         client = SyncClient(SyncOverride())
 
-        def run():
-            with client.stream(method, url, headers, req_content) as resp:
-                content = b"".join(resp.content)
-            return resp, content
-
-        resp, content = await asyncio.to_thread(run)
+        resp = await asyncio.to_thread(client.post, url, headers, req_content)
     else:
 
         class Override(Transport):
@@ -80,15 +74,14 @@ async def test_override_request(url: str, transport: SyncTransport | Transport):
                 return await transport.execute(request)
 
         client = Client(Override())
-        async with client.stream(method, url, headers, req_content) as resp:
-            content = await read_content(resp.content)
+        resp = await client.post(url, headers, req_content)
 
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "PUT"
     assert resp.headers["x-echo-query-string"] == "override=true"
     assert resp.headers["x-echo-x-override"] == "yes"
     assert "x-hello" not in resp.headers
-    assert content == b"Goodbye"
+    assert resp.content == b"Goodbye"
 
 
 @pytest.mark.asyncio
@@ -154,6 +147,68 @@ async def test_override_response(url: str, transport: SyncTransport | Transport)
     assert resp.headers["override-2"] == "sure"
     assert resp.http_version == HTTPVersion.HTTP3
     assert content == b"Overridden!"
+    assert resp.trailers["final-trailer"] == "bye"
+
+
+@pytest.mark.asyncio
+async def test_override_response_except_content(
+    url: str, transport: SyncTransport | Transport
+):
+    url = f"{url}/echo"
+    headers = [
+        ("content-type", "text/plain"),
+        ("x-hello", "rust"),
+        ("x-hello", "python"),
+    ]
+    req_content = b"Hello, World!"
+    if isinstance(transport, SyncTransport):
+
+        class SyncOverride(SyncTransport):
+            def execute_sync(self, request: SyncRequest) -> SyncResponse:
+                res = transport.execute_sync(request)
+                return SyncResponse(
+                    status=201,
+                    http_version=HTTPVersion.HTTP3,
+                    headers=Headers(
+                        (
+                            ("override-1", "yes"),
+                            ("override-1", "definitely"),
+                            ("override-2", "sure"),
+                        )
+                    ),
+                    content=res.content,
+                    trailers=Headers({"final-trailer": "bye"}),
+                )
+
+        client = SyncClient(SyncOverride())
+
+        resp = await asyncio.to_thread(client.post, url, headers, req_content)
+    else:
+
+        class Override(Transport):
+            async def execute(self, request: Request) -> Response:
+                res = await transport.execute(request)
+                return Response(
+                    status=201,
+                    http_version=HTTPVersion.HTTP3,
+                    headers=Headers(
+                        (
+                            ("override-1", "yes"),
+                            ("override-1", "definitely"),
+                            ("override-2", "sure"),
+                        )
+                    ),
+                    content=res.content,
+                    trailers=Headers({"final-trailer": "bye"}),
+                )
+
+        client = Client(Override())
+        resp = await client.post(url, headers, req_content)
+
+    assert resp.status == 201
+    assert resp.headers.getall("override-1") == ["yes", "definitely"]
+    assert resp.headers["override-2"] == "sure"
+    assert resp.content == b"Hello, World!"
     assert resp.trailers["final-trailer"] == "bye"
 
 
