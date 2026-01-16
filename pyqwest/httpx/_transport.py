@@ -112,12 +112,12 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
         self._is_stream_consumed = True
         try:
             async for chunk in self._response.content:
-                yield chunk
+                yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
 
     async def aclose(self) -> None:
-        await self._response.close()
+        await self._response.aclose()
 
 
 class PyqwestTransport(httpx.BaseTransport):
@@ -143,7 +143,7 @@ class PyqwestTransport(httpx.BaseTransport):
         timeout = convert_timeout(httpx_request.extensions)
 
         try:
-            response = self._transport.execute(
+            response = self._transport.execute_sync(
                 SyncRequest(
                     httpx_request.method,
                     str(httpx_request.url),
@@ -199,7 +199,8 @@ class IteratorByteStream(httpx.SyncByteStream):
             raise httpx.StreamConsumed
         self._is_stream_consumed = True
         try:
-            yield from self._response.content
+            for chunk in self._response.content:
+                yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
 

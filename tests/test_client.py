@@ -480,7 +480,7 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
         assert resp.status == 200
         content = resp.content
 
-        async def read_content() -> bytes | None:
+        async def read_content() -> memoryview | bytes | bytearray | None:
             return await anext(content, None)
 
         read_task = asyncio.create_task(read_content())
@@ -508,9 +508,11 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
             assert resp.status == 200
             content = resp.content
 
-            last_read: bytes | Exception | None = b"init"
+            last_read: memoryview | bytes | bytearray | Exception | None = memoryview(
+                b"init"
+            )
 
-            def read_content() -> bytes | None:
+            def read_content() -> None:
                 nonlocal last_read
                 try:
                     last_read = next(content, None)
@@ -589,6 +591,7 @@ async def test_response_error(
         # https://github.com/envoyproxy/envoy/pull/42269
         pytest.skip("Envoy currently returns successful RST_STREAM")
 
+    status = 0
     # There is a race between whether the error is handled on the request
     # or response side, which looks like a connection error when the server
     # aborts. We match either.
@@ -600,10 +603,11 @@ async def test_response_error(
         if isinstance(client, SyncClient):
 
             def run():
-                nonlocal resp
+                nonlocal status
                 with client.stream(
                     method, url, headers=headers, content=request_content
                 ) as resp:
+                    status = resp.status
                     b"".join(resp.content)
 
             await asyncio.to_thread(run)
@@ -611,8 +615,9 @@ async def test_response_error(
             async with client.stream(
                 method, url, headers=headers, content=request_content
             ) as resp:
+                status = resp.status
                 content = b""
                 async for chunk in resp.content:
                     content += chunk
     # Make sure we got response headers before the error
-    assert resp.status == 200
+    assert status == 200

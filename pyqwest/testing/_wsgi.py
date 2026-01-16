@@ -68,6 +68,8 @@ class WSGITransport(SyncTransport):
                 server_protocol = "HTTP/2"
             case HTTPVersion.HTTP3:
                 server_protocol = "HTTP/3"
+            case _:
+                server_protocol = "HTTP/1.1"
 
         trailers = Headers()
         trailers_supported = (
@@ -227,7 +229,7 @@ class RequestInput:
             if not read_bytes:
                 return bytes(line)
             if len(line) + len(read_bytes) == size:
-                return line + read_bytes
+                return bytes(line + read_bytes)
             newline_index = read_bytes.find(b"\n")
             if newline_index == -1:
                 line.extend(read_bytes)
@@ -262,7 +264,7 @@ class RequestInput:
                     res = self._buffer + chunk[:to_read]
                     self._buffer.clear()
                     self._buffer.extend(chunk[to_read:])
-                    return res
+                    return bytes(res)
                 if len(self._buffer) == 0:
                     return chunk
                 res = self._buffer + chunk
@@ -276,7 +278,7 @@ class RequestInput:
         except Exception as e:
             self.close()
             if self._http_version != HTTPVersion.HTTP2:
-                msg = f"Request failed: {chunk}"
+                msg = f"Request failed: {e}"
             else:
                 # With HTTP/2, reqwest seems to squash the original error message.
                 msg = "Request failed: stream error sent by user"

@@ -38,6 +38,8 @@ pub(crate) struct ConstantsInner {
     pub(crate) execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
     pub(crate) forward: Py<PyAny>,
+    /// The _glue.py function `read_content_sync`.
+    pub(crate) read_content_sync: Py<PyAny>,
 
     /// The stdlib function `json.loads`.
     pub(crate) json_loads: Py<PyAny>,
@@ -72,6 +74,8 @@ impl Constants {
 
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),
+                read_content_sync: glue.getattr("read_content_sync")?.unbind(),
+
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
             }),
         })

@@ -16,6 +16,7 @@ use crate::{
     common::HTTPVersion,
     headers::Headers,
     shared::{
+        buffer::BytesMemoryView,
         constants::Constants,
         response::{ResponseBody, ResponseHead, RustFullResponse},
     },
@@ -243,7 +244,7 @@ impl ContentGenerator {
         future_into_py(py, async move {
             let chunk = body.chunk().await?;
             if let Some(bytes) = chunk {
-                Ok(bytes)
+                Ok(BytesMemoryView::new(bytes))
             } else {
                 Err(PyStopAsyncIteration::new_err(()))
             }
