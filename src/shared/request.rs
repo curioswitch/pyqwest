@@ -7,6 +7,7 @@ use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 use pyo3::{Bound, PyAny};
 
 use crate::headers::Headers;
+use crate::shared::validation::validate_timeout;
 
 pub(crate) struct RequestHead {
     method: http::Method,
@@ -26,18 +27,11 @@ impl RequestHead {
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
         let url = reqwest::Url::parse(url)
             .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
-        if let Some(timeout) = timeout {
-            if timeout < 0.0 || !timeout.is_finite() {
-                return Err(PyValueError::new_err(
-                    "Timeout must be non-negative".to_string(),
-                ));
-            }
-        }
         Ok(Self {
             method,
             url,
             headers,
-            timeout,
+            timeout: validate_timeout(timeout)?,
         })
     }
 

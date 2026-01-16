@@ -7,7 +7,7 @@ use pyo3::{
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use crate::common::HTTPVersion;
+use crate::{common::HTTPVersion, shared::validation::validate_timeout};
 
 static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();
 
@@ -62,16 +62,16 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
         ));
     }
 
-    if let Some(timeout) = params.timeout {
+    if let Some(timeout) = validate_timeout(params.timeout)? {
         builder = builder.timeout(Duration::from_secs_f64(timeout));
     }
-    if let Some(connect_timeout) = params.connect_timeout {
+    if let Some(connect_timeout) = validate_timeout(params.connect_timeout)? {
         builder = builder.connect_timeout(Duration::from_secs_f64(connect_timeout));
     }
-    if let Some(read_timeout) = params.read_timeout {
+    if let Some(read_timeout) = validate_timeout(params.read_timeout)? {
         builder = builder.read_timeout(Duration::from_secs_f64(read_timeout));
     }
-    if let Some(idle_connection_timeout) = params.pool_idle_timeout {
+    if let Some(idle_connection_timeout) = validate_timeout(params.pool_idle_timeout)? {
         builder = builder.pool_idle_timeout(Duration::from_secs_f64(idle_connection_timeout));
     } else {
         builder = builder.pool_idle_timeout(None);
@@ -79,7 +79,7 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     if let Some(max_idle_connections_per_host) = params.pool_max_idle_per_host {
         builder = builder.pool_max_idle_per_host(max_idle_connections_per_host);
     }
-    if let Some(tcp_keepalive_interval) = params.tcp_keepalive_interval {
+    if let Some(tcp_keepalive_interval) = validate_timeout(params.tcp_keepalive_interval)? {
         builder = builder.tcp_keepalive_interval(Duration::from_secs_f64(tcp_keepalive_interval));
     }
     builder = builder.gzip(params.enable_gzip);
