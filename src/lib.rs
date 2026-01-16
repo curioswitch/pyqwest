@@ -17,15 +17,18 @@ fn add_protocols(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         c_str!(
             r#"
 from collections.abc import Awaitable as _Awaitable
-from typing import Protocol as _Protocol
+from typing import Protocol as _Protocol, runtime_checkable as _runtime_checkable
 
+@_runtime_checkable
 class Transport(_Protocol):
     def execute(self, request: Request) -> _Awaitable[Response]: ...
 
+@_runtime_checkable
 class SyncTransport(_Protocol):
-    def execute(self, request: SyncRequest) -> SyncResponse: ...
+    def execute_sync(self, request: SyncRequest) -> SyncResponse: ...
 
 del _Protocol
+del _runtime_checkable
 "#
         ),
         Some(&module_dict),

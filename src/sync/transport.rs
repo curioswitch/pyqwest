@@ -93,7 +93,7 @@ impl SyncHttpTransport {
         self.close();
     }
 
-    fn execute<'py>(
+    fn execute_sync<'py>(
         &self,
         py: Python<'py>,
         request: &Bound<'py, SyncRequest>,

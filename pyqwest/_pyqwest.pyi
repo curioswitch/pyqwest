@@ -11,7 +11,7 @@ from collections.abc import (
 )
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Protocol, TypeAlias, TypeVar, overload
+from typing import Protocol, TypeAlias, TypeVar, overload, runtime_checkable
 
 _T = TypeVar("_T")
 JSON: TypeAlias = Mapping[str, JSON] | Sequence[JSON] | str | int | float | bool | None
@@ -375,6 +375,7 @@ class Client:
             TimeoutError: If the request times out.
         """
 
+@runtime_checkable
 class Transport(Protocol):
     """Protocol for asynchronous HTTP transport implementations.
 
@@ -789,6 +790,7 @@ class SyncClient:
             TimeoutError: If the request times out.
         """
 
+@runtime_checkable
 class SyncTransport(Protocol):
     """Protocol for synchronous HTTP transport implementations.
 
@@ -799,7 +801,7 @@ class SyncTransport(Protocol):
     - Add middleware wrapping transports
     """
 
-    def execute(self, request: SyncRequest) -> SyncResponse:
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
         """Executes a request."""
 
 class SyncHTTPTransport:
@@ -870,7 +872,7 @@ class SyncHTTPTransport:
     ) -> None:
         """Exits the context manager for the transport, closing it."""
 
-    def execute(self, request: SyncRequest) -> SyncResponse:
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
         """Executes the given request, returning the response.
 
         Args:

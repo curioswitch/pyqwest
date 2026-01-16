@@ -38,7 +38,7 @@ async def test_default_transport(url: str) -> None:
 async def test_default_sync_transport(url: str) -> None:
     transport = get_default_sync_transport()
     url = f"{url}/echo"
-    res = await asyncio.to_thread(transport.execute, SyncRequest("GET", url))
+    res = await asyncio.to_thread(transport.execute_sync, SyncRequest("GET", url))
     assert res.status == 200
 
 
@@ -116,7 +116,9 @@ async def test_sync_transport_options(url: str) -> None:
     url = f"{url}/echo"
     with (
         pytest.raises(TimeoutError),
-        transport.execute(SyncRequest("POST", url, content=request_content())) as res,
+        transport.execute_sync(
+            SyncRequest("POST", url, content=request_content())
+        ) as res,
     ):
         b"".join(res.content)
 

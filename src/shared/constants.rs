@@ -31,13 +31,13 @@ pub(crate) struct ConstantsInner {
     pub(crate) exception: Py<PyString>,
     /// The string "execute".
     pub(crate) execute: Py<PyString>,
+    /// The string "execute_sync".
+    pub(crate) execute_sync: Py<PyString>,
 
     /// The _glue.py function `execute_and_read_full`.
     pub(crate) execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
     pub(crate) forward: Py<PyAny>,
-    /// The _glue.py function `new_full_response`.
-    pub(crate) new_full_response: Py<PyAny>,
 
     /// The stdlib function `json.loads`.
     pub(crate) json_loads: Py<PyAny>,
@@ -68,10 +68,10 @@ impl Constants {
                 create_task: PyString::new(py, "create_task").unbind(),
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
+                execute_sync: PyString::new(py, "execute_sync").unbind(),
 
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),
-                new_full_response: glue.getattr("new_full_response")?.unbind(),
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
             }),
         })
