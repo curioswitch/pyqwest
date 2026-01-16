@@ -31,7 +31,7 @@ pub(crate) struct ConstantsInner {
     pub(crate) exception: Py<PyString>,
     /// The string "execute".
     pub(crate) execute: Py<PyString>,
-    /// The string "execute_sync".
+    /// The string "`execute_sync`".
     pub(crate) execute_sync: Py<PyString>,
 
     /// The _glue.py function `execute_and_read_full`.
