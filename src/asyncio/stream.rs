@@ -1,11 +1,8 @@
 use std::sync::Mutex;
 
 use pyo3::{
-    exceptions::PyBaseException,
-    intern, pyclass, pymethods,
-    sync::{MutexExt as _, PyOnceLock},
-    types::PyAnyMethods as _,
-    Bound, IntoPyObjectExt as _, Py, PyAny, PyErr, PyResult, Python,
+    exceptions::PyBaseException, pyclass, pymethods, sync::MutexExt as _, types::PyAnyMethods as _,
+    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::{
     tokio::{future_into_py_with_locals, get_current_locals},
@@ -14,21 +11,19 @@ use pyo3_async_runtimes::{
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::shared::request::{RequestStreamError, RequestStreamResult};
+use crate::shared::{
+    constants::Constants,
+    request::{RequestStreamError, RequestStreamResult},
+};
 
 pub(super) fn into_stream(
     py: Python<'_>,
     gen: Bound<'_, PyAny>,
+    constants: &Constants,
 ) -> PyResult<(
     impl futures_core::Stream<Item = RequestStreamResult<Py<PyAny>>>,
     Py<PyAny>,
 )> {
-    static FORWARD_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-    let forward_fn = FORWARD_FN.get_or_try_init(py, || {
-        let module = py.import("pyqwest._glue")?;
-        Ok::<_, PyErr>(module.getattr("forward")?.unbind())
-    })?;
-
     let locals = get_current_locals(py)?;
     let event_loop = locals.event_loop(py);
     let (tx, rx) = mpsc::channel::<RequestStreamResult<Py<PyAny>>>(10);
@@ -40,9 +35,12 @@ pub(super) fn into_stream(
         },
     )?;
 
-    let coro = forward_fn.bind(py).call1((gen, sender))?;
-    let task = event_loop.call_method1(intern!(py, "create_task"), (coro,))?;
-    task.call_method1(intern!(py, "add_done_callback"), (TaskConsumer,))?;
+    let task_consumer = TaskConsumer {
+        constants: constants.clone(),
+    };
+    let coro = constants.forward.bind(py).call1((gen, sender))?;
+    let task = event_loop.call_method1(&constants.create_task, (coro,))?;
+    task.call_method1(&constants.add_done_callback, (task_consumer,))?;
 
     let stream = ReceiverStream::new(rx);
     Ok((stream, task.unbind()))
@@ -93,13 +91,15 @@ impl Sender {
 }
 
 #[pyclass(module = "_pyqwest.async", frozen)]
-struct TaskConsumer;
+struct TaskConsumer {
+    constants: Constants,
+}
 
 #[pymethods]
 impl TaskConsumer {
     #[allow(clippy::unused_self)]
-    fn __call__(&self, py: Python<'_>, future: &Bound<'_, PyAny>) {
-        // Suppress errors
-        let _ = future.call_method0(intern!(py, "exception"));
+    fn __call__(&self, future: &Bound<'_, PyAny>) {
+        // Suppress errors.
+        let _ = future.call_method0(&self.constants.exception);
     }
 }

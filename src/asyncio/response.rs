@@ -3,8 +3,7 @@ use std::sync::Mutex;
 use arc_swap::ArcSwapOption;
 use pyo3::{
     exceptions::PyStopAsyncIteration,
-    intern, pyclass, pymethods,
-    sync::PyOnceLock,
+    pyclass, pymethods,
     types::{PyAnyMethods as _, PyBytes},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
@@ -16,7 +15,10 @@ use crate::{
     },
     common::{FullResponse, HTTPVersion},
     headers::Headers,
-    shared::response::{ResponseBody, ResponseHead, RustFullResponse},
+    shared::{
+        constants::Constants,
+        response::{ResponseBody, ResponseHead, RustFullResponse},
+    },
 };
 
 enum Content {
@@ -30,12 +32,15 @@ pub(crate) struct Response {
     content: Content,
     trailers: Py<Headers>,
     request_iter_task: Mutex<Option<Py<PyAny>>>,
+
+    constants: Constants,
 }
 
 impl Response {
     pub(super) fn pending(
         py: Python<'_>,
         request_iter_task: Option<Py<PyAny>>,
+        constants: Constants,
     ) -> PyResult<Response> {
         let trailers = Py::new(py, Headers::empty())?;
         Ok(Response {
@@ -46,6 +51,7 @@ impl Response {
             )?),
             trailers,
             request_iter_task: Mutex::new(request_iter_task),
+            constants,
         })
     }
 
@@ -75,6 +81,7 @@ impl Response {
             headers: self.head.headers,
             body: bytes,
             trailers: self.trailers,
+            constants: self.constants,
         }
     }
 }
@@ -107,6 +114,7 @@ impl Response {
             content: Content::Custom(content.unbind()),
             trailers,
             request_iter_task: Mutex::new(None),
+            constants: Constants::get(py)?,
         })
     }
 
@@ -174,6 +182,7 @@ impl Response {
                 if let Some(body) = body.as_ref() {
                     let body = body.clone();
                     let trailers = self.trailers.clone_ref(py);
+                    let constants = self.constants.clone();
                     future_into_py(py, async move {
                         let bytes = body.read_full().await?;
                         Ok(RustFullResponse {
@@ -181,29 +190,37 @@ impl Response {
                             headers,
                             body: bytes,
                             trailers,
+                            constants,
                         })
                     })
                 } else {
-                    FullResponse::py_new(
+                    FullResponse::new(
                         status,
                         headers,
-                        PyBytes::new(py, b"").unbind(),
+                        self.constants.empty_bytes.clone_ref(py),
                         self.trailers.clone_ref(py),
+                        self.constants.clone(),
                     )
                     .into_bound_py_any(py)
                 }
             }
             Content::Custom(content) => {
                 if let Ok(bytes) = content.bind(py).cast::<PyBytes>() {
-                    FullResponse::py_new(
+                    FullResponse::new(
                         status,
                         headers,
                         bytes.clone().unbind(),
                         self.trailers.clone_ref(py),
+                        self.constants.clone(),
                     )
                     .into_bound_py_any(py)
                 } else {
-                    new_full_response(py, status, &headers, content, &self.trailers)
+                    self.constants.new_full_response.bind(py).call1((
+                        status,
+                        &headers,
+                        content,
+                        &self.trailers,
+                    ))
                 }
             }
         }
@@ -212,12 +229,12 @@ impl Response {
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let request_iter_task = self.request_iter_task.lock().unwrap().take();
         if let Some(task) = request_iter_task {
-            task.call_method0(py, intern!(py, "cancel"))?;
+            task.call_method0(py, &self.constants.cancel)?;
         }
         match &self.content {
             Content::Http(content) => content.get().aclose(py),
             Content::Custom(content) => {
-                if let Ok(close_res) = content.bind(py).call_method0(intern!(py, "aclose")) {
+                if let Ok(close_res) = content.bind(py).call_method0(&self.constants.aclose) {
                     close_res.into_bound_py_any(py)
                 } else {
                     EmptyAwaitable.into_bound_py_any(py)
@@ -298,22 +315,4 @@ impl ContentGenerator {
             Ok(())
         })
     }
-}
-
-fn new_full_response<'py>(
-    py: Python<'py>,
-    status: u16,
-    headers: &Py<Headers>,
-    content: &Py<PyAny>,
-    trailers: &Py<Headers>,
-) -> PyResult<Bound<'py, PyAny>> {
-    static NEW_FULL_RESPONSE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-
-    let new_full_response = NEW_FULL_RESPONSE.get_or_try_init(py, || {
-        let module = py.import("pyqwest._glue")?;
-        module.getattr("new_full_response").map(Bound::unbind)
-    })?;
-    new_full_response
-        .bind(py)
-        .call1((status, headers, content, trailers))
 }

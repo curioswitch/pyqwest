@@ -35,6 +35,7 @@ del _Protocol
 
 #[pymodule(name = "_pyqwest", gil_used = false)]
 mod pyqwest {
+
     #[allow(clippy::wildcard_imports)]
     use crate::*;
 
@@ -64,6 +65,7 @@ mod pyqwest {
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
         add_protocols(m.py(), m)?;
+
         Ok(())
     }
 }

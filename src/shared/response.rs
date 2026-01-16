@@ -13,6 +13,7 @@ use crate::{
     common::{FullResponse, HTTPVersion},
     headers::Headers,
     pyerrors::{self, ReadError},
+    shared::constants::Constants,
 };
 
 pub(crate) struct ResponseHead {
@@ -210,6 +211,8 @@ pub(crate) struct RustFullResponse {
     pub(crate) headers: Py<Headers>,
     pub(crate) body: Bytes,
     pub(crate) trailers: Py<Headers>,
+
+    pub(crate) constants: Constants,
 }
 
 impl<'py> IntoPyObject<'py> for RustFullResponse {
@@ -219,12 +222,13 @@ impl<'py> IntoPyObject<'py> for RustFullResponse {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let body = PyBytes::new(py, &self.body);
-        FullResponse {
-            status: self.status,
-            headers: self.headers,
-            content: body.unbind(),
-            trailers: self.trailers,
-        }
+        FullResponse::new(
+            self.status,
+            self.headers,
+            body.unbind(),
+            self.trailers,
+            self.constants,
+        )
         .into_pyobject(py)
     }
 }

@@ -1,9 +1,9 @@
-use pyo3::sync::PyOnceLock;
-use pyo3::{intern, prelude::*};
+use pyo3::prelude::*;
 
 use crate::asyncio::request::Request;
 use crate::asyncio::transport::{get_default_transport, HttpTransport};
 use crate::headers::Headers;
+use crate::shared::constants::Constants;
 
 enum Transport {
     Http(HttpTransport),
@@ -13,6 +13,8 @@ enum Transport {
 #[pyclass(module = "_pyqwest.async", frozen)]
 pub(crate) struct Client {
     transport: Transport,
+
+    constants: Constants,
 }
 
 #[pymethods]
@@ -30,7 +32,10 @@ impl Client {
             let transport = get_default_transport(py)?;
             Transport::Http(transport.get().clone())
         };
-        Ok(Self { transport })
+        Ok(Self {
+            transport,
+            constants: Constants::get(py)?,
+        })
     }
 
     #[pyo3(signature = (url, headers=None, timeout=None))]
@@ -132,17 +137,22 @@ impl Client {
         } else {
             None
         };
-        let request = Request::new(py, method, url, headers, content, timeout)?;
+        let request = Request::new(
+            py,
+            method,
+            url,
+            headers,
+            content,
+            timeout,
+            self.constants.clone(),
+        )?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute_and_read_full(py, &request),
-            Transport::Custom(transport) => {
-                static EXECUTE_AND_READ_FULL: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-                let execute_and_read_full = EXECUTE_AND_READ_FULL.get_or_try_init(py, || {
-                    let module = py.import("pyqwest._glue")?;
-                    module.getattr("execute_and_read_full").map(Bound::unbind)
-                })?;
-                execute_and_read_full.bind(py).call1((transport, request))
-            }
+            Transport::Custom(transport) => self
+                .constants
+                .execute_and_read_full
+                .bind(py)
+                .call1((transport, request)),
         }
     }
 
@@ -165,12 +175,12 @@ impl Client {
         } else {
             None
         };
-        let request = Request::new(py, method, url, headers, content, timeout)?;
+        let request = Request::py_new(py, method, url, headers, content, timeout)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),
             Transport::Custom(transport) => transport
                 .bind(py)
-                .call_method1(intern!(py, "execute"), (request,)),
+                .call_method1(&self.constants.execute, (request,)),
         }
     }
 }

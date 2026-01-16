@@ -2,13 +2,13 @@ use std::ffi::CStr;
 
 use pyo3::{
     exceptions::PyRuntimeError,
-    intern, pyclass, pymethods,
+    pyclass, pymethods,
     sync::MutexExt as _,
     types::{PyAnyMethods as _, PyBytes, PyString},
     Bound, Py, PyAny, PyResult, Python,
 };
 
-use crate::headers::Headers;
+use crate::{headers::Headers, shared::constants::Constants};
 
 #[pyclass(module = "pyqwest", frozen, eq, eq_int)]
 #[derive(Clone, PartialEq)]
@@ -24,23 +24,27 @@ pub(crate) struct FullResponse {
     pub(crate) headers: Py<Headers>,
     pub(crate) content: Py<PyBytes>,
     pub(crate) trailers: Py<Headers>,
+
+    constants: Constants,
 }
 
 #[pymethods]
 impl FullResponse {
     #[new]
     pub(crate) fn py_new(
+        py: Python<'_>,
         status: u16,
         headers: Py<Headers>,
         content: Py<PyBytes>,
         trailers: Py<Headers>,
     ) -> Self {
-        Self {
+        FullResponse::new(
             status,
             headers,
             content,
             trailers,
-        }
+            Constants::get(py).unwrap(),
+        )
     }
 
     #[getter]
@@ -89,7 +93,24 @@ impl FullResponse {
     }
 
     fn json<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let json_module = py.import("json")?;
-        json_module.call_method1(intern!(py, "loads"), (&self.content,))
+        self.constants.json_loads.bind(py).call1((&self.content,))
+    }
+}
+
+impl FullResponse {
+    pub(crate) fn new(
+        status: u16,
+        headers: Py<Headers>,
+        content: Py<PyBytes>,
+        trailers: Py<Headers>,
+        constants: Constants,
+    ) -> Self {
+        Self {
+            status,
+            headers,
+            content,
+            trailers,
+            constants,
+        }
     }
 }

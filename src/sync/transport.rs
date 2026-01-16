@@ -9,6 +9,7 @@ use tokio::sync::oneshot;
 
 use crate::common::HTTPVersion;
 use crate::pyerrors;
+use crate::shared::constants::Constants;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
@@ -19,6 +20,8 @@ pub struct SyncHttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
     close: bool,
+
+    constants: Constants,
 }
 
 #[pymethods]
@@ -42,6 +45,7 @@ impl SyncHttpTransport {
         use_system_dns = false,
     ))]
     pub(crate) fn new(
+        py: Python<'_>,
         tls_ca_cert: Option<&[u8]>,
         tls_key: Option<&[u8]>,
         tls_cert: Option<&[u8]>,
@@ -77,6 +81,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
             close: true,
+            constants: Constants::get(py)?,
         })
     }
 
@@ -118,7 +123,7 @@ impl SyncHttpTransport {
         let (req_builder, request_iter) = request.new_reqwest_builder(py, client, self.http3)?;
         let request_iter: RequestIterHandle = Arc::new(Mutex::new(request_iter));
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
-        let mut response = SyncResponse::pending(py, request_iter.clone())?;
+        let mut response = SyncResponse::pending(py, request_iter.clone(), self.constants.clone())?;
         get_runtime().spawn(async move {
             match req_builder.send().await {
                 Ok(res) => {
@@ -135,7 +140,7 @@ impl SyncHttpTransport {
                 .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
                 .flatten()
         })
-        .inspect_err(|_| close_request_iter(py, &request_iter))
+        .inspect_err(|_| close_request_iter(py, &request_iter, &self.constants))
     }
 
     pub(super) fn py_default(py: Python<'_>) -> Self {
@@ -143,6 +148,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
             http3: false,
             close: false,
+            constants: Constants::get(py).unwrap(),
         }
     }
 }
