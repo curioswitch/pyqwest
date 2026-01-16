@@ -237,6 +237,33 @@ async def test_large_body(
 
 
 @pytest.mark.asyncio
+async def test_readall(client: Client | SyncClient, url: str) -> None:
+    method = "POST"
+    url = f"{url}/read_all"
+    headers = Headers([("content-type", "text/plain")])
+    if isinstance(client, SyncClient):
+
+        def run():
+            with client.stream(method, url, headers, [b"Hello!"] * 100) as resp:
+                content = b"".join(resp.content)
+            return (resp, content)
+
+        resp, content = await asyncio.to_thread(run)
+    else:
+
+        async def async_req_content() -> AsyncIterator[bytes]:
+            for _ in range(100):
+                yield b"Hello!"
+
+        async with client.stream(method, url, headers, async_req_content()) as resp:
+            content = b""
+            async for chunk in resp.content:
+                content += chunk
+    assert resp.status == 200
+    assert content == b"Hello!" * 100, len(content)
+
+
+@pytest.mark.asyncio
 async def test_execute(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
@@ -628,3 +655,33 @@ async def test_response_error(
                     content += chunk
     # Make sure we got response headers before the error
     assert status == 200
+
+
+@pytest.mark.asyncio
+async def test_negative_timeout(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        if isinstance(client, SyncClient):
+            await asyncio.to_thread(client.get, url, timeout=-5.0)
+        else:
+            await client.get(url, timeout=-5.0)
+
+
+@pytest.mark.asyncio
+async def test_infinite_timeout(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        if isinstance(client, SyncClient):
+            await asyncio.to_thread(client.get, url, timeout=float("inf"))
+        else:
+            await client.get(url, timeout=float("inf"))
+
+
+@pytest.mark.asyncio
+async def test_nan_timeout(client: Client | SyncClient, url: str) -> None:
+    url = f"{url}/echo"
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        if isinstance(client, SyncClient):
+            await asyncio.to_thread(client.get, url, timeout=float("nan"))
+        else:
+            await client.get(url, timeout=float("nan"))

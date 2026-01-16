@@ -7,6 +7,7 @@ use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 use pyo3::{Bound, PyAny};
 
 use crate::headers::Headers;
+use crate::shared::validation::validate_timeout;
 
 pub(crate) struct RequestHead {
     method: http::Method,
@@ -30,7 +31,7 @@ impl RequestHead {
             method,
             url,
             headers,
-            timeout,
+            timeout: validate_timeout(timeout)?,
         })
     }
 

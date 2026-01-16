@@ -70,20 +70,20 @@ impl Response {
         }
     }
 
-    pub(super) async fn into_full_response(self) -> RustFullResponse {
+    pub(super) async fn into_full_response(self) -> PyResult<RustFullResponse> {
         let Content::Http(content) = self.content else {
             unreachable!("into_full_response is only called on HTTP responses")
         };
         let body = content.get().body.load();
         // SAFETY - we only call into_full_response without allowing the user to close this response.
-        let bytes = body.as_ref().unwrap().read_full().await.unwrap();
-        RustFullResponse {
+        let bytes = body.as_ref().unwrap().read_full().await?;
+        Ok(RustFullResponse {
             status: self.head.status(),
             headers: self.head.headers,
             body: bytes,
             trailers: self.trailers,
             constants: self.constants,
-        }
+        })
     }
 }
 

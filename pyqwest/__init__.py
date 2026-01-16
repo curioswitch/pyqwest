@@ -22,6 +22,7 @@ __all__ = [
     "get_default_transport",
 ]
 
+from . import _pyqwest
 from ._coro import Client, Response
 from ._pyqwest import (
     FullResponse,
@@ -43,4 +44,4 @@ from ._pyqwest import (
     get_default_transport,
 )
 
-__doc__ = _pyqwest.__doc__  # noqa: F821
+__doc__ = _pyqwest.__doc__
