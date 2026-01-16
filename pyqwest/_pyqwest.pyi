@@ -580,7 +580,7 @@ class Response:
         """Returns the response headers."""
 
     @property
-    def content(self) -> AsyncIterator[bytes]:
+    def content(self) -> AsyncIterator[memoryview]:
         """Returns an asynchronous iterator over the response content."""
 
     @property
@@ -992,7 +992,7 @@ class SyncResponse:
         """Returns the response headers."""
 
     @property
-    def content(self) -> Iterator[bytes]:
+    def content(self) -> Iterator[memoryview]:
         """Returns an iterator over the response content."""
 
     @property
