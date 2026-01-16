@@ -11,6 +11,7 @@ use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
 use crate::common::HTTPVersion;
 use crate::pyerrors;
+use crate::shared::constants::Constants;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 
 #[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen)]
@@ -19,6 +20,8 @@ pub struct HttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
     close: bool,
+
+    constants: Constants,
 }
 
 #[pymethods]
@@ -42,6 +45,7 @@ impl HttpTransport {
         use_system_dns = false,
     ))]
     pub(crate) fn new(
+        py: Python<'_>,
         tls_ca_cert: Option<&[u8]>,
         tls_key: Option<&[u8]>,
         tls_cert: Option<&[u8]>,
@@ -77,6 +81,7 @@ impl HttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
             close: true,
+            constants: Constants::get(py)?,
         })
     }
 
@@ -127,7 +132,7 @@ impl HttpTransport {
         };
         let (req_builder, request_iter_task) =
             request.new_reqwest_builder(py, client, self.http3)?;
-        let mut response = Response::pending(py, request_iter_task)?;
+        let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
         future_into_py(py, async move {
             let res = req_builder
                 .send()
@@ -151,7 +156,7 @@ impl HttpTransport {
         };
         let (req_builder, request_iter_task) =
             request.new_reqwest_builder(py, client, self.http3)?;
-        let mut response = Response::pending(py, request_iter_task)?;
+        let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
         future_into_py(py, async move {
             let res = req_builder
                 .send()
@@ -168,6 +173,7 @@ impl HttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
             http3: false,
             close: false,
+            constants: Constants::get(py).unwrap(),
         }
     }
 }

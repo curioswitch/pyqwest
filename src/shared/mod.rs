@@ -1,3 +1,5 @@
+/// Shared constants.
+pub(crate) mod constants;
 /// Shared utilities for request handling.
 pub(crate) mod request;
 /// Shared utilities for response handling.

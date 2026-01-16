@@ -1,6 +1,7 @@
-use pyo3::{intern, prelude::*, IntoPyObjectExt as _};
+use pyo3::{prelude::*, IntoPyObjectExt as _};
 
 use crate::headers::Headers;
+use crate::shared::constants::Constants;
 use crate::sync::request::SyncRequest;
 use crate::sync::response::SyncResponse;
 use crate::sync::transport::{get_default_sync_transport, SyncHttpTransport};
@@ -13,6 +14,8 @@ enum Transport {
 #[pyclass(module = "_pyqwest", frozen)]
 pub struct SyncClient {
     transport: Transport,
+
+    constants: Constants,
 }
 
 #[pymethods]
@@ -30,7 +33,10 @@ impl SyncClient {
             let transport = get_default_sync_transport(py)?;
             Transport::Http(transport.get().clone())
         };
-        Ok(Self { transport })
+        Ok(Self {
+            transport,
+            constants: Constants::get(py)?,
+        })
     }
 
     #[pyo3(signature = (url, headers=None, timeout=None))]
@@ -170,7 +176,7 @@ impl SyncClient {
             Transport::Custom(transport) => {
                 let res = transport
                     .bind(py)
-                    .call_method1(intern!(py, "execute"), (request,))?;
+                    .call_method1(&self.constants.execute, (request,))?;
                 Ok(res.cast_into::<SyncResponse>()?)
             }
         }

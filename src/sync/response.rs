@@ -14,7 +14,10 @@ use tokio::sync::oneshot;
 use crate::{
     common::{FullResponse, HTTPVersion},
     headers::Headers,
-    shared::response::{ResponseBody, ResponseHead},
+    shared::{
+        constants::Constants,
+        response::{ResponseBody, ResponseHead},
+    },
 };
 
 enum Content {
@@ -24,10 +27,14 @@ enum Content {
 
 pub(super) type RequestIterHandle = Arc<Mutex<Option<Py<PyAny>>>>;
 
-pub(super) fn close_request_iter(py: Python<'_>, request_iter: &RequestIterHandle) {
+pub(super) fn close_request_iter(
+    py: Python<'_>,
+    request_iter: &RequestIterHandle,
+    constants: &Constants,
+) {
     let request_iter = request_iter.lock().unwrap().take();
     if let Some(iter) = request_iter {
-        let _ = iter.bind(py).call_method0("close");
+        let _ = iter.bind(py).call_method0(&constants.close);
     }
 }
 
@@ -37,12 +44,15 @@ pub(crate) struct SyncResponse {
     content: Content,
     trailers: Py<Headers>,
     request_iter: RequestIterHandle,
+
+    constants: Constants,
 }
 
 impl SyncResponse {
     pub(super) fn pending(
         py: Python<'_>,
         request_iter: RequestIterHandle,
+        constants: Constants,
     ) -> PyResult<SyncResponse> {
         let trailers = Py::new(py, Headers::empty())?;
         Ok(SyncResponse {
@@ -54,10 +64,12 @@ impl SyncResponse {
                         trailers.clone_ref(py),
                     )),
                     request_iter: request_iter.clone(),
+                    constants: constants.clone(),
                 },
             )?),
             trailers,
             request_iter,
+            constants,
         })
     }
 
@@ -104,6 +116,7 @@ impl SyncResponse {
             content: Content::Custom(content.unbind()),
             trailers,
             request_iter: Arc::new(Mutex::new(None)),
+            constants: Constants::get(py)?,
         })
     }
 
@@ -161,7 +174,7 @@ impl SyncResponse {
     }
 
     fn close(&self, py: Python<'_>) {
-        close_request_iter(py, &self.request_iter);
+        close_request_iter(py, &self.request_iter, &self.constants);
         match &self.content {
             Content::Http(content) => content.get().close(py),
             Content::Custom(content) => {
@@ -208,18 +221,25 @@ impl SyncResponse {
                         .detach(|| rx.blocking_recv())
                         .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
                         .flatten();
-                    close_request_iter(py, &self.request_iter);
+                    close_request_iter(py, &self.request_iter, &self.constants);
                     let body = res?;
-                    FullResponse::py_new(
+                    FullResponse::new(
                         status,
                         headers,
                         PyBytes::new(py, &body).unbind(),
                         trailers,
+                        self.constants.clone(),
                     )
                     .into_bound_py_any(py)
                 } else {
-                    FullResponse::py_new(status, headers, PyBytes::new(py, b"").unbind(), trailers)
-                        .into_bound_py_any(py)
+                    FullResponse::new(
+                        status,
+                        headers,
+                        self.constants.empty_bytes.clone_ref(py),
+                        trailers,
+                        self.constants.clone(),
+                    )
+                    .into_bound_py_any(py)
                 }
             }
             Content::Custom(content) => {
@@ -233,12 +253,13 @@ impl SyncResponse {
                         body.extend_from_slice(bytes.as_bytes());
                     }
                 }
-                FullResponse {
+                FullResponse::new(
                     status,
                     headers,
-                    content: PyBytes::new(py, &body).unbind(),
+                    PyBytes::new(py, &body).unbind(),
                     trailers,
-                }
+                    self.constants.clone(),
+                )
                 .into_bound_py_any(py)
             }
         }
@@ -249,6 +270,7 @@ impl SyncResponse {
 struct SyncContentGenerator {
     body: ArcSwapOption<ResponseBody>,
     request_iter: RequestIterHandle,
+    constants: Constants,
 }
 
 #[pymethods]
@@ -274,9 +296,9 @@ impl SyncContentGenerator {
                     .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
             })
             .flatten()
-            .inspect_err(|_| close_request_iter(py, &self.request_iter))?;
+            .inspect_err(|_| close_request_iter(py, &self.request_iter, &self.constants))?;
         if res.is_none() {
-            close_request_iter(py, &self.request_iter);
+            close_request_iter(py, &self.request_iter, &self.constants);
         }
         Ok(res)
     }

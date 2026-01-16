@@ -1,13 +1,11 @@
 use bytes::Bytes;
 use pyo3::{
     exceptions::PyTypeError,
-    intern,
     pybacked::PyBackedBytes,
     pyclass, pyfunction, pymethods,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyModule},
-    Borrowed, Bound, FromPyObject, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyErr,
-    PyResult, Python,
+    Bound, FromPyObject as _, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use tokio_stream::StreamExt as _;
 
@@ -17,20 +15,25 @@ use crate::{
         stream::into_stream,
     },
     headers::Headers,
-    shared::request::{RequestHead, RequestStreamResult},
+    shared::{
+        constants::Constants,
+        request::{RequestHead, RequestStreamResult},
+    },
 };
 
 #[pyclass(module = "_pyqwest", frozen)]
 pub struct Request {
     head: RequestHead,
     content: Option<Content>,
+
+    constants: Constants,
 }
 
 #[pymethods]
 impl Request {
     #[new]
     #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
-    pub(crate) fn new<'py>(
+    pub(crate) fn py_new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
@@ -38,15 +41,15 @@ impl Request {
         content: Option<Bound<'py, PyAny>>,
         timeout: Option<f64>,
     ) -> PyResult<Self> {
-        let headers = Headers::from_option(py, headers)?;
-        let content: Option<Content> = match content {
-            Some(content) => Some(content.extract()?),
-            None => None,
-        };
-        Ok(Self {
-            head: RequestHead::new(method, url, headers, timeout)?,
+        Request::new(
+            py,
+            method,
+            url,
+            headers,
             content,
-        })
+            timeout,
+            Constants::get(py)?,
+        )
     }
 
     #[getter]
@@ -83,7 +86,28 @@ impl Request {
 }
 
 impl Request {
-    pub(crate) fn new_reqwest_builder(
+    pub(super) fn new<'py>(
+        py: Python<'py>,
+        method: &str,
+        url: &str,
+        headers: Option<Bound<'py, Headers>>,
+        content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+        constants: Constants,
+    ) -> PyResult<Self> {
+        let headers = Headers::from_option(py, headers)?;
+        let content: Option<Content> = match content {
+            Some(content) => Some(Content::from_py(&content, &constants)?),
+            None => None,
+        };
+        Ok(Self {
+            head: RequestHead::new(method, url, headers, timeout)?,
+            content,
+            constants,
+        })
+    }
+
+    pub(super) fn new_reqwest_builder(
         &self,
         py: Python<'_>,
         client: &reqwest::Client,
@@ -114,7 +138,7 @@ impl Request {
             }
             Some(Content::AsyncIter(iter)) => {
                 let iter = wrap_async_iter(py, iter)?;
-                let (stream, task) = into_stream(py, iter)?;
+                let (stream, task) = into_stream(py, iter, &self.constants)?;
                 let res = stream.map(bytes_from_chunk);
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
@@ -128,16 +152,13 @@ enum Content {
     AsyncIter(Py<PyAny>),
 }
 
-impl FromPyObject<'_, '_> for Content {
-    type Error = PyErr;
-
-    fn extract(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+impl Content {
+    fn from_py(obj: &Bound<'_, PyAny>, constants: &Constants) -> PyResult<Self> {
         if let Ok(bytes) = obj.extract::<PyBackedBytes>() {
             return Ok(Self::Bytes(bytes));
         }
 
-        let py = obj.py();
-        let aiter = obj.call_method0(intern!(py, "__aiter__")).map_err(|_| {
+        let aiter = obj.call_method0(&constants.__aiter__).map_err(|_| {
             PyTypeError::new_err("Content must be bytes or an async iterator of bytes")
         })?;
         Ok(Self::AsyncIter(aiter.unbind()))
