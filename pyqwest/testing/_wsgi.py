@@ -52,7 +52,7 @@ class WSGITransport(SyncTransport):
             self._close_executor = False
         self._closed = False
 
-    def execute(self, request: SyncRequest) -> SyncResponse:
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
         timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
         deadline = time.monotonic() + timeout if timeout is not None else None
 

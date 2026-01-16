@@ -176,7 +176,7 @@ impl SyncClient {
             Transport::Custom(transport) => {
                 let res = transport
                     .bind(py)
-                    .call_method1(&self.constants.execute, (request,))?;
+                    .call_method1(&self.constants.execute_sync, (request,))?;
                 Ok(res.cast_into::<SyncResponse>()?)
             }
         }

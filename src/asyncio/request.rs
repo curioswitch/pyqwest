@@ -5,7 +5,7 @@ use pyo3::{
     pyclass, pyfunction, pymethods,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyModule},
-    Bound, FromPyObject as _, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
+    Bound, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use tokio_stream::StreamExt as _;
 
