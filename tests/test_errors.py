@@ -100,7 +100,7 @@ async def test_connection_error(
         pytest.skip("Mock transports don't connect to anything")
 
     with socket.socket() as s:
-        s.bind(("", 0))
+        s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     method = "GET"
     url = f"http://localhost:{port}/echo"
