@@ -22,7 +22,6 @@ from pyqwest import (
 
 if TYPE_CHECKING:
     import sys
-    from types import TracebackType
 
     if sys.version_info >= (3, 11):
         from wsgiref.types import WSGIApplication, WSGIEnvironment
@@ -31,12 +30,21 @@ if TYPE_CHECKING:
 
 _UNSET_STATUS = "unset"
 
+_DEFAULT_EXECUTOR: ThreadPoolExecutor | None = None
+
+
+def get_default_executor() -> ThreadPoolExecutor:
+    global _DEFAULT_EXECUTOR  # noqa: PLW0603
+    if _DEFAULT_EXECUTOR is None:
+        _DEFAULT_EXECUTOR = ThreadPoolExecutor()
+    return _DEFAULT_EXECUTOR
+
 
 class WSGITransport(SyncTransport):
+    """Transport implementation that directly invokes a WSGI application. Useful for testing."""
+
     _app: WSGIApplication
     _http_version: HTTPVersion
-    _executor: ThreadPoolExecutor
-    _close_executor: bool
     _closed: bool
 
     def __init__(
@@ -45,14 +53,17 @@ class WSGITransport(SyncTransport):
         http_version: HTTPVersion = HTTPVersion.HTTP2,
         executor: ThreadPoolExecutor | None = None,
     ) -> None:
+        """Creates a new WSGI transport.
+
+        Args:
+            app: The WSGI application to invoke for requests.
+            http_version: The HTTP version to simulate for requests.
+            executor: An optional ThreadPoolExecutor to use for running the WSGI app.
+                      If not provided, a default executor will be used.
+        """
         self._app = app
         self._http_version = http_version
-        if executor is None:
-            self._executor = ThreadPoolExecutor()
-            self._close_executor = True
-        else:
-            self._executor = executor
-            self._close_executor = False
+        self._executor = executor or get_default_executor()
         self._closed = False
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
@@ -204,24 +215,6 @@ class WSGITransport(SyncTransport):
             content=response_content,
             trailers=trailers,
         )
-
-    def __enter__(self) -> WSGITransport:
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_value: BaseException | None,
-        _traceback: TracebackType | None,
-    ) -> None:
-        self.close()
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        if self._close_executor:
-            self._executor.shutdown()
 
 
 class RequestInput:
