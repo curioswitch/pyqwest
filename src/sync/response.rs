@@ -243,8 +243,15 @@ impl SyncResponse {
                 }
             }
         };
-        FullResponse::new(status, headers, content, trailers, self.constants.clone())
-            .into_bound_py_any(py)
+        FullResponse::new(
+            py,
+            status,
+            headers,
+            content,
+            trailers,
+            self.constants.clone(),
+        )
+        .into_bound_py_any(py)
     }
 }
 
