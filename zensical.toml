@@ -6,7 +6,7 @@ site_author = "CurioSwitch"
 copyright = "&copy; CurioSwitch"
 repo_url = "https://github.com/curioswitch/pyqwest"
 edit_uri = "edit/main/docs/"
-nav = [{ "Introduction" = "index.md" }, "api.md"]
+nav = [{ "Introduction" = "index.md" }, "usage.md", "api.md"]
 
 [project.theme]
 favicon = "img/favicon.png"
