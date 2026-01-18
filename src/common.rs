@@ -23,9 +23,9 @@ impl HTTPVersion {
     fn __str__(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
         let constants = Constants::get(py)?;
         match self {
-            HTTPVersion::HTTP1 => Ok(constants.http_1_1.clone_ref(py)),
-            HTTPVersion::HTTP2 => Ok(constants.http_2.clone_ref(py)),
-            HTTPVersion::HTTP3 => Ok(constants.http_3.clone_ref(py)),
+            HTTPVersion::HTTP1 => Ok(constants.http_1_1_str.clone_ref(py)),
+            HTTPVersion::HTTP2 => Ok(constants.http_2_str.clone_ref(py)),
+            HTTPVersion::HTTP3 => Ok(constants.http_3_str.clone_ref(py)),
         }
     }
 }
@@ -40,8 +40,6 @@ pub(crate) struct FullResponse {
     content: Py<PyBytes>,
     #[pyo3(get)]
     trailers: Py<Headers>,
-
-    constants: Constants,
 }
 
 #[pymethods]
@@ -54,14 +52,7 @@ impl FullResponse {
         content: Py<PyBytes>,
         trailers: Py<Headers>,
     ) -> Self {
-        FullResponse::new(
-            py,
-            status,
-            headers,
-            content,
-            trailers,
-            Constants::get(py).unwrap(),
-        )
+        FullResponse::new(py, status, headers, content, trailers)
     }
 
     fn text<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
@@ -90,7 +81,10 @@ impl FullResponse {
     }
 
     fn json<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.constants.json_loads.bind(py).call1((&self.content,))
+        Constants::get(py)?
+            .json_loads
+            .bind(py)
+            .call1((&self.content,))
     }
 }
 
@@ -101,14 +95,12 @@ impl FullResponse {
         headers: Py<Headers>,
         content: Py<PyBytes>,
         trailers: Py<Headers>,
-        constants: Constants,
     ) -> Self {
         Self {
             status: PyInt::new(py, status).unbind(),
             headers,
             content,
             trailers,
-            constants,
         }
     }
 }

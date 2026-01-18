@@ -6,6 +6,8 @@ use pyo3::{
     Py, PyAny, PyResult, Python,
 };
 
+use crate::common::HTTPVersion;
+
 /// Constants used when creating Python objects. These are mostly strings,
 /// which `PyO3` provides the intern! macro for, but it still has a very small amount
 /// of overhead per access, but more importantly forces lazy initialization during
@@ -34,12 +36,19 @@ pub(crate) struct ConstantsInner {
     /// The string "`execute_sync`".
     pub(crate) execute_sync: Py<PyString>,
 
+    /// HTTPVersion.HTTP1
+    pub(crate) http_1: Py<HTTPVersion>,
+    /// HTTPVersion.HTTP2
+    pub(crate) http_2: Py<HTTPVersion>,
+    /// HTTPVersion.HTTP3
+    pub(crate) http_3: Py<HTTPVersion>,
+
     /// The string "HTTP/1.1".
-    pub(crate) http_1_1: Py<PyString>,
+    pub(crate) http_1_1_str: Py<PyString>,
     /// The string "HTTP/2".
-    pub(crate) http_2: Py<PyString>,
+    pub(crate) http_2_str: Py<PyString>,
     /// The string "HTTP/3".
-    pub(crate) http_3: Py<PyString>,
+    pub(crate) http_3_str: Py<PyString>,
 
     /// The _glue.py function `execute_and_read_full`.
     pub(crate) execute_and_read_full: Py<PyAny>,
@@ -79,9 +88,28 @@ impl Constants {
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
 
-                http_1_1: PyString::new(py, "HTTP/1.1").unbind(),
-                http_2: PyString::new(py, "HTTP/2").unbind(),
-                http_3: PyString::new(py, "HTTP/3").unbind(),
+                http_1: py
+                    .get_type::<HTTPVersion>()
+                    .getattr("HTTP1")?
+                    .cast::<HTTPVersion>()?
+                    .clone()
+                    .unbind(),
+                http_2: py
+                    .get_type::<HTTPVersion>()
+                    .getattr("HTTP2")?
+                    .cast::<HTTPVersion>()?
+                    .clone()
+                    .unbind(),
+                http_3: py
+                    .get_type::<HTTPVersion>()
+                    .getattr("HTTP3")?
+                    .cast::<HTTPVersion>()?
+                    .clone()
+                    .unbind(),
+
+                http_1_1_str: PyString::new(py, "HTTP/1.1").unbind(),
+                http_2_str: PyString::new(py, "HTTP/2").unbind(),
+                http_3_str: PyString::new(py, "HTTP/3").unbind(),
 
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),

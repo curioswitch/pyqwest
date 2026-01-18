@@ -141,8 +141,8 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn http_version(&self) -> HTTPVersion {
-        self.head.http_version()
+    fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
+        self.head.http_version(py)
     }
 
     #[getter]
@@ -243,15 +243,7 @@ impl SyncResponse {
                 }
             }
         };
-        FullResponse::new(
-            py,
-            status,
-            headers,
-            content,
-            trailers,
-            self.constants.clone(),
-        )
-        .into_bound_py_any(py)
+        FullResponse::new(py, status, headers, content, trailers).into_bound_py_any(py)
     }
 }
 
