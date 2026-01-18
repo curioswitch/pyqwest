@@ -61,11 +61,12 @@ impl ResponseHead {
         self.status.as_u16()
     }
 
-    pub(crate) fn http_version(&self) -> HTTPVersion {
+    pub(crate) fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
+        let constants = Constants::get(py)?;
         match self.version {
-            http::Version::HTTP_2 => HTTPVersion::HTTP2,
-            http::Version::HTTP_3 => HTTPVersion::HTTP3,
-            _ => HTTPVersion::HTTP1,
+            http::Version::HTTP_2 => Ok(constants.http_2.clone_ref(py)),
+            http::Version::HTTP_3 => Ok(constants.http_3.clone_ref(py)),
+            _ => Ok(constants.http_1.clone_ref(py)),
         }
     }
 
@@ -211,8 +212,6 @@ pub(crate) struct RustFullResponse {
     pub(crate) headers: Py<Headers>,
     pub(crate) body: Bytes,
     pub(crate) trailers: Py<Headers>,
-
-    pub(crate) constants: Constants,
 }
 
 impl<'py> IntoPyObject<'py> for RustFullResponse {
@@ -222,14 +221,7 @@ impl<'py> IntoPyObject<'py> for RustFullResponse {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let body = PyBytes::new(py, &self.body);
-        FullResponse::new(
-            py,
-            self.status,
-            self.headers,
-            body.unbind(),
-            self.trailers,
-            self.constants,
-        )
-        .into_pyobject(py)
+        FullResponse::new(py, self.status, self.headers, body.unbind(), self.trailers)
+            .into_pyobject(py)
     }
 }
