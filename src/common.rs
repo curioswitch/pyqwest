@@ -4,7 +4,7 @@ use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
     sync::MutexExt as _,
-    types::{PyAnyMethods as _, PyBytes, PyString},
+    types::{PyAnyMethods as _, PyBytes, PyInt, PyString},
     Bound, Py, PyAny, PyResult, Python,
 };
 
@@ -18,12 +18,28 @@ pub(crate) enum HTTPVersion {
     HTTP3,
 }
 
+#[pymethods]
+impl HTTPVersion {
+    fn __str__(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
+        let constants = Constants::get(py)?;
+        match self {
+            HTTPVersion::HTTP1 => Ok(constants.http_1_1.clone_ref(py)),
+            HTTPVersion::HTTP2 => Ok(constants.http_2.clone_ref(py)),
+            HTTPVersion::HTTP3 => Ok(constants.http_3.clone_ref(py)),
+        }
+    }
+}
+
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct FullResponse {
-    pub(crate) status: u16,
-    pub(crate) headers: Py<Headers>,
-    pub(crate) content: Py<PyBytes>,
-    pub(crate) trailers: Py<Headers>,
+    #[pyo3(get)]
+    status: Py<PyInt>,
+    #[pyo3(get)]
+    headers: Py<Headers>,
+    #[pyo3(get)]
+    content: Py<PyBytes>,
+    #[pyo3(get)]
+    trailers: Py<Headers>,
 
     constants: Constants,
 }
@@ -39,32 +55,13 @@ impl FullResponse {
         trailers: Py<Headers>,
     ) -> Self {
         FullResponse::new(
+            py,
             status,
             headers,
             content,
             trailers,
             Constants::get(py).unwrap(),
         )
-    }
-
-    #[getter]
-    fn status(&self) -> u16 {
-        self.status
-    }
-
-    #[getter]
-    fn headers(&self, py: Python<'_>) -> Py<Headers> {
-        self.headers.clone_ref(py)
-    }
-
-    #[getter]
-    fn content(&self, py: Python<'_>) -> Py<PyBytes> {
-        self.content.clone_ref(py)
-    }
-
-    #[getter]
-    fn trailers(&self, py: Python<'_>) -> Py<Headers> {
-        self.trailers.clone_ref(py)
     }
 
     fn text<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
@@ -99,6 +96,7 @@ impl FullResponse {
 
 impl FullResponse {
     pub(crate) fn new(
+        py: Python<'_>,
         status: u16,
         headers: Py<Headers>,
         content: Py<PyBytes>,
@@ -106,7 +104,7 @@ impl FullResponse {
         constants: Constants,
     ) -> Self {
         Self {
-            status,
+            status: PyInt::new(py, status).unbind(),
             headers,
             content,
             trailers,

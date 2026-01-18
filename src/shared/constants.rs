@@ -34,6 +34,13 @@ pub(crate) struct ConstantsInner {
     /// The string "`execute_sync`".
     pub(crate) execute_sync: Py<PyString>,
 
+    /// The string "HTTP/1.1".
+    pub(crate) http_1_1: Py<PyString>,
+    /// The string "HTTP/2".
+    pub(crate) http_2: Py<PyString>,
+    /// The string "HTTP/3".
+    pub(crate) http_3: Py<PyString>,
+
     /// The _glue.py function `execute_and_read_full`.
     pub(crate) execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
@@ -71,6 +78,10 @@ impl Constants {
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
+
+                http_1_1: PyString::new(py, "HTTP/1.1").unbind(),
+                http_2: PyString::new(py, "HTTP/2").unbind(),
+                http_3: PyString::new(py, "HTTP/3").unbind(),
 
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),

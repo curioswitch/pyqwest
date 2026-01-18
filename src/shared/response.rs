@@ -223,6 +223,7 @@ impl<'py> IntoPyObject<'py> for RustFullResponse {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let body = PyBytes::new(py, &self.body);
         FullResponse::new(
+            py,
             self.status,
             self.headers,
             body.unbind(),
