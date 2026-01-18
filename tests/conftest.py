@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import socket
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -52,16 +51,9 @@ def certs(ca: trustme.CA) -> Certs:
 
 @pytest_asyncio.fixture(scope="session")
 async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
-    # TODO: Fix issue in pyvoy where if tls_port is 0, separate ports are picked for
-    # TLS and QUIC and we cannot find the latter.
-    tls_port = 0
-    while tls_port <= 0:
-        with socket.socket() as s:
-            s.bind(("", 0))
-            tls_port = s.getsockname()[1]
     async with PyvoyServer(
         "tests.apps.asgi.kitchensink",
-        tls_port=tls_port,
+        tls_port=0,
         tls_key=certs.server_key,
         tls_cert=certs.server_cert,
         tls_ca_cert=certs.ca,
@@ -102,7 +94,7 @@ def url(server: PyvoyServer, http_scheme: str, http_version: HTTPVersion | None)
                 pytest.skip("HTTP/3 over plain HTTP is not supported")
             return f"http://localhost:{server.listener_port}"
         case "https":
-            return f"https://localhost:{server.listener_port_tls}"
+            return f"https://localhost:{server.listener_port_tls if http_version != HTTPVersion.HTTP3 else server.listener_port_quic}"
         case _:
             msg = "Invalid scheme"
             raise ValueError(msg)
