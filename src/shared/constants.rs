@@ -15,50 +15,68 @@ use crate::common::HTTPVersion;
 /// we go ahead and do it. Then, usage is just simple ref-counting.
 pub(crate) struct ConstantsInner {
     /// An empty bytes object.
-    pub(crate) empty_bytes: Py<PyBytes>,
+    pub empty_bytes: Py<PyBytes>,
 
     /// The string "__aiter__".
-    pub(crate) __aiter__: Py<PyString>,
+    pub __aiter__: Py<PyString>,
     /// The string "aclose".
-    pub(crate) aclose: Py<PyString>,
+    pub aclose: Py<PyString>,
     /// The string "`add_done_callback`".
-    pub(crate) add_done_callback: Py<PyString>,
+    pub add_done_callback: Py<PyString>,
     /// The string "cancel".
-    pub(crate) cancel: Py<PyString>,
+    pub cancel: Py<PyString>,
     /// The string "close".
-    pub(crate) close: Py<PyString>,
+    pub close: Py<PyString>,
     /// The string "`create_task`".
-    pub(crate) create_task: Py<PyString>,
+    pub create_task: Py<PyString>,
     /// The string "exception".
-    pub(crate) exception: Py<PyString>,
+    pub exception: Py<PyString>,
     /// The string "execute".
-    pub(crate) execute: Py<PyString>,
+    pub execute: Py<PyString>,
     /// The string "`execute_sync`".
-    pub(crate) execute_sync: Py<PyString>,
+    pub execute_sync: Py<PyString>,
 
+    // HTTP Versions
     /// HTTPVersion.HTTP1
-    pub(crate) http_1: Py<HTTPVersion>,
+    pub http_1_py: Py<HTTPVersion>,
     /// HTTPVersion.HTTP2
-    pub(crate) http_2: Py<HTTPVersion>,
+    pub http_2_py: Py<HTTPVersion>,
     /// HTTPVersion.HTTP3
-    pub(crate) http_3: Py<HTTPVersion>,
-
+    pub http_3_py: Py<HTTPVersion>,
     /// The string "HTTP/1.1".
-    pub(crate) http_1_1_str: Py<PyString>,
+    pub http_1_1: Py<PyString>,
     /// The string "HTTP/2".
-    pub(crate) http_2_str: Py<PyString>,
+    pub http_2: Py<PyString>,
     /// The string "HTTP/3".
-    pub(crate) http_3_str: Py<PyString>,
+    pub http_3: Py<PyString>,
+
+    // HTTP method strings
+    /// The string "DELETE".
+    pub delete: Py<PyString>,
+    /// The string "GET".
+    pub get: Py<PyString>,
+    /// The string "HEAD".
+    pub head: Py<PyString>,
+    /// The string "OPTIONS".
+    pub options: Py<PyString>,
+    /// The string "PATCH".
+    pub patch: Py<PyString>,
+    /// The string "POST".
+    pub post: Py<PyString>,
+    /// The string "PUT".
+    pub put: Py<PyString>,
+    /// The string "TRACE".
+    pub trace: Py<PyString>,
 
     /// The _glue.py function `execute_and_read_full`.
-    pub(crate) execute_and_read_full: Py<PyAny>,
+    pub execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
-    pub(crate) forward: Py<PyAny>,
+    pub forward: Py<PyAny>,
     /// The _glue.py function `read_content_sync`.
-    pub(crate) read_content_sync: Py<PyAny>,
+    pub read_content_sync: Py<PyAny>,
 
     /// The stdlib function `json.loads`.
-    pub(crate) json_loads: Py<PyAny>,
+    pub json_loads: Py<PyAny>,
 }
 
 static INSTANCE: PyOnceLock<Constants> = PyOnceLock::new();
@@ -88,28 +106,36 @@ impl Constants {
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
 
-                http_1: py
+                http_1_py: py
                     .get_type::<HTTPVersion>()
                     .getattr("HTTP1")?
                     .cast::<HTTPVersion>()?
                     .clone()
                     .unbind(),
-                http_2: py
+                http_2_py: py
                     .get_type::<HTTPVersion>()
                     .getattr("HTTP2")?
                     .cast::<HTTPVersion>()?
                     .clone()
                     .unbind(),
-                http_3: py
+                http_3_py: py
                     .get_type::<HTTPVersion>()
                     .getattr("HTTP3")?
                     .cast::<HTTPVersion>()?
                     .clone()
                     .unbind(),
+                http_1_1: PyString::new(py, "HTTP/1.1").unbind(),
+                http_2: PyString::new(py, "HTTP/2").unbind(),
+                http_3: PyString::new(py, "HTTP/3").unbind(),
 
-                http_1_1_str: PyString::new(py, "HTTP/1.1").unbind(),
-                http_2_str: PyString::new(py, "HTTP/2").unbind(),
-                http_3_str: PyString::new(py, "HTTP/3").unbind(),
+                delete: PyString::new(py, "DELETE").unbind(),
+                get: PyString::new(py, "GET").unbind(),
+                head: PyString::new(py, "HEAD").unbind(),
+                options: PyString::new(py, "OPTIONS").unbind(),
+                patch: PyString::new(py, "PATCH").unbind(),
+                post: PyString::new(py, "POST").unbind(),
+                put: PyString::new(py, "PUT").unbind(),
+                trace: PyString::new(py, "TRACE").unbind(),
 
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),

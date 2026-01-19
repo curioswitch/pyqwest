@@ -23,9 +23,9 @@ impl HTTPVersion {
     fn __str__(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
         let constants = Constants::get(py)?;
         match self {
-            HTTPVersion::HTTP1 => Ok(constants.http_1_1_str.clone_ref(py)),
-            HTTPVersion::HTTP2 => Ok(constants.http_2_str.clone_ref(py)),
-            HTTPVersion::HTTP3 => Ok(constants.http_3_str.clone_ref(py)),
+            HTTPVersion::HTTP1 => Ok(constants.http_1_1.clone_ref(py)),
+            HTTPVersion::HTTP2 => Ok(constants.http_2.clone_ref(py)),
+            HTTPVersion::HTTP3 => Ok(constants.http_3.clone_ref(py)),
         }
     }
 }
