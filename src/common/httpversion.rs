@@ -1,5 +1,6 @@
 use pyo3::{pyclass, pymethods, types::PyString, Py, Python};
 
+/// An enumeration of HTTP versions.
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct HTTPVersion {
     py: Py<PyString>,
@@ -8,6 +9,7 @@ pub(crate) struct HTTPVersion {
 
 #[pymethods]
 impl HTTPVersion {
+    /// HTTP/1.1.
     #[pyo3(name = "HTTP1")]
     #[classattr]
     fn http1(py: Python<'_>) -> Self {
@@ -17,6 +19,7 @@ impl HTTPVersion {
         }
     }
 
+    /// HTTP/2.
     #[pyo3(name = "HTTP2")]
     #[classattr]
     fn http2(py: Python<'_>) -> Self {
@@ -25,6 +28,8 @@ impl HTTPVersion {
             rs: http::Version::HTTP_2,
         }
     }
+
+    /// HTTP/3.
     #[pyo3(name = "HTTP3")]
     #[classattr]
     fn http3(py: Python<'_>) -> Self {
