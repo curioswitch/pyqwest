@@ -10,10 +10,9 @@ use pyo3::{
 use tokio::sync::{watch, Mutex};
 
 use crate::{
-    common::{FullResponse, HTTPVersion},
+    common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
     pyerrors::{self, ReadError},
-    shared::constants::Constants,
 };
 
 pub(crate) struct ResponseHead {
@@ -43,11 +42,7 @@ impl ResponseHead {
         http_version: &HTTPVersion,
         headers: Option<Bound<'_, Headers>>,
     ) -> PyResult<Self> {
-        let version = match http_version {
-            HTTPVersion::HTTP1 => http::Version::HTTP_11,
-            HTTPVersion::HTTP2 => http::Version::HTTP_2,
-            HTTPVersion::HTTP3 => http::Version::HTTP_3,
-        };
+        let version = http_version.as_rust();
         let headers = Headers::from_option(py, headers)?;
         Ok(ResponseHead {
             status: http::StatusCode::from_u16(status)
@@ -62,12 +57,7 @@ impl ResponseHead {
     }
 
     pub(crate) fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
-        let constants = Constants::get(py)?;
-        match self.version {
-            http::Version::HTTP_2 => Ok(constants.http_2_py.clone_ref(py)),
-            http::Version::HTTP_3 => Ok(constants.http_3_py.clone_ref(py)),
-            _ => Ok(constants.http_1_py.clone_ref(py)),
-        }
+        HTTPVersion::from_rust(self.version, py)
     }
 
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {

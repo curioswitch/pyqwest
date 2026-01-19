@@ -7,7 +7,7 @@ use pyo3::{
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use crate::{common::HTTPVersion, shared::validation::validate_timeout};
+use crate::{common::httpversion::HTTPVersion, shared::validation::validate_timeout};
 
 static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();
 
@@ -32,17 +32,17 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     let mut builder = reqwest::Client::builder();
     let mut http3 = false;
     if let Some(http_version) = params.http_version {
-        let http_version = http_version.get();
+        let http_version = http_version.get().as_rust();
         match http_version {
-            HTTPVersion::HTTP1 => {
-                builder = builder.http1_only();
-            }
-            HTTPVersion::HTTP2 => {
+            http::version::Version::HTTP_2 => {
                 builder = builder.http2_prior_knowledge();
             }
-            HTTPVersion::HTTP3 => {
+            http::version::Version::HTTP_3 => {
                 http3 = true;
                 builder = builder.http3_prior_knowledge();
+            }
+            _ => {
+                builder = builder.http1_only();
             }
         }
     }

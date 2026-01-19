@@ -7,7 +7,7 @@ use pyo3::{prelude::*, IntoPyObjectExt as _};
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
-use crate::common::HTTPVersion;
+use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};

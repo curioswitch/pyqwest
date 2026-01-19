@@ -51,7 +51,7 @@ mod pyqwest {
     #[pymodule_export]
     use asyncio::transport::{get_default_transport, HttpTransport};
     #[pymodule_export]
-    use common::{FullResponse, HTTPVersion};
+    use common::{httpversion::HTTPVersion, FullResponse};
     #[pymodule_export]
     use headers::Headers;
     #[pymodule_export]

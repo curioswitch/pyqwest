@@ -3,10 +3,10 @@ use std::{ops::Deref, sync::Arc};
 use pyo3::{
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyBytes, PyString},
-    Py, PyAny, PyResult, Python,
+    Py, PyAny, PyResult, PyTypeInfo, Python,
 };
 
-use crate::common::HTTPVersion;
+use crate::common::httpversion::HTTPVersion;
 
 /// Constants used when creating Python objects. These are mostly strings,
 /// which `PyO3` provides the intern! macro for, but it still has a very small amount
@@ -38,17 +38,11 @@ pub(crate) struct ConstantsInner {
 
     // HTTP Versions
     /// HTTPVersion.HTTP1
-    pub http_1_py: Py<HTTPVersion>,
+    pub http_1: Py<HTTPVersion>,
     /// HTTPVersion.HTTP2
-    pub http_2_py: Py<HTTPVersion>,
+    pub http_2: Py<HTTPVersion>,
     /// HTTPVersion.HTTP3
-    pub http_3_py: Py<HTTPVersion>,
-    /// The string "HTTP/1.1".
-    pub http_1_1: Py<PyString>,
-    /// The string "HTTP/2".
-    pub http_2: Py<PyString>,
-    /// The string "HTTP/3".
-    pub http_3: Py<PyString>,
+    pub http_3: Py<HTTPVersion>,
 
     // HTTP method strings
     /// The string "DELETE".
@@ -106,27 +100,9 @@ impl Constants {
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
 
-                http_1_py: py
-                    .get_type::<HTTPVersion>()
-                    .getattr("HTTP1")?
-                    .cast::<HTTPVersion>()?
-                    .clone()
-                    .unbind(),
-                http_2_py: py
-                    .get_type::<HTTPVersion>()
-                    .getattr("HTTP2")?
-                    .cast::<HTTPVersion>()?
-                    .clone()
-                    .unbind(),
-                http_3_py: py
-                    .get_type::<HTTPVersion>()
-                    .getattr("HTTP3")?
-                    .cast::<HTTPVersion>()?
-                    .clone()
-                    .unbind(),
-                http_1_1: PyString::new(py, "HTTP/1.1").unbind(),
-                http_2: PyString::new(py, "HTTP/2").unbind(),
-                http_3: PyString::new(py, "HTTP/3").unbind(),
+                http_1: get_class_attr::<HTTPVersion>(py, "HTTP1")?,
+                http_2: get_class_attr::<HTTPVersion>(py, "HTTP2")?,
+                http_3: get_class_attr::<HTTPVersion>(py, "HTTP3")?,
 
                 delete: PyString::new(py, "DELETE").unbind(),
                 get: PyString::new(py, "GET").unbind(),
@@ -153,4 +129,10 @@ impl Deref for Constants {
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
+}
+
+fn get_class_attr<T: PyTypeInfo>(py: Python<'_>, name: &str) -> PyResult<Py<T>> {
+    let cls = py.get_type::<T>();
+    let attr = cls.getattr(name)?;
+    Ok(attr.cast::<T>()?.clone().unbind())
 }
