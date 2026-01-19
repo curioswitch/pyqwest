@@ -13,7 +13,6 @@ use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
     pyerrors::{self, ReadError},
-    shared::constants::Constants,
 };
 
 pub(crate) struct ResponseHead {
@@ -58,12 +57,7 @@ impl ResponseHead {
     }
 
     pub(crate) fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
-        let constants = Constants::get(py)?;
-        match self.version {
-            http::Version::HTTP_2 => Ok(constants.http_2.clone_ref(py)),
-            http::Version::HTTP_3 => Ok(constants.http_3.clone_ref(py)),
-            _ => Ok(constants.http_1.clone_ref(py)),
-        }
+        HTTPVersion::from_rust(self.version, py)
     }
 
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {

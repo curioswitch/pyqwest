@@ -1,4 +1,6 @@
-use pyo3::{pyclass, pymethods, types::PyString, Py, Python};
+use pyo3::{pyclass, pymethods, types::PyString, Py, PyResult, Python};
+
+use crate::shared::constants::Constants;
 
 /// An enumeration of HTTP versions.
 #[pyclass(module = "pyqwest", frozen, eq, ord)]
@@ -57,6 +59,15 @@ impl HTTPVersion {
 }
 
 impl HTTPVersion {
+    pub(crate) fn from_rust(version: http::Version, py: Python<'_>) -> PyResult<Py<Self>> {
+        let constants = Constants::get(py)?;
+        match version {
+            http::Version::HTTP_2 => Ok(constants.http_2.clone_ref(py)),
+            http::Version::HTTP_3 => Ok(constants.http_3.clone_ref(py)),
+            _ => Ok(constants.http_1.clone_ref(py)),
+        }
+    }
+
     pub(crate) fn as_rust(&self) -> http::Version {
         self.rs
     }
