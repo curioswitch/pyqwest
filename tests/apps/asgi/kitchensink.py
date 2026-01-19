@@ -24,10 +24,15 @@ async def _echo(
         echoed_headers.append(
             (b"x-echo-tls-client-name", str(tls.get("client_cert_name", "")).encode())
         )
+
+    status = 200
+    if st := headers_dict.get(b"x-response-status"):
+        status = int(st.decode())
+
     await send(
         {
             "type": "http.response.start",
-            "status": 200,
+            "status": status,
             "headers": echoed_headers,
             "trailers": True,
         }

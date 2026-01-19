@@ -29,13 +29,17 @@ pub(crate) struct FullResponse {
 impl FullResponse {
     #[new]
     pub(crate) fn py_new(
-        py: Python<'_>,
-        status: u16,
+        status: Py<PyInt>,
         headers: Py<Headers>,
         content: Py<PyBytes>,
         trailers: Py<Headers>,
     ) -> Self {
-        FullResponse::new(py, status, headers, content, trailers)
+        Self {
+            status,
+            headers,
+            content,
+            trailers,
+        }
     }
 
     fn text<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
@@ -74,16 +78,17 @@ impl FullResponse {
 impl FullResponse {
     pub(crate) fn new(
         py: Python<'_>,
-        status: u16,
+        status: http::StatusCode,
         headers: Py<Headers>,
         content: Py<PyBytes>,
         trailers: Py<Headers>,
-    ) -> Self {
-        Self {
-            status: PyInt::new(py, status).unbind(),
+    ) -> PyResult<Self> {
+        let constants = Constants::get(py)?;
+        Ok(Self {
+            status: constants.status_code(py, status),
             headers,
             content,
             trailers,
-        }
+        })
     }
 }
