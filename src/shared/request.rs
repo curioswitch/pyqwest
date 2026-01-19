@@ -2,11 +2,12 @@ use std::fmt;
 use std::time::Duration;
 
 use pyo3::sync::MutexExt as _;
-use pyo3::types::PyAnyMethods as _;
+use pyo3::types::{PyAnyMethods as _, PyString};
 use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 use pyo3::{Bound, PyAny};
 
 use crate::headers::Headers;
+use crate::shared::constants::Constants;
 use crate::shared::validation::validate_timeout;
 
 pub(crate) struct RequestHead {
@@ -55,8 +56,20 @@ impl RequestHead {
         Ok(req_builder)
     }
 
-    pub(crate) fn method(&self) -> &str {
-        self.method.as_str()
+    pub(crate) fn method(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
+        let constants = Constants::get(py)?;
+        let res = match self.method {
+            http::Method::GET => constants.get.clone_ref(py),
+            http::Method::POST => constants.post.clone_ref(py),
+            http::Method::PUT => constants.put.clone_ref(py),
+            http::Method::DELETE => constants.delete.clone_ref(py),
+            http::Method::HEAD => constants.head.clone_ref(py),
+            http::Method::OPTIONS => constants.options.clone_ref(py),
+            http::Method::PATCH => constants.patch.clone_ref(py),
+            http::Method::TRACE => constants.trace.clone_ref(py),
+            _ => PyString::new(py, self.method.as_str()).unbind(),
+        };
+        Ok(res)
     }
 
     pub(crate) fn url(&self) -> &str {

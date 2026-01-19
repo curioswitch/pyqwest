@@ -4,7 +4,7 @@ use pyo3::{
     pybacked::PyBackedBytes,
     pyclass, pyfunction, pymethods,
     sync::PyOnceLock,
-    types::{PyAnyMethods as _, PyModule},
+    types::{PyAnyMethods as _, PyModule, PyString},
     Bound, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use tokio_stream::StreamExt as _;
@@ -53,8 +53,8 @@ impl Request {
     }
 
     #[getter]
-    fn method(&self) -> &str {
-        self.head.method()
+    fn method(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
+        self.head.method(py)
     }
 
     #[getter]

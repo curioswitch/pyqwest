@@ -2,7 +2,7 @@ use bytes::Bytes;
 use pyo3::{
     pybacked::PyBackedBytes,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyIterator, PyTuple},
+    types::{PyAnyMethods as _, PyIterator, PyString, PyTuple},
     Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -44,8 +44,8 @@ impl SyncRequest {
     }
 
     #[getter]
-    fn method(&self) -> &str {
-        self.head.method()
+    fn method(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
+        self.head.method(py)
     }
 
     #[getter]
