@@ -1,7 +1,7 @@
 use pyo3::{pyclass, pymethods, types::PyString, Py, Python};
 
 /// An enumeration of HTTP versions.
-#[pyclass(module = "pyqwest", frozen)]
+#[pyclass(module = "pyqwest", frozen, eq, ord)]
 pub(crate) struct HTTPVersion {
     py: Py<PyString>,
     rs: http::Version,
@@ -59,5 +59,17 @@ impl HTTPVersion {
 impl HTTPVersion {
     pub(crate) fn as_rust(&self) -> http::Version {
         self.rs
+    }
+}
+
+impl PartialEq for HTTPVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.rs == other.rs
+    }
+}
+
+impl PartialOrd for HTTPVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.rs.partial_cmp(&other.rs)
     }
 }
