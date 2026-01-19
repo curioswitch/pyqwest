@@ -9,7 +9,7 @@ use pyo3_async_runtimes::tokio::future_into_py;
 use crate::asyncio::awaitable::{EmptyAwaitable, ValueAwaitable};
 use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
-use crate::common::HTTPVersion;
+use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};

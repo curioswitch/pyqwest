@@ -12,7 +12,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::{
-    common::{FullResponse, HTTPVersion},
+    common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
     shared::{
         buffer::BytesMemoryView,
@@ -101,10 +101,11 @@ impl SyncResponse {
         content: Option<Bound<'_, PyAny>>,
         trailers: Option<Bound<'_, Headers>>,
     ) -> PyResult<Self> {
+        let constants = Constants::get(py)?;
         let http_version = if let Some(http_version) = http_version {
             http_version.get()
         } else {
-            &HTTPVersion::HTTP1
+            constants.http_1.get()
         };
         let content = if let Some(content) = content {
             content
@@ -117,7 +118,7 @@ impl SyncResponse {
             content: Content::Custom(content.unbind()),
             trailers,
             request_iter: Arc::new(Mutex::new(None)),
-            constants: Constants::get(py)?,
+            constants,
         })
     }
 

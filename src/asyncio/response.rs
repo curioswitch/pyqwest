@@ -13,7 +13,7 @@ use crate::{
     asyncio::awaitable::{
         EmptyAsyncIterator, EmptyAwaitable, ErrorAwaitable, ValueAsyncIterator, ValueAwaitable,
     },
-    common::HTTPVersion,
+    common::httpversion::HTTPVersion,
     headers::Headers,
     shared::{
         buffer::BytesMemoryView,
@@ -98,10 +98,11 @@ impl Response {
         content: Option<Bound<'_, PyAny>>,
         trailers: Option<Bound<'_, Headers>>,
     ) -> PyResult<Self> {
+        let constants = Constants::get(py)?;
         let http_version = if let Some(http_version) = http_version {
             http_version.get()
         } else {
-            &HTTPVersion::HTTP1
+            constants.http_1.get()
         };
         let content = if let Some(content) = content {
             content
@@ -114,7 +115,7 @@ impl Response {
             content: Content::Custom(content.unbind()),
             trailers,
             request_iter_task: Mutex::new(None),
-            constants: Constants::get(py)?,
+            constants,
         })
     }
 

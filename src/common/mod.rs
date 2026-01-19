@@ -10,25 +10,8 @@ use pyo3::{
 
 use crate::{headers::Headers, shared::constants::Constants};
 
-#[pyclass(module = "pyqwest", frozen, eq, eq_int)]
-#[derive(Clone, PartialEq)]
-pub(crate) enum HTTPVersion {
-    HTTP1,
-    HTTP2,
-    HTTP3,
-}
-
-#[pymethods]
-impl HTTPVersion {
-    fn __str__(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
-        let constants = Constants::get(py)?;
-        match self {
-            HTTPVersion::HTTP1 => Ok(constants.http_1_1.clone_ref(py)),
-            HTTPVersion::HTTP2 => Ok(constants.http_2.clone_ref(py)),
-            HTTPVersion::HTTP3 => Ok(constants.http_3.clone_ref(py)),
-        }
-    }
-}
+/// An enum type class corresponding to HTTP versions.
+pub(crate) mod httpversion;
 
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct FullResponse {
