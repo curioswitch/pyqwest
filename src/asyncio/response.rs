@@ -82,7 +82,6 @@ impl Response {
             headers: self.head.headers,
             body: bytes,
             trailers: self.trailers,
-            constants: self.constants,
         })
     }
 }
@@ -142,8 +141,8 @@ impl Response {
     }
 
     #[getter]
-    fn http_version(&self) -> HTTPVersion {
-        self.head.http_version()
+    fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
+        self.head.http_version(py)
     }
 
     #[getter]
