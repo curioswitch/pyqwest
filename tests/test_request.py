@@ -132,7 +132,6 @@ async def test_request_methods(method: str):
     assert request.method == method
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "method",
     ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE", "CUSTOM"],
