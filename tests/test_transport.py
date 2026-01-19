@@ -61,6 +61,28 @@ async def test_default_sync_client(url: str) -> None:
     assert res.content == b""
 
 
+@pytest.mark.asyncio
+async def test_status_codes(url: str, subtests: pytest.Subtests) -> None:
+    client = Client()
+    url = f"{url}/echo"
+    for i in range(200, 599):
+        with subtests.test(f"status={i}"):
+            res = await client.get(url, {"x-response-status": str(i)})
+            assert res.status == i
+
+
+@pytest.mark.asyncio
+async def test_status_codes_sync(url: str, subtests: pytest.Subtests) -> None:
+    client = SyncClient()
+    url = f"{url}/echo"
+    for i in range(200, 599):
+        with subtests.test(f"status={i}"):
+            res = await asyncio.to_thread(
+                client.get, url, {"x-response-status": str(i)}
+            )
+            assert res.status == i
+
+
 # Most options are performance related and can't really be
 # tested but it's worth adding coverage for them anyways.
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ use arc_swap::ArcSwapOption;
 use pyo3::{
     exceptions::PyStopAsyncIteration,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyBytes},
+    types::{PyAnyMethods as _, PyBytes, PyInt},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::future_into_py;
@@ -78,7 +78,7 @@ impl Response {
         // SAFETY - we only call into_full_response without allowing the user to close this response.
         let bytes = body.as_ref().unwrap().read_full().await?;
         Ok(RustFullResponse {
-            status: self.head.status(),
+            status: self.head.http_status(),
             headers: self.head.headers,
             body: bytes,
             trailers: self.trailers,
@@ -137,8 +137,8 @@ impl Response {
     }
 
     #[getter]
-    fn status(&self) -> u16 {
-        self.head.status()
+    fn status(&self, py: Python<'_>) -> PyResult<Py<PyInt>> {
+        self.head.status(py)
     }
 
     #[getter]

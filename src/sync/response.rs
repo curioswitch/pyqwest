@@ -5,7 +5,7 @@ use bytes::Bytes;
 use pyo3::{
     exceptions::PyRuntimeError,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyBytes, PyTuple},
+    types::{PyAnyMethods as _, PyBytes, PyInt, PyTuple},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -137,8 +137,8 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn status(&self) -> u16 {
-        self.head.status()
+    fn status(&self, py: Python<'_>) -> PyResult<Py<PyInt>> {
+        self.head.status(py)
     }
 
     #[getter]
@@ -209,7 +209,7 @@ impl SyncResponse {
 
 impl SyncResponse {
     pub(super) fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let status = self.head.status();
+        let status = self.head.status(py)?;
         let headers = self.head.headers(py);
         let trailers = self.trailers.clone_ref(py);
         let content = match &self.content {
@@ -244,7 +244,7 @@ impl SyncResponse {
                 }
             }
         };
-        FullResponse::new(py, status, headers, content, trailers).into_bound_py_any(py)
+        FullResponse::py_new(status, headers, content, trailers).into_bound_py_any(py)
     }
 }
 
