@@ -10,7 +10,9 @@ use pyo3::{
 
 use crate::{headers::Headers, shared::constants::Constants};
 
-/// An enum type class corresponding to HTTP versions.
+/// An enum type corresponding to HTTP header names.
+pub(crate) mod headername;
+/// An enum type corresponding to HTTP versions.
 pub(crate) mod httpversion;
 
 #[pyclass(module = "pyqwest", frozen)]
