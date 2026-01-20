@@ -112,7 +112,7 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 connect_timeout: Some(30.0),
                 read_timeout: None,
                 pool_idle_timeout: Some(90.0),
-                pool_max_idle_per_host: Some(2),
+                pool_max_idle_per_host: None,
                 tcp_keepalive_interval: Some(30.0),
                 enable_gzip: true,
                 enable_brotli: true,
