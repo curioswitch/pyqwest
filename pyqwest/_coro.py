@@ -19,6 +19,10 @@ class Client:
 
     A client is a lightweight wrapper around a Transport, providing convenience methods
     for common HTTP operations with buffering.
+
+    The asynchronous client does not expose per-request timeouts on its methods.
+    Use `asyncio.wait_for` or similar to enforce timeouts per-requests or initialize
+    `HTTPTransport` with a default timeout.
     """
 
     _client: NativeClient
@@ -36,27 +40,24 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a GET HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.get(url, headers=headers, timeout=timeout)
+        return await self._client.get(url, headers=headers)
 
     async def post(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a POST HTTP request.
 
@@ -64,79 +65,69 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.post(
-            url, headers=headers, content=content, timeout=timeout
-        )
+        return await self._client.post(url, headers=headers, content=content)
 
     async def delete(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a DELETE HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.delete(url, headers=headers, timeout=timeout)
+        return await self._client.delete(url, headers=headers)
 
     async def head(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a HEAD HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.head(url, headers=headers, timeout=timeout)
+        return await self._client.head(url, headers=headers)
 
     async def options(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a OPTIONS HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.options(url, headers=headers, timeout=timeout)
+        return await self._client.options(url, headers=headers)
 
     async def patch(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a PATCH HTTP request.
 
@@ -144,22 +135,18 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.patch(
-            url, headers=headers, content=content, timeout=timeout
-        )
+        return await self._client.patch(url, headers=headers, content=content)
 
     async def put(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes a PUT HTTP request.
 
@@ -167,15 +154,12 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.put(
-            url, headers=headers, content=content, timeout=timeout
-        )
+        return await self._client.put(url, headers=headers, content=content)
 
     async def execute(
         self,
@@ -183,7 +167,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> FullResponse:
         """Executes an HTTP request, returning the full buffered response.
 
@@ -192,15 +175,12 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
-        return await self._client.execute(
-            method, url, headers=headers, content=content, timeout=timeout
-        )
+        return await self._client.execute(method, url, headers=headers, content=content)
 
     @asynccontextmanager
     async def stream(
@@ -209,7 +189,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> AsyncIterator[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
@@ -218,14 +197,13 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
         """
         response = await self._client.stream(
-            method, url, headers=headers, content=content, timeout=timeout
+            method, url, headers=headers, content=content
         )
         async with response:
             yield response

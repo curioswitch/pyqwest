@@ -2,8 +2,10 @@ use pyo3::{prelude::*, IntoPyObjectExt as _};
 
 use crate::headers::Headers;
 use crate::shared::constants::Constants;
+use crate::shared::validation::validate_timeout;
 use crate::sync::request::SyncRequest;
 use crate::sync::response::SyncResponse;
+use crate::sync::timeout::set_timeout;
 use crate::sync::transport::{get_default_sync_transport, SyncHttpTransport};
 
 enum Transport {
@@ -161,6 +163,12 @@ impl SyncClient {
         content: Option<Bound<'py, PyAny>>,
         timeout: Option<f64>,
     ) -> PyResult<Bound<'py, SyncResponse>> {
+        let timeout = validate_timeout(timeout)?;
+        let _timeout_guard = if let Some(timeout) = timeout {
+            Some(set_timeout(py, timeout)?.enter(py))
+        } else {
+            None
+        };
         let headers = if let Some(headers) = headers {
             if let Ok(headers) = headers.cast::<Headers>() {
                 Some(headers.clone())
@@ -170,7 +178,7 @@ impl SyncClient {
         } else {
             None
         };
-        let request = SyncRequest::new(py, method, url, headers, content, timeout)?;
+        let request = SyncRequest::new(py, method, url, headers, content)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request)?.into_pyobject(py),
             Transport::Custom(transport) => {

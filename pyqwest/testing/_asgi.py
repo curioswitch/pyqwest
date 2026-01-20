@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -160,14 +159,9 @@ class ASGITransport(Transport):
         async def send(message: ASGISendEvent) -> None:
             await send_queue.put(message)
 
-        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
-        if timeout is not None and (timeout < 0 or not math.isfinite(timeout)):
-            msg = "Timeout must be non-negative"
-            raise ValueError(msg)
-
         async def run_app() -> None:
             try:
-                await asyncio.wait_for(self._app(scope, receive, send), timeout=timeout)
+                await self._app(scope, receive, send)
             except asyncio.TimeoutError as e:
                 send_queue.put_nowait(TimeoutError(str(e)))
             except Exception as e:

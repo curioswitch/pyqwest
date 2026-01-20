@@ -63,6 +63,8 @@ mod pyqwest {
     #[pymodule_export]
     use sync::response::SyncResponse;
     #[pymodule_export]
+    use sync::timeout::{get_timeout, set_timeout};
+    #[pymodule_export]
     use sync::transport::{get_default_sync_transport, SyncHttpTransport};
 
     #[pymodule_init]

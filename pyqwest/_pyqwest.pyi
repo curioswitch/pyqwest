@@ -1,3 +1,4 @@
+import datetime
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -208,6 +209,9 @@ class Client:
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
 
+        The asynchronous client does not expose per-request timeouts on its methods.
+        Use `asyncio.wait_for` or similar to enforce timeouts on requests.
+
         Args:
             transport: The transport to use for requests. If None, the shared default
                        transport will be used.
@@ -217,14 +221,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a GET HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -238,7 +240,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a POST HTTP request.
 
@@ -246,7 +247,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -259,14 +259,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a DELETE HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -279,14 +277,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a HEAD HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -299,14 +295,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a OPTIONS HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -320,7 +314,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PATCH HTTP request.
 
@@ -342,7 +335,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PUT HTTP request.
 
@@ -350,7 +342,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -365,7 +356,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes an HTTP request, returning the full buffered response.
 
@@ -374,7 +364,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -389,7 +378,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
@@ -398,7 +386,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -1398,3 +1385,6 @@ class HTTPHeaderName:
 
     X_XSS_PROTECTION: HTTPHeaderName
     """The "x-xss-protection" header."""
+
+def set_sync_timeout(timeout: float) -> AbstractContextManager[None]: ...
+def get_sync_timeout() -> datetime.timedelta | None: ...
