@@ -498,7 +498,6 @@ def get_default_transport() -> HTTPTransport:
     HTTPTransport(
         connect_timeout=30.0,
         pool_idle_timeout=90.0,
-        pool_max_idle_per_host=2,
         tcp_keepalive_interval=30.0,
         enable_gzip: bool = True,
         enable_brotli: bool = True,
@@ -925,7 +924,6 @@ def get_default_sync_transport() -> SyncHTTPTransport:
     SyncHTTPTransport(
         connect_timeout=30.0,
         pool_idle_timeout=90.0,
-        pool_max_idle_per_host=2,
         tcp_keepalive_interval=30.0,
         enable_gzip: bool = True,
         enable_brotli: bool = True,
