@@ -1398,3 +1398,13 @@ class HTTPHeaderName:
 
     X_XSS_PROTECTION: HTTPHeaderName
     """The "x-xss-protection" header."""
+
+class _Backoff:
+    def __init__(
+        self,
+        initial_interval: float,
+        randomization_factor: float,
+        multiplier: float,
+        max_interval: float,
+    ) -> None: ...
+    def next_backoff(self) -> float | None: ...
