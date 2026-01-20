@@ -419,23 +419,20 @@ class HTTPTransport:
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
         timeout: float | None = None,
-        connect_timeout: float | None = None,
+        connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
-        pool_idle_timeout: float | None = None,
-        pool_max_idle_per_host: int | None = None,
-        tcp_keepalive_interval: float | None = None,
-        enable_gzip: bool = False,
-        enable_brotli: bool = False,
-        enable_zstd: bool = False,
+        pool_idle_timeout: float | None = 90.0,
+        pool_max_idle_per_host: int | None = 2,
+        tcp_keepalive_interval: float | None = 30.0,
+        enable_gzip: bool = True,
+        enable_brotli: bool = True,
+        enable_zstd: bool = True,
         use_system_dns: bool = False,
     ) -> None:
         """Creates a new HTTPTransport object.
 
-        Without any arguments, the transport behaves like a raw, low-level HTTP transport,
-        with no timeouts or other higher level behavior. When creating a transport, take care
-        to set options to meet your needs. Also consider using get_default_transport instead
-        which is preconfigured with reasonable defaults, though does not support custom TLS
-        certificates.
+        Without any arguments, the transport behaves like the default transport. When creating
+        a transport, take care to set options to meet your needs.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
@@ -854,23 +851,20 @@ class SyncHTTPTransport:
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
         timeout: float | None = None,
-        connect_timeout: float | None = None,
+        connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
-        pool_idle_timeout: float | None = None,
-        pool_max_idle_per_host: int | None = None,
-        tcp_keepalive_interval: float | None = None,
-        enable_gzip: bool = False,
-        enable_brotli: bool = False,
-        enable_zstd: bool = False,
+        pool_idle_timeout: float | None = 90.0,
+        pool_max_idle_per_host: int | None = 2,
+        tcp_keepalive_interval: float | None = 30.0,
+        enable_gzip: bool = True,
+        enable_brotli: bool = True,
+        enable_zstd: bool = True,
         use_system_dns: bool = False,
     ) -> None:
         """Creates a new SyncHTTPTransport object.
 
-        Without any arguments, the transport behaves like a raw, low-level HTTP transport,
-        with no timeouts or other higher level behavior. When creating a transport, take care
-        to set options to meet your needs. Also consider using get_default_transport instead
-        which is preconfigured with reasonable defaults, though does not support custom TLS
-        certificates.
+        Without any arguments, the transport behaves like the default transport. When creating
+        a transport, take care to set options to meet your needs.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
