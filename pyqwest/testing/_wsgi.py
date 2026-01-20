@@ -189,8 +189,9 @@ class WSGITransport(SyncTransport):
         if not response_started.wait(
             timeout=timeout.total_seconds() if timeout is not None else None
         ):
+            request_input.close()
             msg = "Application did not start response before timeout"
-            raise TimeoutError(msg)
+            raise WSGITimeoutError(msg, app_future)
 
         if status_str is _UNSET_STATUS:
             return SyncResponse(
@@ -400,3 +401,19 @@ class ResponseContent(Iterator[bytes]):
         self._response_queue.put(ReadError("Response body read cancelled"))
         with contextlib.suppress(Exception):
             self._app_future.result()
+
+
+class WSGITimeoutError(TimeoutError):
+    """Timeout error raised by WSGI transport.
+
+    Contains a handle to the app future to allow joining on its thread.
+    """
+
+    def __init__(self, msg: str, app_future: Future) -> None:
+        super().__init__(msg)
+        self._app_future = app_future
+
+    def wait(self, timeout: float | None = None) -> None:
+        """Waits for the WSGI application to finish."""
+        with contextlib.suppress(Exception):
+            self._app_future.result(timeout)
