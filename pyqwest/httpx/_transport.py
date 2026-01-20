@@ -19,6 +19,7 @@ from pyqwest import (
     SyncRequest,
     SyncResponse,
 )
+from pyqwest._pyqwest import set_sync_timeout
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -49,14 +50,16 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
         timeout = convert_timeout(httpx_request.extensions)
 
         try:
-            response = await self._transport.execute(
-                Request(
-                    httpx_request.method,
-                    str(httpx_request.url),
-                    headers=request_headers,
-                    content=request_content,
-                    timeout=timeout,  # pyright: ignore[reportCallIssue]
-                )
+            response = await asyncio.wait_for(
+                self._transport.execute(
+                    Request(
+                        httpx_request.method,
+                        str(httpx_request.url),
+                        headers=request_headers,
+                        content=request_content,
+                    )
+                ),
+                timeout,
             )
         except StreamError as e:
             raise map_stream_error(e) from e
@@ -141,6 +144,10 @@ class PyqwestTransport(httpx.BaseTransport):
         request_headers = convert_headers(httpx_request.headers)
         request_content = sync_request_content(httpx_request.stream)
         timeout = convert_timeout(httpx_request.extensions)
+        timeout_manager = None
+        if timeout is not None:
+            timeout_manager = set_sync_timeout(timeout)
+            timeout_manager.__enter__()
 
         try:
             response = self._transport.execute_sync(
@@ -149,11 +156,13 @@ class PyqwestTransport(httpx.BaseTransport):
                     str(httpx_request.url),
                     headers=request_headers,
                     content=request_content,
-                    timeout=timeout,  # pyright: ignore[reportCallIssue]
                 )
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        finally:
+            if timeout_manager is not None:
+                timeout_manager.__exit__(None, None, None)
 
         def get_trailers() -> httpx.Headers:
             return httpx.Headers(tuple(response.trailers.items()))
