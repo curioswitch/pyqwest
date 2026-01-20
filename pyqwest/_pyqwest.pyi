@@ -29,7 +29,10 @@ class Headers:
     """
 
     def __init__(
-        self, items: Mapping[str, str] | Iterable[tuple[str, str]] | None = None
+        self,
+        items: Mapping[str | HTTPHeaderName, str]
+        | Iterable[tuple[str | HTTPHeaderName, str]]
+        | None = None,
     ) -> None:
         """Creates a new Headers object.
 
@@ -37,7 +40,7 @@ class Headers:
             items: Initial headers to add.
         """
 
-    def __getitem__(self, key: str) -> str:
+    def __getitem__(self, key: str | HTTPHeaderName) -> str:
         """Return the header value for the key.
 
         If multiple values are present for the key, returns the first value.
@@ -49,7 +52,7 @@ class Headers:
             KeyError: If the key is not present.
         """
 
-    def __setitem__(self, key: str, value: str) -> None:
+    def __setitem__(self, key: str | HTTPHeaderName, value: str) -> None:
         """Sets the header value for the key, replacing any existing values.
 
         Args:
@@ -57,7 +60,7 @@ class Headers:
             value: The header value.
         """
 
-    def __delitem__(self, key: str) -> None:
+    def __delitem__(self, key: str | HTTPHeaderName) -> None:
         """Deletes all values for the key.
 
         Args:
@@ -81,7 +84,7 @@ class Headers:
             other: The object to compare against.
         """
 
-    def get(self, key: str, default: str | None = None) -> str | None:
+    def get(self, key: str | HTTPHeaderName, default: str | None = None) -> str | None:
         """Returns the header value for the key, or default if not present.
 
         Args:
@@ -90,7 +93,7 @@ class Headers:
         """
 
     @overload
-    def pop(self, key: str) -> str:
+    def pop(self, key: str | HTTPHeaderName) -> str:
         """Removes and returns the header value for the key.
 
         Args:
@@ -101,7 +104,7 @@ class Headers:
         """
 
     @overload
-    def pop(self, key: str, default: _T) -> str | _T:
+    def pop(self, key: str | HTTPHeaderName, default: _T) -> str | _T:
         """Removes and returns the header value for the key, or default if not present.
 
         Args:
@@ -117,7 +120,7 @@ class Headers:
             KeyError: If the headers are empty.
         """
 
-    def setdefault(self, key: str, default: str | None = None) -> str:
+    def setdefault(self, key: str | HTTPHeaderName, default: str | None = None) -> str:
         """If the key is not present, sets it to the default value.
         Returns the value for the key.
 
@@ -126,7 +129,7 @@ class Headers:
             default: The default value to set and return if the key is not present.
         """
 
-    def add(self, key: str, value: str) -> None:
+    def add(self, key: str | HTTPHeaderName, value: str) -> None:
         """Adds a header value for the key. Existing values are preserved.
 
         Args:
@@ -143,7 +146,11 @@ class Headers:
         """
     @overload
     def update(
-        self, items: Mapping[str, str] | Iterable[tuple[str, str]], /, **kwargs: str
+        self,
+        items: Mapping[str | HTTPHeaderName, str]
+        | Iterable[tuple[str | HTTPHeaderName, str]],
+        /,
+        **kwargs: str,
     ) -> None:
         """Updates headers with the provided items. Existing values are replaced.
 
@@ -155,7 +162,7 @@ class Headers:
     def clear(self) -> None:
         """Removes all headers."""
 
-    def getall(self, key: str) -> Sequence[str]:
+    def getall(self, key: str | HTTPHeaderName) -> Sequence[str]:
         """Returns all header values for the key.
 
         Args:
@@ -1137,3 +1144,257 @@ class ReadError(Exception):
 
 class WriteError(Exception):
     """An error representing a write error during request sending."""
+
+class HTTPHeaderName:
+    """An enum type corresponding to HTTP header names."""
+
+    def __init__(self, name: str) -> None:
+        """Creates a new HTTPHeaderName. When available, prefer one of the
+        class attributes.
+
+        Args:
+            name: The header name.
+        """
+
+    ACCEPT: HTTPHeaderName
+    """The "accept" header."""
+
+    ACCEPT_CHARSET: HTTPHeaderName
+    """The "accept-charset" header."""
+
+    ACCEPT_ENCODING: HTTPHeaderName
+    """The "accept-encoding" header."""
+
+    ACCEPT_LANGUAGE: HTTPHeaderName
+    """The "accept-language" header."""
+
+    ACCEPT_RANGES: HTTPHeaderName
+    """The "accept-ranges" header."""
+
+    ACCESS_CONTROL_ALLOW_CREDENTIALS: HTTPHeaderName
+    """The "access-control-allow-credentials" header."""
+
+    ACCESS_CONTROL_ALLOW_HEADERS: HTTPHeaderName
+    """The "access-control-allow-headers" header."""
+
+    ACCESS_CONTROL_ALLOW_METHODS: HTTPHeaderName
+    """The "access-control-allow-methods" header."""
+
+    ACCESS_CONTROL_ALLOW_ORIGIN: HTTPHeaderName
+    """The "access-control-allow-origin" header."""
+
+    ACCESS_CONTROL_EXPOSE_HEADERS: HTTPHeaderName
+    """The "access-control-expose-headers" header."""
+
+    ACCESS_CONTROL_MAX_AGE: HTTPHeaderName
+    """The "access-control-max-age" header."""
+
+    ACCESS_CONTROL_REQUEST_HEADERS: HTTPHeaderName
+    """The "access-control-request-headers" header."""
+
+    ACCESS_CONTROL_REQUEST_METHOD: HTTPHeaderName
+    """The "access-control-request-method" header."""
+
+    AGE: HTTPHeaderName
+    """The "age" header."""
+
+    ALLOW: HTTPHeaderName
+    """The "allow" header."""
+
+    ALT_SVC: HTTPHeaderName
+    """The "alt-svc" header."""
+
+    AUTHORIZATION: HTTPHeaderName
+    """The "authorization" header."""
+
+    CACHE_CONTROL: HTTPHeaderName
+    """The "cache-control" header."""
+
+    CACHE_STATUS: HTTPHeaderName
+    """The "cache-status" header."""
+
+    CDN_CACHE_CONTROL: HTTPHeaderName
+    """The "cdn-cache-control" header."""
+
+    CONNECTION: HTTPHeaderName
+    """The "connection" header."""
+
+    CONTENT_DISPOSITION: HTTPHeaderName
+    """The "content-disposition" header."""
+
+    CONTENT_ENCODING: HTTPHeaderName
+    """The "content-encoding" header."""
+
+    CONTENT_LANGUAGE: HTTPHeaderName
+    """The "content-language" header."""
+
+    CONTENT_LENGTH: HTTPHeaderName
+    """The "content-length" header."""
+
+    CONTENT_LOCATION: HTTPHeaderName
+    """The "content-location" header."""
+
+    CONTENT_RANGE: HTTPHeaderName
+    """The "content-range" header."""
+
+    CONTENT_SECURITY_POLICY: HTTPHeaderName
+    """The "content-security-policy" header."""
+
+    CONTENT_SECURITY_POLICY_REPORT_ONLY: HTTPHeaderName
+    """The "content-security-policy-report-only" header."""
+
+    CONTENT_TYPE: HTTPHeaderName
+    """The "content-type" header."""
+
+    COOKIE: HTTPHeaderName
+    """The "cookie" header."""
+
+    DNT: HTTPHeaderName
+    """The "dnt" header."""
+
+    DATE: HTTPHeaderName
+    """The "date" header."""
+
+    ETAG: HTTPHeaderName
+    """The "etag" header."""
+
+    EXPECT: HTTPHeaderName
+    """The "expect" header."""
+
+    EXPIRES: HTTPHeaderName
+    """The "expires" header."""
+
+    FORWARDED: HTTPHeaderName
+    """The "forwarded" header."""
+
+    FROM: HTTPHeaderName
+    """The "from" header."""
+
+    HOST: HTTPHeaderName
+    """The "host" header."""
+
+    IF_MATCH: HTTPHeaderName
+    """The "if-match" header."""
+
+    IF_MODIFIED_SINCE: HTTPHeaderName
+    """The "if-modified-since" header."""
+
+    IF_NONE_MATCH: HTTPHeaderName
+    """The "if-none-match" header."""
+
+    IF_RANGE: HTTPHeaderName
+    """The "if-range" header."""
+
+    IF_UNMODIFIED_SINCE: HTTPHeaderName
+    """The "if-unmodified-since" header."""
+
+    LAST_MODIFIED: HTTPHeaderName
+    """The "last-modified" header."""
+
+    LINK: HTTPHeaderName
+    """The "link" header."""
+
+    LOCATION: HTTPHeaderName
+    """The "location" header."""
+
+    MAX_FORWARDS: HTTPHeaderName
+    """The "max-forwards" header."""
+
+    ORIGIN: HTTPHeaderName
+    """The "origin" header."""
+
+    PRAGMA: HTTPHeaderName
+    """The "pragma" header."""
+
+    PROXY_AUTHENTICATE: HTTPHeaderName
+    """The "proxy-authenticate" header."""
+
+    PROXY_AUTHORIZATION: HTTPHeaderName
+    """The "proxy-authorization" header."""
+
+    PUBLIC_KEY_PINS: HTTPHeaderName
+    """The "public-key-pins" header."""
+
+    PUBLIC_KEY_PINS_REPORT_ONLY: HTTPHeaderName
+    """The "public-key-pins-report-only" header."""
+
+    RANGE: HTTPHeaderName
+    """The "range" header."""
+
+    REFERER: HTTPHeaderName
+    """The "referer" header."""
+
+    REFERRER_POLICY: HTTPHeaderName
+    """The "referrer-policy" header."""
+
+    REFRESH: HTTPHeaderName
+    """The "refresh" header."""
+
+    RETRY_AFTER: HTTPHeaderName
+    """The "retry-after" header."""
+
+    SEC_WEBSOCKET_ACCEPT: HTTPHeaderName
+    """The "sec-websocket-accept" header."""
+
+    SEC_WEBSOCKET_EXTENSIONS: HTTPHeaderName
+    """The "sec-websocket-extensions" header."""
+
+    SEC_WEBSOCKET_KEY: HTTPHeaderName
+    """The "sec-websocket-key" header."""
+
+    SEC_WEBSOCKET_PROTOCOL: HTTPHeaderName
+    """The "sec-websocket-protocol" header."""
+
+    SEC_WEBSOCKET_VERSION: HTTPHeaderName
+    """The "sec-websocket-version" header."""
+
+    SERVER: HTTPHeaderName
+    """The "server" header."""
+
+    SET_COOKIE: HTTPHeaderName
+    """The "set-cookie" header."""
+
+    STRICT_TRANSPORT_SECURITY: HTTPHeaderName
+    """The "strict-transport-security" header."""
+
+    TE: HTTPHeaderName
+    """The "te" header."""
+
+    TRAILER: HTTPHeaderName
+    """The "trailer" header."""
+
+    TRANSFER_ENCODING: HTTPHeaderName
+    """The "transfer-encoding" header."""
+
+    USER_AGENT: HTTPHeaderName
+    """The "user-agent" header."""
+
+    UPGRADE: HTTPHeaderName
+    """The "upgrade" header."""
+
+    UPGRADE_INSECURE_REQUESTS: HTTPHeaderName
+    """The "upgrade-insecure-requests" header."""
+
+    VARY: HTTPHeaderName
+    """The "vary" header."""
+
+    VIA: HTTPHeaderName
+    """The "via" header."""
+
+    WARNING: HTTPHeaderName
+    """The "warning" header."""
+
+    WWW_AUTHENTICATE: HTTPHeaderName
+    """The "www-authenticate" header."""
+
+    X_CONTENT_TYPE_OPTIONS: HTTPHeaderName
+    """The "x-content-type-options" header."""
+
+    X_DNS_PREFETCH_CONTROL: HTTPHeaderName
+    """The "x-dns-prefetch-control" header."""
+
+    X_FRAME_OPTIONS: HTTPHeaderName
+    """The "x-frame-options" header."""
+
+    X_XSS_PROTECTION: HTTPHeaderName
+    """The "x-xss-protection" header."""

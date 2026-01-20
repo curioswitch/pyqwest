@@ -1,13 +1,13 @@
 use std::{ops::Deref, sync::Arc};
 
-use http::StatusCode;
+use http::{header, HeaderName, StatusCode};
 use pyo3::{
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyBytes, PyInt, PyString},
     Py, PyAny, PyResult, PyTypeInfo, Python,
 };
 
-use crate::common::httpversion::HTTPVersion;
+use crate::common::{headername::HttpHeaderName, httpversion::HTTPVersion};
 
 /// Constants used when creating Python objects. These are mostly strings,
 /// which `PyO3` provides the intern! macro for, but it still has a very small amount
@@ -36,6 +36,16 @@ pub(crate) struct ConstantsInner {
     pub execute: Py<PyString>,
     /// The string "`execute_sync`".
     pub execute_sync: Py<PyString>,
+
+    /// The _glue.py function `execute_and_read_full`.
+    pub execute_and_read_full: Py<PyAny>,
+    /// The _glue.py function `forward`.
+    pub forward: Py<PyAny>,
+    /// The _glue.py function `read_content_sync`.
+    pub read_content_sync: Py<PyAny>,
+
+    /// The stdlib function `json.loads`.
+    pub json_loads: Py<PyAny>,
 
     // HTTP Versions
     /// HTTPVersion.HTTP1
@@ -182,15 +192,168 @@ pub(crate) struct ConstantsInner {
     /// The code Network Authentication Required.
     status_network_authentication_required: Py<PyInt>,
 
-    /// The _glue.py function `execute_and_read_full`.
-    pub execute_and_read_full: Py<PyAny>,
-    /// The _glue.py function `forward`.
-    pub forward: Py<PyAny>,
-    /// The _glue.py function `read_content_sync`.
-    pub read_content_sync: Py<PyAny>,
-
-    /// The stdlib function `json.loads`.
-    pub json_loads: Py<PyAny>,
+    /// The 'accept' header.
+    header_accept: Py<HttpHeaderName>,
+    /// The 'accept-charset' header.
+    header_accept_charset: Py<HttpHeaderName>,
+    /// The 'accept-encoding' header.
+    header_accept_encoding: Py<HttpHeaderName>,
+    /// The 'accept-language' header.
+    header_accept_language: Py<HttpHeaderName>,
+    /// The 'accept-ranges' header.
+    header_accept_ranges: Py<HttpHeaderName>,
+    /// The 'access-control-allow-credentials' header.
+    header_access_control_allow_credentials: Py<HttpHeaderName>,
+    /// The 'access-control-allow-headers' header.
+    header_access_control_allow_headers: Py<HttpHeaderName>,
+    /// The 'access-control-allow-methods' header.
+    header_access_control_allow_methods: Py<HttpHeaderName>,
+    /// The 'access-control-allow-origin' header.
+    header_access_control_allow_origin: Py<HttpHeaderName>,
+    /// The 'access-control-expose-headers' header.
+    header_access_control_expose_headers: Py<HttpHeaderName>,
+    /// The 'access-control-max-age' header.
+    header_access_control_max_age: Py<HttpHeaderName>,
+    /// The 'access-control-request-headers' header.
+    header_access_control_request_headers: Py<HttpHeaderName>,
+    /// The 'access-control-request-method' header.
+    header_access_control_request_method: Py<HttpHeaderName>,
+    /// The 'age' header.
+    header_age: Py<HttpHeaderName>,
+    /// The 'allow' header.
+    header_allow: Py<HttpHeaderName>,
+    /// The 'alt-svc' header.
+    header_alt_svc: Py<HttpHeaderName>,
+    /// The 'authorization' header.
+    header_authorization: Py<HttpHeaderName>,
+    /// The 'cache-control' header.
+    header_cache_control: Py<HttpHeaderName>,
+    /// The 'cache-status' header.
+    header_cache_status: Py<HttpHeaderName>,
+    /// The 'cdn-cache-control' header.
+    header_cdn_cache_control: Py<HttpHeaderName>,
+    /// The 'connection' header.
+    header_connection: Py<HttpHeaderName>,
+    /// The 'content-disposition' header.
+    header_content_disposition: Py<HttpHeaderName>,
+    /// The 'content-encoding' header.
+    header_content_encoding: Py<HttpHeaderName>,
+    /// The 'content-language' header.
+    header_content_language: Py<HttpHeaderName>,
+    /// The 'content-length' header.
+    header_content_length: Py<HttpHeaderName>,
+    /// The 'content-location' header.
+    header_content_location: Py<HttpHeaderName>,
+    /// The 'content-range' header.
+    header_content_range: Py<HttpHeaderName>,
+    /// The 'content-security-policy' header.
+    header_content_security_policy: Py<HttpHeaderName>,
+    /// The 'content-security-policy-report-only' header.
+    header_content_security_policy_report_only: Py<HttpHeaderName>,
+    /// The 'content-type' header.
+    header_content_type: Py<HttpHeaderName>,
+    /// The 'cookie' header.
+    header_cookie: Py<HttpHeaderName>,
+    /// The 'dnt' header.
+    header_dnt: Py<HttpHeaderName>,
+    /// The 'date' header.
+    header_date: Py<HttpHeaderName>,
+    /// The 'etag' header.
+    header_etag: Py<HttpHeaderName>,
+    /// The 'expect' header.
+    header_expect: Py<HttpHeaderName>,
+    /// The 'expires' header.
+    header_expires: Py<HttpHeaderName>,
+    /// The 'forwarded' header.
+    header_forwarded: Py<HttpHeaderName>,
+    /// The 'from' header.
+    header_from: Py<HttpHeaderName>,
+    /// The 'host' header.
+    header_host: Py<HttpHeaderName>,
+    /// The 'if-match' header.
+    header_if_match: Py<HttpHeaderName>,
+    /// The 'if-modified-since' header.
+    header_if_modified_since: Py<HttpHeaderName>,
+    /// The 'if-none-match' header.
+    header_if_none_match: Py<HttpHeaderName>,
+    /// The 'if-range' header.
+    header_if_range: Py<HttpHeaderName>,
+    /// The 'if-unmodified-since' header.
+    header_if_unmodified_since: Py<HttpHeaderName>,
+    /// The 'last-modified' header.
+    header_last_modified: Py<HttpHeaderName>,
+    /// The 'link' header.
+    header_link: Py<HttpHeaderName>,
+    /// The 'location' header.
+    header_location: Py<HttpHeaderName>,
+    /// The 'max-forwards' header.
+    header_max_forwards: Py<HttpHeaderName>,
+    /// The 'origin' header.
+    header_origin: Py<HttpHeaderName>,
+    /// The 'pragma' header.
+    header_pragma: Py<HttpHeaderName>,
+    /// The 'proxy-authenticate' header.
+    header_proxy_authenticate: Py<HttpHeaderName>,
+    /// The 'proxy-authorization' header.
+    header_proxy_authorization: Py<HttpHeaderName>,
+    /// The 'public-key-pins' header.
+    header_public_key_pins: Py<HttpHeaderName>,
+    /// The 'public-key-pins-report-only' header.
+    header_public_key_pins_report_only: Py<HttpHeaderName>,
+    /// The 'range' header.
+    header_range: Py<HttpHeaderName>,
+    /// The 'referer' header.
+    header_referer: Py<HttpHeaderName>,
+    /// The 'referrer-policy' header.
+    header_referrer_policy: Py<HttpHeaderName>,
+    /// The 'refresh' header.
+    header_refresh: Py<HttpHeaderName>,
+    /// The 'retry-after' header.
+    header_retry_after: Py<HttpHeaderName>,
+    /// The 'sec-websocket-accept' header.
+    header_sec_websocket_accept: Py<HttpHeaderName>,
+    /// The 'sec-websocket-extensions' header.
+    header_sec_websocket_extensions: Py<HttpHeaderName>,
+    /// The 'sec-websocket-key' header.
+    header_sec_websocket_key: Py<HttpHeaderName>,
+    /// The 'sec-websocket-protocol' header.
+    header_sec_websocket_protocol: Py<HttpHeaderName>,
+    /// The 'sec-websocket-version' header.
+    header_sec_websocket_version: Py<HttpHeaderName>,
+    /// The 'server' header.
+    header_server: Py<HttpHeaderName>,
+    /// The 'set-cookie' header.
+    header_set_cookie: Py<HttpHeaderName>,
+    /// The 'strict-transport-security' header.
+    header_strict_transport_security: Py<HttpHeaderName>,
+    /// The 'te' header.
+    header_te: Py<HttpHeaderName>,
+    /// The 'trailer' header.
+    header_trailer: Py<HttpHeaderName>,
+    /// The 'transfer-encoding' header.
+    header_transfer_encoding: Py<HttpHeaderName>,
+    /// The 'user-agent' header.
+    header_user_agent: Py<HttpHeaderName>,
+    /// The 'upgrade' header.
+    header_upgrade: Py<HttpHeaderName>,
+    /// The 'upgrade-insecure-requests' header.
+    header_upgrade_insecure_requests: Py<HttpHeaderName>,
+    /// The 'vary' header.
+    header_vary: Py<HttpHeaderName>,
+    /// The 'via' header.
+    header_via: Py<HttpHeaderName>,
+    /// The 'warning' header.
+    header_warning: Py<HttpHeaderName>,
+    /// The 'www-authenticate' header.
+    header_www_authenticate: Py<HttpHeaderName>,
+    /// The 'x-content-type-options' header.
+    header_x_content_type_options: Py<HttpHeaderName>,
+    /// The 'x-dns-prefetch-control' header.
+    header_x_dns_prefetch_control: Py<HttpHeaderName>,
+    /// The 'x-frame-options' header.
+    header_x_frame_options: Py<HttpHeaderName>,
+    /// The 'x-xss-protection' header.
+    header_x_xss_protection: Py<HttpHeaderName>,
 }
 
 static INSTANCE: PyOnceLock<Constants> = PyOnceLock::new();
@@ -220,6 +383,12 @@ impl Constants {
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
+
+                execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
+                forward: glue.getattr("forward")?.unbind(),
+                read_content_sync: glue.getattr("read_content_sync")?.unbind(),
+
+                json_loads: py.import("json")?.getattr("loads")?.unbind(),
 
                 http_1: get_class_attr::<HTTPVersion>(py, "HTTP1")?,
                 http_2: get_class_attr::<HTTPVersion>(py, "HTTP2")?,
@@ -374,11 +543,168 @@ impl Constants {
                 )
                 .unbind(),
 
-                execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
-                forward: glue.getattr("forward")?.unbind(),
-                read_content_sync: glue.getattr("read_content_sync")?.unbind(),
-
-                json_loads: py.import("json")?.getattr("loads")?.unbind(),
+                header_accept: get_class_attr::<HttpHeaderName>(py, "ACCEPT")?,
+                header_accept_charset: get_class_attr::<HttpHeaderName>(py, "ACCEPT_CHARSET")?,
+                header_accept_encoding: get_class_attr::<HttpHeaderName>(py, "ACCEPT_ENCODING")?,
+                header_accept_language: get_class_attr::<HttpHeaderName>(py, "ACCEPT_LANGUAGE")?,
+                header_accept_ranges: get_class_attr::<HttpHeaderName>(py, "ACCEPT_RANGES")?,
+                header_access_control_allow_credentials: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_ALLOW_CREDENTIALS",
+                )?,
+                header_access_control_allow_headers: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_ALLOW_HEADERS",
+                )?,
+                header_access_control_allow_methods: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_ALLOW_METHODS",
+                )?,
+                header_access_control_allow_origin: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_ALLOW_ORIGIN",
+                )?,
+                header_access_control_expose_headers: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_EXPOSE_HEADERS",
+                )?,
+                header_access_control_max_age: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_MAX_AGE",
+                )?,
+                header_access_control_request_headers: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_REQUEST_HEADERS",
+                )?,
+                header_access_control_request_method: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "ACCESS_CONTROL_REQUEST_METHOD",
+                )?,
+                header_age: get_class_attr::<HttpHeaderName>(py, "AGE")?,
+                header_allow: get_class_attr::<HttpHeaderName>(py, "ALLOW")?,
+                header_alt_svc: get_class_attr::<HttpHeaderName>(py, "ALT_SVC")?,
+                header_authorization: get_class_attr::<HttpHeaderName>(py, "AUTHORIZATION")?,
+                header_cache_control: get_class_attr::<HttpHeaderName>(py, "CACHE_CONTROL")?,
+                header_cache_status: get_class_attr::<HttpHeaderName>(py, "CACHE_STATUS")?,
+                header_cdn_cache_control: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "CDN_CACHE_CONTROL",
+                )?,
+                header_connection: get_class_attr::<HttpHeaderName>(py, "CONNECTION")?,
+                header_content_disposition: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "CONTENT_DISPOSITION",
+                )?,
+                header_content_encoding: get_class_attr::<HttpHeaderName>(py, "CONTENT_ENCODING")?,
+                header_content_language: get_class_attr::<HttpHeaderName>(py, "CONTENT_LANGUAGE")?,
+                header_content_length: get_class_attr::<HttpHeaderName>(py, "CONTENT_LENGTH")?,
+                header_content_location: get_class_attr::<HttpHeaderName>(py, "CONTENT_LOCATION")?,
+                header_content_range: get_class_attr::<HttpHeaderName>(py, "CONTENT_RANGE")?,
+                header_content_security_policy: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "CONTENT_SECURITY_POLICY",
+                )?,
+                header_content_security_policy_report_only: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "CONTENT_SECURITY_POLICY_REPORT_ONLY",
+                )?,
+                header_content_type: get_class_attr::<HttpHeaderName>(py, "CONTENT_TYPE")?,
+                header_cookie: get_class_attr::<HttpHeaderName>(py, "COOKIE")?,
+                header_dnt: get_class_attr::<HttpHeaderName>(py, "DNT")?,
+                header_date: get_class_attr::<HttpHeaderName>(py, "DATE")?,
+                header_etag: get_class_attr::<HttpHeaderName>(py, "ETAG")?,
+                header_expect: get_class_attr::<HttpHeaderName>(py, "EXPECT")?,
+                header_expires: get_class_attr::<HttpHeaderName>(py, "EXPIRES")?,
+                header_forwarded: get_class_attr::<HttpHeaderName>(py, "FORWARDED")?,
+                header_from: get_class_attr::<HttpHeaderName>(py, "FROM")?,
+                header_host: get_class_attr::<HttpHeaderName>(py, "HOST")?,
+                header_if_match: get_class_attr::<HttpHeaderName>(py, "IF_MATCH")?,
+                header_if_modified_since: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "IF_MODIFIED_SINCE",
+                )?,
+                header_if_none_match: get_class_attr::<HttpHeaderName>(py, "IF_NONE_MATCH")?,
+                header_if_range: get_class_attr::<HttpHeaderName>(py, "IF_RANGE")?,
+                header_if_unmodified_since: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "IF_UNMODIFIED_SINCE",
+                )?,
+                header_last_modified: get_class_attr::<HttpHeaderName>(py, "LAST_MODIFIED")?,
+                header_link: get_class_attr::<HttpHeaderName>(py, "LINK")?,
+                header_location: get_class_attr::<HttpHeaderName>(py, "LOCATION")?,
+                header_max_forwards: get_class_attr::<HttpHeaderName>(py, "MAX_FORWARDS")?,
+                header_origin: get_class_attr::<HttpHeaderName>(py, "ORIGIN")?,
+                header_pragma: get_class_attr::<HttpHeaderName>(py, "PRAGMA")?,
+                header_proxy_authenticate: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "PROXY_AUTHENTICATE",
+                )?,
+                header_proxy_authorization: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "PROXY_AUTHORIZATION",
+                )?,
+                header_public_key_pins: get_class_attr::<HttpHeaderName>(py, "PUBLIC_KEY_PINS")?,
+                header_public_key_pins_report_only: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "PUBLIC_KEY_PINS_REPORT_ONLY",
+                )?,
+                header_range: get_class_attr::<HttpHeaderName>(py, "RANGE")?,
+                header_referer: get_class_attr::<HttpHeaderName>(py, "REFERER")?,
+                header_referrer_policy: get_class_attr::<HttpHeaderName>(py, "REFERRER_POLICY")?,
+                header_refresh: get_class_attr::<HttpHeaderName>(py, "REFRESH")?,
+                header_retry_after: get_class_attr::<HttpHeaderName>(py, "RETRY_AFTER")?,
+                header_sec_websocket_accept: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "SEC_WEBSOCKET_ACCEPT",
+                )?,
+                header_sec_websocket_extensions: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "SEC_WEBSOCKET_EXTENSIONS",
+                )?,
+                header_sec_websocket_key: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "SEC_WEBSOCKET_KEY",
+                )?,
+                header_sec_websocket_protocol: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "SEC_WEBSOCKET_PROTOCOL",
+                )?,
+                header_sec_websocket_version: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "SEC_WEBSOCKET_VERSION",
+                )?,
+                header_server: get_class_attr::<HttpHeaderName>(py, "SERVER")?,
+                header_set_cookie: get_class_attr::<HttpHeaderName>(py, "SET_COOKIE")?,
+                header_strict_transport_security: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "STRICT_TRANSPORT_SECURITY",
+                )?,
+                header_te: get_class_attr::<HttpHeaderName>(py, "TE")?,
+                header_trailer: get_class_attr::<HttpHeaderName>(py, "TRAILER")?,
+                header_transfer_encoding: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "TRANSFER_ENCODING",
+                )?,
+                header_user_agent: get_class_attr::<HttpHeaderName>(py, "USER_AGENT")?,
+                header_upgrade: get_class_attr::<HttpHeaderName>(py, "UPGRADE")?,
+                header_upgrade_insecure_requests: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "UPGRADE_INSECURE_REQUESTS",
+                )?,
+                header_vary: get_class_attr::<HttpHeaderName>(py, "VARY")?,
+                header_via: get_class_attr::<HttpHeaderName>(py, "VIA")?,
+                header_warning: get_class_attr::<HttpHeaderName>(py, "WARNING")?,
+                header_www_authenticate: get_class_attr::<HttpHeaderName>(py, "WWW_AUTHENTICATE")?,
+                header_x_content_type_options: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "X_CONTENT_TYPE_OPTIONS",
+                )?,
+                header_x_dns_prefetch_control: get_class_attr::<HttpHeaderName>(
+                    py,
+                    "X_DNS_PREFETCH_CONTROL",
+                )?,
+                header_x_frame_options: get_class_attr::<HttpHeaderName>(py, "X_FRAME_OPTIONS")?,
+                header_x_xss_protection: get_class_attr::<HttpHeaderName>(py, "X_XSS_PROTECTION")?,
             }),
         })
     }
@@ -458,6 +784,119 @@ impl Constants {
                 self.status_network_authentication_required.clone_ref(py)
             }
             _ => PyInt::new(py, code.as_u16()).unbind(),
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn header_name(&self, py: Python<'_>, name: &HeaderName) -> Py<PyString> {
+        match *name {
+            header::ACCEPT => self.header_accept.get().as_py(py),
+            header::ACCEPT_CHARSET => self.header_accept_charset.get().as_py(py),
+            header::ACCEPT_ENCODING => self.header_accept_encoding.get().as_py(py),
+            header::ACCEPT_LANGUAGE => self.header_accept_language.get().as_py(py),
+            header::ACCEPT_RANGES => self.header_accept_ranges.get().as_py(py),
+            header::ACCESS_CONTROL_ALLOW_CREDENTIALS => {
+                self.header_access_control_allow_credentials.get().as_py(py)
+            }
+            header::ACCESS_CONTROL_ALLOW_HEADERS => {
+                self.header_access_control_allow_headers.get().as_py(py)
+            }
+            header::ACCESS_CONTROL_ALLOW_METHODS => {
+                self.header_access_control_allow_methods.get().as_py(py)
+            }
+            header::ACCESS_CONTROL_ALLOW_ORIGIN => {
+                self.header_access_control_allow_origin.get().as_py(py)
+            }
+            header::ACCESS_CONTROL_EXPOSE_HEADERS => {
+                self.header_access_control_expose_headers.get().as_py(py)
+            }
+            header::ACCESS_CONTROL_MAX_AGE => self.header_access_control_max_age.get().as_py(py),
+            header::ACCESS_CONTROL_REQUEST_HEADERS => {
+                self.header_access_control_request_headers.get().as_py(py)
+            }
+            header::ACCESS_CONTROL_REQUEST_METHOD => {
+                self.header_access_control_request_method.get().as_py(py)
+            }
+            header::AGE => self.header_age.get().as_py(py),
+            header::ALLOW => self.header_allow.get().as_py(py),
+            header::ALT_SVC => self.header_alt_svc.get().as_py(py),
+            header::AUTHORIZATION => self.header_authorization.get().as_py(py),
+            header::CACHE_CONTROL => self.header_cache_control.get().as_py(py),
+            header::CACHE_STATUS => self.header_cache_status.get().as_py(py),
+            header::CDN_CACHE_CONTROL => self.header_cdn_cache_control.get().as_py(py),
+            header::CONNECTION => self.header_connection.get().as_py(py),
+            header::CONTENT_DISPOSITION => self.header_content_disposition.get().as_py(py),
+            header::CONTENT_ENCODING => self.header_content_encoding.get().as_py(py),
+            header::CONTENT_LANGUAGE => self.header_content_language.get().as_py(py),
+            header::CONTENT_LENGTH => self.header_content_length.get().as_py(py),
+            header::CONTENT_LOCATION => self.header_content_location.get().as_py(py),
+            header::CONTENT_RANGE => self.header_content_range.get().as_py(py),
+            header::CONTENT_SECURITY_POLICY => self.header_content_security_policy.get().as_py(py),
+            header::CONTENT_SECURITY_POLICY_REPORT_ONLY => self
+                .header_content_security_policy_report_only
+                .get()
+                .as_py(py),
+            header::CONTENT_TYPE => self.header_content_type.get().as_py(py),
+            header::COOKIE => self.header_cookie.get().as_py(py),
+            header::DNT => self.header_dnt.get().as_py(py),
+            header::DATE => self.header_date.get().as_py(py),
+            header::ETAG => self.header_etag.get().as_py(py),
+            header::EXPECT => self.header_expect.get().as_py(py),
+            header::EXPIRES => self.header_expires.get().as_py(py),
+            header::FORWARDED => self.header_forwarded.get().as_py(py),
+            header::FROM => self.header_from.get().as_py(py),
+            header::HOST => self.header_host.get().as_py(py),
+            header::IF_MATCH => self.header_if_match.get().as_py(py),
+            header::IF_MODIFIED_SINCE => self.header_if_modified_since.get().as_py(py),
+            header::IF_NONE_MATCH => self.header_if_none_match.get().as_py(py),
+            header::IF_RANGE => self.header_if_range.get().as_py(py),
+            header::IF_UNMODIFIED_SINCE => self.header_if_unmodified_since.get().as_py(py),
+            header::LAST_MODIFIED => self.header_last_modified.get().as_py(py),
+            header::LINK => self.header_link.get().as_py(py),
+            header::LOCATION => self.header_location.get().as_py(py),
+            header::MAX_FORWARDS => self.header_max_forwards.get().as_py(py),
+            header::ORIGIN => self.header_origin.get().as_py(py),
+            header::PRAGMA => self.header_pragma.get().as_py(py),
+            header::PROXY_AUTHENTICATE => self.header_proxy_authenticate.get().as_py(py),
+            header::PROXY_AUTHORIZATION => self.header_proxy_authorization.get().as_py(py),
+            header::PUBLIC_KEY_PINS => self.header_public_key_pins.get().as_py(py),
+            header::PUBLIC_KEY_PINS_REPORT_ONLY => {
+                self.header_public_key_pins_report_only.get().as_py(py)
+            }
+            header::RANGE => self.header_range.get().as_py(py),
+            header::REFERER => self.header_referer.get().as_py(py),
+            header::REFERRER_POLICY => self.header_referrer_policy.get().as_py(py),
+            header::REFRESH => self.header_refresh.get().as_py(py),
+            header::RETRY_AFTER => self.header_retry_after.get().as_py(py),
+            header::SEC_WEBSOCKET_ACCEPT => self.header_sec_websocket_accept.get().as_py(py),
+            header::SEC_WEBSOCKET_EXTENSIONS => {
+                self.header_sec_websocket_extensions.get().as_py(py)
+            }
+            header::SEC_WEBSOCKET_KEY => self.header_sec_websocket_key.get().as_py(py),
+            header::SEC_WEBSOCKET_PROTOCOL => self.header_sec_websocket_protocol.get().as_py(py),
+            header::SEC_WEBSOCKET_VERSION => self.header_sec_websocket_version.get().as_py(py),
+            header::SERVER => self.header_server.get().as_py(py),
+            header::SET_COOKIE => self.header_set_cookie.get().as_py(py),
+            header::STRICT_TRANSPORT_SECURITY => {
+                self.header_strict_transport_security.get().as_py(py)
+            }
+            header::TE => self.header_te.get().as_py(py),
+            header::TRAILER => self.header_trailer.get().as_py(py),
+            header::TRANSFER_ENCODING => self.header_transfer_encoding.get().as_py(py),
+            header::USER_AGENT => self.header_user_agent.get().as_py(py),
+            header::UPGRADE => self.header_upgrade.get().as_py(py),
+            header::UPGRADE_INSECURE_REQUESTS => {
+                self.header_upgrade_insecure_requests.get().as_py(py)
+            }
+            header::VARY => self.header_vary.get().as_py(py),
+            header::VIA => self.header_via.get().as_py(py),
+            header::WARNING => self.header_warning.get().as_py(py),
+            header::WWW_AUTHENTICATE => self.header_www_authenticate.get().as_py(py),
+            header::X_CONTENT_TYPE_OPTIONS => self.header_x_content_type_options.get().as_py(py),
+            header::X_DNS_PREFETCH_CONTROL => self.header_x_dns_prefetch_control.get().as_py(py),
+            header::X_FRAME_OPTIONS => self.header_x_frame_options.get().as_py(py),
+            header::X_XSS_PROTECTION => self.header_x_xss_protection.get().as_py(py),
+            _ => PyString::new(py, name.as_str()).unbind(),
         }
     }
 }

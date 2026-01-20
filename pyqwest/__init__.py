@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = [
     "Client",
     "FullResponse",
+    "HTTPHeaderName",
     "HTTPTransport",
     "HTTPVersion",
     "Headers",
@@ -27,6 +28,7 @@ from ._coro import Client, Response
 from ._pyqwest import (
     FullResponse,
     Headers,
+    HTTPHeaderName,
     HTTPTransport,
     HTTPVersion,
     ReadError,
