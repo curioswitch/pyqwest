@@ -50,6 +50,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.get(url, headers=headers)
 
@@ -69,6 +71,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.post(url, headers=headers, content=content)
 
@@ -86,6 +90,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.delete(url, headers=headers)
 
@@ -103,6 +109,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.head(url, headers=headers)
 
@@ -120,6 +128,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.options(url, headers=headers)
 
@@ -139,6 +149,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.patch(url, headers=headers, content=content)
 
@@ -158,6 +170,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.put(url, headers=headers, content=content)
 
@@ -179,6 +193,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         return await self._client.execute(method, url, headers=headers, content=content)
 
@@ -201,6 +217,8 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            ReadError: If an error occurs reading the response.
+            WriteError: If an error occurs writing the request.
         """
         response = await self._client.stream(
             method, url, headers=headers, content=content
