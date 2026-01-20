@@ -73,6 +73,13 @@ pub(crate) struct ConstantsInner {
     /// The string "TRACE".
     pub trace: Py<PyString>,
 
+    /// ContextVar.get to get request timeout.
+    pub timeout_context_var_get: Py<PyAny>,
+    /// ContextVar.set to store request timeout.
+    pub timeout_context_var_set: Py<PyAny>,
+    /// ContextVar.reset to reset request timeout.
+    pub timeout_context_var_reset: Py<PyAny>,
+
     // HTTP numeric status codes. We only cache non-informational ones
     // since they have no protocol implications.
     /// The code OK.
@@ -371,6 +378,10 @@ impl Constants {
     #[allow(clippy::too_many_lines)]
     fn new(py: Python<'_>) -> PyResult<Self> {
         let glue = py.import("pyqwest._glue")?;
+        let contextvars = py.import("contextvars")?;
+        let timeout_context_var = contextvars
+            .getattr("ContextVar")?
+            .call1(("pyqwest_timeout",))?;
         Ok(Self {
             inner: Arc::new(ConstantsInner {
                 empty_bytes: PyBytes::new(py, b"").unbind(),
@@ -389,6 +400,10 @@ impl Constants {
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
 
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
+
+                timeout_context_var_get: timeout_context_var.getattr("get")?.unbind(),
+                timeout_context_var_set: timeout_context_var.getattr("set")?.unbind(),
+                timeout_context_var_reset: timeout_context_var.getattr("reset")?.unbind(),
 
                 http_1: get_class_attr::<HTTPVersion>(py, "HTTP1")?,
                 http_2: get_class_attr::<HTTPVersion>(py, "HTTP2")?,

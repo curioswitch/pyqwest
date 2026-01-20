@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -19,6 +18,7 @@ from pyqwest import (
     SyncTransport,
     WriteError,
 )
+from pyqwest._pyqwest import get_sync_timeout
 
 if TYPE_CHECKING:
     import sys
@@ -67,12 +67,9 @@ class WSGITransport(SyncTransport):
         self._closed = False
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
-        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
-        if timeout is not None and (timeout < 0 or not math.isfinite(timeout)):
-            msg = "Timeout must be non-negative"
-            raise ValueError(msg)
-
-        deadline = time.monotonic() + timeout if timeout is not None else None
+        deadline = None
+        if (to := get_sync_timeout()) is not None:
+            deadline = time.monotonic() + to.total_seconds()
 
         parsed_url = urlparse(request.url)
         raw_path = parsed_url.path or "/"
