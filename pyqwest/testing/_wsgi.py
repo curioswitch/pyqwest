@@ -374,8 +374,8 @@ class ResponseContent(Iterator[bytes]):
             if remaining:
                 self._closed = True
                 self._request_input.close()
-                # with contextlib.suppress(Exception):
-                #    self._app_future.result()
+                with contextlib.suppress(Exception):
+                    self._app_future.result()
                 return remaining
             err = StopIteration()
         else:
@@ -384,8 +384,8 @@ class ResponseContent(Iterator[bytes]):
         if err:
             self._closed = True
             self._request_input.close()
-            # with contextlib.suppress(Exception):
-            #    self._app_future.result()
+            with contextlib.suppress(Exception):
+                self._app_future.result()
             raise err
         return self._decompressor.feed(chunk, end=False)
 
@@ -397,6 +397,6 @@ class ResponseContent(Iterator[bytes]):
             return
         self._closed = True
         self._request_input.close()
-        self._response_queue.put(
-            ReadError("Response body read cancelled")
-        )  #    self._app_future.result()
+        self._response_queue.put(ReadError("Response body read cancelled"))
+        with contextlib.suppress(Exception):
+            self._app_future.result()
