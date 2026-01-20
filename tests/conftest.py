@@ -105,7 +105,11 @@ async def async_transport(
     certs: Certs, http_version: HTTPVersion | None
 ) -> AsyncIterator[HTTPTransport]:
     async with HTTPTransport(
-        tls_ca_cert=certs.ca, http_version=http_version
+        tls_ca_cert=certs.ca,
+        http_version=http_version,
+        enable_brotli=True,
+        enable_gzip=True,
+        enable_zstd=True,
     ) as transport:
         yield transport
 
@@ -147,7 +151,11 @@ def sync_transport(
     certs: Certs, http_version: HTTPVersion | None
 ) -> Iterator[SyncHTTPTransport]:
     with SyncHTTPTransport(
-        tls_ca_cert=certs.ca, http_version=http_version
+        tls_ca_cert=certs.ca,
+        http_version=http_version,
+        enable_brotli=True,
+        enable_gzip=True,
+        enable_zstd=True,
     ) as transport:
         yield transport
 

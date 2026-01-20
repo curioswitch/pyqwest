@@ -20,6 +20,8 @@ from pyqwest import (
 )
 from pyqwest._pyqwest import get_sync_timeout
 
+from ._decompress import Decompressor, get_decompressor
+
 if TYPE_CHECKING:
     import sys
 
@@ -199,16 +201,18 @@ class WSGITransport(SyncTransport):
                 content=str(exc[0]).encode(),
             )
 
+        response_headers = Headers(headers)
+        decompressor = get_decompressor(response_headers.get("content-encoding"))
         response_content = ResponseContent(
-            response_queue, request_input, app_future, deadline
+            response_queue, request_input, app_future, deadline, decompressor
         )
 
         status = int(status_str.split(" ", 1)[0])
 
         return SyncResponse(
             status=status,
+            headers=response_headers,
             http_version=self._http_version,
-            headers=Headers(headers),
             content=response_content,
             trailers=trailers,
         )
@@ -306,6 +310,7 @@ class ResponseContent(Iterator[bytes]):
         request_input: RequestInput,
         app_future: Future,
         deadline: float | None,
+        decompressor: Decompressor,
     ) -> None:
         self._response_queue = response_queue
         self._request_input = request_input
@@ -313,6 +318,7 @@ class ResponseContent(Iterator[bytes]):
         self._closed = False
         self._read_pending = False
         self._deadline = deadline
+        self._decompressor = decompressor
 
     def __iter__(self) -> Iterator[bytes]:
         return self
@@ -348,6 +354,13 @@ class ResponseContent(Iterator[bytes]):
                     msg = "Request Failed: Error reading response body"
                     err = ReadError(msg)
         elif message is None:
+            remaining = self._decompressor.feed(b"", end=True)
+            if remaining:
+                self._closed = True
+                self._request_input.close()
+                with contextlib.suppress(Exception):
+                    self._app_future.result()
+                return remaining
             err = StopIteration()
         else:
             chunk = message
@@ -358,7 +371,7 @@ class ResponseContent(Iterator[bytes]):
             with contextlib.suppress(Exception):
                 self._app_future.result()
             raise err
-        return chunk
+        return self._decompressor.feed(chunk, end=False)
 
     def __del__(self) -> None:
         self.close()

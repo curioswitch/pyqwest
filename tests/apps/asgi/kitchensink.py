@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import gzip
 from typing import TYPE_CHECKING, cast
+
+import brotli
+import zstd
 
 if TYPE_CHECKING:
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, HTTPScope, Scope
@@ -86,6 +90,29 @@ async def _nihongo(
     await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
+async def _content_encoding(
+    scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    encoding = dict(scope["headers"]).get(b"accept-encoding", b"").decode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": ((b"content-encoding", encoding.encode()),),
+            "trailers": False,
+        }
+    )
+    content = b"Hello World!!!!!"
+    match encoding:
+        case "br":
+            content = brotli.compress(content)
+        case "gzip":
+            content = gzip.compress(content)
+        case "zstd":
+            content = zstd.compress(content)
+    await send({"type": "http.response.body", "body": content, "more_body": False})
+
+
 async def _read_all(
     _scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
@@ -116,6 +143,8 @@ async def app(
             await _echo(scope, receive, send)
         case "/日本語 英語":
             await _nihongo(scope, receive, send)
+        case "/content-encoding":
+            await _content_encoding(scope, receive, send)
         case "/read_all":
             await _read_all(scope, receive, send)
         case _:

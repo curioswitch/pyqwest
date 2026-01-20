@@ -440,6 +440,20 @@ async def test_nihongo(client: Client | SyncClient, url: str) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["br", "gzip", "zstd", "identity"])
+async def test_content_encoding(
+    client: Client | SyncClient, url: str, encoding: str
+) -> None:
+    url = f"{url}/content-encoding"
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(client.get, url, {"accept-encoding": encoding})
+    else:
+        resp = await client.get(url, {"accept-encoding": encoding})
+    assert resp.status == 200
+    assert resp.content == b"Hello World!!!!!"
+
+
+@pytest.mark.asyncio
 async def test_close_no_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()

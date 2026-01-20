@@ -18,6 +18,7 @@ from pyqwest import (
 )
 
 from ._asgi_compatibility import guarantee_single_callable
+from ._decompress import Decompressor, get_decompressor
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -194,11 +195,14 @@ class ASGITransport(Transport):
             and request.headers.get("te") == "trailers"
             else None
         )
+
+        decompressor = get_decompressor(headers.get("content-encoding"))
         response_content = ResponseContent(
             send_queue,
             request_task,
             trailers,
             app_task,
+            decompressor,
             read_trailers=message.get("trailers", False),
         )
         return Response(
@@ -289,6 +293,7 @@ class ResponseContent(AsyncIterator[bytes]):
         request_task: asyncio.Task[None],
         trailers: Headers | None,
         task: asyncio.Task[None],
+        decompressor: Decompressor,
         *,
         read_trailers: bool,
     ) -> None:
@@ -296,6 +301,7 @@ class ResponseContent(AsyncIterator[bytes]):
         self._request_task = request_task
         self._trailers = trailers
         self._task = task
+        self._decompressor = decompressor
         self._read_trailers = read_trailers
 
         self._read_pending = False
@@ -330,10 +336,11 @@ class ResponseContent(AsyncIterator[bytes]):
                         raise ReadError(msg) from message
             match message["type"]:
                 case "http.response.body":
-                    if not message.get("more_body", False) and not self._read_trailers:
+                    more_body = message.get("more_body", False)
+                    if not more_body and not self._read_trailers:
                         await self._cleanup()
                     if (body := message.get("body", b"")) or self._closed:
-                        return body
+                        return self._decompressor.feed(body, end=not more_body)
                 case "http.response.trailers":
                     if self._trailers is not None:
                         for k, v in message.get("headers", []):

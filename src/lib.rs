@@ -51,6 +51,8 @@ mod pyqwest {
     #[pymodule_export]
     use asyncio::transport::{get_default_transport, HttpTransport};
     #[pymodule_export]
+    use common::decompress::{BrotliDecompressor, ZstdDecompressor};
+    #[pymodule_export]
     use common::{headername::HttpHeaderName, httpversion::HTTPVersion, FullResponse};
     #[pymodule_export]
     use headers::Headers;

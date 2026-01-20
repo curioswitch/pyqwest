@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import gzip
 from typing import TYPE_CHECKING, cast
+
+import brotli
+import zstd
 
 if TYPE_CHECKING:
     import sys
@@ -61,6 +65,22 @@ def _nihongo(
     yield b""
 
 
+def _content_encoding(
+    environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    encoding = environ.get("HTTP_ACCEPT_ENCODING", "")
+    start_response("200 OK", [("content-encoding", encoding)])
+    content = b"Hello World!!!!!"
+    match encoding:
+        case "br":
+            content = brotli.compress(content)
+        case "gzip":
+            content = gzip.compress(content)
+        case "zstd":
+            content = zstd.compress(content)
+    return [content]
+
+
 def _read_all(
     environ: WSGIEnvironment, start_response: StartResponse
 ) -> Iterable[bytes]:
@@ -76,6 +96,8 @@ def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[byt
             return _echo(environ, start_response)
         case "/日本語 英語":
             return _nihongo(environ, start_response)
+        case "/content-encoding":
+            return _content_encoding(environ, start_response)
         case "/read_all":
             return _read_all(environ, start_response)
         case "/no_start":
