@@ -48,6 +48,7 @@ class WSGITransport(SyncTransport):
     _app: WSGIApplication
     _http_version: HTTPVersion
     _closed: bool
+    _app_exception: Exception | None
 
     def __init__(
         self,
@@ -69,9 +70,10 @@ class WSGITransport(SyncTransport):
         self._closed = False
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        timeout = get_sync_timeout()
         deadline = None
-        if (to := get_sync_timeout()) is not None:
-            deadline = time.monotonic() + to.total_seconds()
+        if timeout is not None:
+            deadline = time.monotonic() + timeout.total_seconds()
 
         parsed_url = urlparse(request.url)
         raw_path = parsed_url.path or "/"
@@ -171,6 +173,7 @@ class WSGITransport(SyncTransport):
                             response_started.set()
                         response_queue.put(chunk)
             except Exception as e:
+                self._app_exception = e
                 response_queue.put(e)
             else:
                 response_queue.put(None)
@@ -183,7 +186,11 @@ class WSGITransport(SyncTransport):
 
         app_future = self._executor.submit(run_app)
 
-        response_started.wait()
+        if not response_started.wait(
+            timeout=timeout.total_seconds() if timeout is not None else None
+        ):
+            msg = "Application did not start response before timeout"
+            raise TimeoutError(msg)
 
         if status_str is _UNSET_STATUS:
             return SyncResponse(
@@ -216,6 +223,15 @@ class WSGITransport(SyncTransport):
             content=response_content,
             trailers=trailers,
         )
+
+    @property
+    def app_exception(self) -> Exception | None:
+        """The exception raised by the ASGI application, if any.
+
+        This will be overwritten for any request which raises an exception, so it is generally
+        expected to be used with a transport that is used only once, or in a precise order.
+        """
+        return self._app_exception
 
 
 class RequestInput:
@@ -358,8 +374,8 @@ class ResponseContent(Iterator[bytes]):
             if remaining:
                 self._closed = True
                 self._request_input.close()
-                with contextlib.suppress(Exception):
-                    self._app_future.result()
+                # with contextlib.suppress(Exception):
+                #    self._app_future.result()
                 return remaining
             err = StopIteration()
         else:
@@ -368,8 +384,8 @@ class ResponseContent(Iterator[bytes]):
         if err:
             self._closed = True
             self._request_input.close()
-            with contextlib.suppress(Exception):
-                self._app_future.result()
+            # with contextlib.suppress(Exception):
+            #    self._app_future.result()
             raise err
         return self._decompressor.feed(chunk, end=False)
 
@@ -381,6 +397,6 @@ class ResponseContent(Iterator[bytes]):
             return
         self._closed = True
         self._request_input.close()
-        self._response_queue.put(ReadError("Response body read cancelled"))
-        with contextlib.suppress(Exception):
-            self._app_future.result()
+        self._response_queue.put(
+            ReadError("Response body read cancelled")
+        )  #    self._app_future.result()

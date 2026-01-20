@@ -59,6 +59,7 @@ class ASGITransport(Transport):
     _client: tuple[str, int]
     _state: dict[str, Any]
     _lifespan: Lifespan | None
+    _app_exception: Exception | None
 
     def __init__(
         self,
@@ -166,6 +167,7 @@ class ASGITransport(Transport):
             except asyncio.TimeoutError as e:
                 send_queue.put_nowait(TimeoutError(str(e)))
             except Exception as e:
+                self._app_exception = e
                 send_queue.put_nowait(e)
 
         app_task = asyncio.create_task(run_app())
@@ -262,7 +264,9 @@ class ASGITransport(Transport):
             case "lifespan.startup.complete":
                 return
             case "lifespan.startup.failed":
-                msg = "ASGI application failed to start up"
+                msg = (
+                    f"ASGI application failed to start up: {message.get('message', '')}"
+                )
                 raise RuntimeError(msg)
 
     async def close(self) -> None:
@@ -278,8 +282,17 @@ class ASGITransport(Transport):
             case "lifespan.shutdown.complete":
                 return
             case "lifespan.shutdown.failed":
-                msg = "ASGI application failed to shut down cleanly"
+                msg = f"ASGI application failed to shut down cleanly: {message.get('message', '')}"
                 raise RuntimeError(msg)
+
+    @property
+    def app_exception(self) -> Exception | None:
+        """The exception raised by the ASGI application, if any.
+
+        This will be overwritten for any request which raises an exception, so it is generally
+        expected to be used with a transport that is used only once, or in a precise order.
+        """
+        return self._app_exception
 
 
 class CancelResponse(Exception):
