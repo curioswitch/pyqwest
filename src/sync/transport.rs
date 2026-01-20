@@ -37,7 +37,7 @@ impl SyncHttpTransport {
         connect_timeout = 30.0,
         read_timeout = None,
         pool_idle_timeout = 90.0,
-        pool_max_idle_per_host = 2,
+        pool_max_idle_per_host = None,
         tcp_keepalive_interval = 30.0,
         enable_gzip = true,
         enable_brotli = true,

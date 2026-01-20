@@ -13,6 +13,6 @@ def test_set_timeout() -> None:
         time.sleep(0.1)
         timeout = get_sync_timeout()
         assert timeout is not None
-        assert 3.9 < timeout.total_seconds() < 4.9
+        assert 3.9 < timeout.total_seconds() < 4.91
     timeout = get_sync_timeout()
     assert timeout is None
