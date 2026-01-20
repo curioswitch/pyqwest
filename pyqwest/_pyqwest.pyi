@@ -85,7 +85,7 @@ class Headers:
             other: The object to compare against.
         """
 
-    def get(self, key: str | HTTPHeaderName, default: str | None = None) -> str | None:
+    def get(self, key: str | HTTPHeaderName, default: _T = None) -> str | _T:
         """Returns the header value for the key, or default if not present.
 
         Args:
@@ -1388,3 +1388,9 @@ class HTTPHeaderName:
 
 def set_sync_timeout(timeout: float) -> AbstractContextManager[None]: ...
 def get_sync_timeout() -> datetime.timedelta | None: ...
+
+class _BrotliDecompressor:
+    def feed(self, data: bytes, *, end: bool) -> bytes: ...
+
+class _ZstdDecompressor:
+    def feed(self, data: bytes, *, end: bool) -> bytes: ...

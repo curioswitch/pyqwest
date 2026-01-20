@@ -1206,6 +1206,7 @@ name = "pyqwest"
 version = "0.3.0"
 dependencies = [
  "arc-swap",
+ "brotli",
  "bytes",
  "errors",
  "futures-core",
@@ -1220,6 +1221,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "url",
+ "zstd",
 ]
 
 [[package]]

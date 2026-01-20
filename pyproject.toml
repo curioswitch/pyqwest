@@ -25,6 +25,7 @@ classifiers = [
 dev = [
     "aiohttp[speedups]",
     "asgiref",
+    "brotli",
     "httpx[http2]",
     "maturin",
     "niquests[http3]",
@@ -40,6 +41,7 @@ dev = [
     "trustme",
     "uvloop; sys_platform != 'win32'",
     "winloop; sys_platform == 'win32'",
+    "zstd",
 ]
 
 docs = ["zensical", "mkdocstrings-python"]
