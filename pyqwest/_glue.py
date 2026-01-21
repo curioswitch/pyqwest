@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import inspect
+import types
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from ._pyqwest import FullResponse, Headers, Request, Transport
@@ -67,6 +69,24 @@ def read_content_sync(content: Iterator[bytes | memoryview]) -> bytes:
         else:
             close()
     return bytes(buf)
+
+
+def close_request_iterator(itr: Iterator[bytes]) -> None:
+    # Running generators cannot be closed reliably.
+    # On Python 3.12, it can cause a hang.
+    if (
+        isinstance(itr, types.GeneratorType)
+        and inspect.getgeneratorstate(itr) == inspect.GEN_RUNNING
+    ):
+        return
+
+    try:
+        close = itr.close  # pyright: ignore[reportAttributeAccessIssue]
+    except AttributeError:
+        pass
+    else:
+        with contextlib.suppress(Exception):
+            close()
 
 
 # Vendored from pyo3-async-runtimes to apply some fixes

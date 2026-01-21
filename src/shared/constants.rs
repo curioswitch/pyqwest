@@ -26,8 +26,6 @@ pub(crate) struct ConstantsInner {
     pub add_done_callback: Py<PyString>,
     /// The string "cancel".
     pub cancel: Py<PyString>,
-    /// The string "close".
-    pub close: Py<PyString>,
     /// The string "`create_task`".
     pub create_task: Py<PyString>,
     /// The string "exception".
@@ -37,6 +35,8 @@ pub(crate) struct ConstantsInner {
     /// The string "`execute_sync`".
     pub execute_sync: Py<PyString>,
 
+    /// The _glue.py function `close_request_iterator`.
+    pub close_request_iterator: Py<PyAny>,
     /// The _glue.py function `execute_and_read_full`.
     pub execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
@@ -389,12 +389,12 @@ impl Constants {
                 aclose: PyString::new(py, "aclose").unbind(),
                 add_done_callback: PyString::new(py, "add_done_callback").unbind(),
                 cancel: PyString::new(py, "cancel").unbind(),
-                close: PyString::new(py, "close").unbind(),
                 create_task: PyString::new(py, "create_task").unbind(),
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
 
+                close_request_iterator: glue.getattr("close_request_iterator")?.unbind(),
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
