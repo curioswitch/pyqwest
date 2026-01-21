@@ -21,9 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          #- macos-15
+          - macos-15
           - ubuntu-24.04
-          #- windows-2025
+          - windows-2025
         python:
           - "3.10"
           - "3.14"
@@ -76,12 +76,12 @@ jobs:
 
       # Needed for connect integration tests runner
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
-        # if: github.event_name == 'push' && !startsWith(matrix.os, 'windows-')
+        if: github.event_name == 'push' && matrix.python != '3.14t' && !startsWith(matrix.os, 'windows-')
         with:
           go-version: stable
 
       - name: run connect integration tests on push
-        # if: github.event_name == 'push' && !startsWith(matrix.os, 'windows-')
+        if: github.event_name == 'push' && matrix.python != '3.14t' && !startsWith(matrix.os, 'windows-')
         run: uv run poe integration-test-connect
 
       - name: verify wheel build
