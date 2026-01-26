@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import sys
 from email.utils import formatdate
-from time import perf_counter, time
+from time import monotonic, time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -77,6 +78,14 @@ def client(app: App):
     )
 
 
+def assert_duration_at_least(start: float, end: float, expected: float) -> None:
+    if sys.platform == "win32" and sys.version_info < (3, 11):
+        # On Windows with Python <= 3.10, at least, timer has too low resolution.
+        return
+    duration = end - start
+    assert duration >= expected, f"Duration {duration} is less than expected {expected}"
+
+
 @pytest.mark.asyncio
 async def test_success(app: App, client: Client) -> None:
     res = await client.get("http://localhost")
@@ -88,13 +97,13 @@ async def test_success(app: App, client: Client) -> None:
 @pytest.mark.asyncio
 async def test_one_retry(app: App, client: Client) -> None:
     app.status = [500, 200]
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b""
-    assert end - start >= 0.01
+    assert_duration_at_least(start, end, 0.01)
 
 
 @pytest.mark.asyncio
@@ -127,25 +136,25 @@ async def test_not_retryable_response_501(app: App, client: Client) -> None:
 @pytest.mark.asyncio
 async def test_max_retries(app: App, client: Client) -> None:
     app.status = [500, 502, 503, 504, 200]
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 @pytest.mark.asyncio
 async def test_exceed_max_retries(app: App, client: Client) -> None:
     app.status = [500, 502, 503, 504, 505, 200]
-    start = perf_counter()
+    start = monotonic()
     with pytest.raises(ReadError, match="Maximum retry attempts exceeded: 4"):
         await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 @pytest.mark.asyncio
@@ -221,25 +230,25 @@ async def test_retry_after_secs(app: App, client: Client) -> None:
     app.status = [429, 200]
     # Unfortunately can't avoid a slow test.
     app.retry_after = "1"
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 2
-    assert end - start >= 1.0
+    assert_duration_at_least(start, end, 1.0)
 
 
 @pytest.mark.asyncio
 async def test_retry_after_secs_negative(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "-1"
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 @pytest.mark.asyncio
@@ -249,35 +258,35 @@ async def test_retry_after_date(app: App, client: Client) -> None:
     # time +1s, it can be a very low delta we can't compare to the
     # standard retry. So we set +2s and check for >=1s.
     app.retry_after = formatdate(time() + 2, usegmt=True)
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 2
-    assert end - start >= 1.0
+    assert_duration_at_least(start, end, 1.0)
 
 
 @pytest.mark.asyncio
 async def test_retry_after_date_past(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "Wed, 21 Oct 2015 07:28:00 GMT"
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 @pytest.mark.asyncio
 async def test_retry_after_invalid(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "Invalid Date String"
-    start = perf_counter()
+    start = monotonic()
     res = await client.get("http://localhost")
-    end = perf_counter()
+    end = monotonic()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)

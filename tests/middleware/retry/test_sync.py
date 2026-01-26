@@ -73,6 +73,14 @@ def client(app: App):
     )
 
 
+def assert_duration_at_least(start: float, end: float, expected: float) -> None:
+    if sys.platform == "win32" and sys.version_info < (3, 11):
+        # On Windows with Python <= 3.10, at least, timer has too low resolution.
+        return
+    duration = end - start
+    assert duration >= expected, f"Duration {duration} is less than expected {expected}"
+
+
 def test_success(app: App, client: SyncClient) -> None:
     res = client.get("http://localhost")
     assert res.status == 200
@@ -88,7 +96,7 @@ def test_one_retry(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b""
-    assert end - start >= 0.01
+    assert_duration_at_least(start, end, 0.01)
 
 
 def test_not_retryable_request(app: App, client: SyncClient) -> None:
@@ -123,7 +131,7 @@ def test_max_retries(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 def test_exceed_max_retries(app: App, client: SyncClient) -> None:
@@ -134,7 +142,7 @@ def test_exceed_max_retries(app: App, client: SyncClient) -> None:
     end = monotonic()
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 def test_retry_fixed_content(app: App, client: SyncClient) -> None:
@@ -209,7 +217,7 @@ def test_retry_after_secs(app: App, client: SyncClient) -> None:
     end = monotonic()
     assert res.status == 200
     assert app.count == 2
-    assert end - start >= 1.0
+    assert_duration_at_least(start, end, 1.0)
 
 
 def test_retry_after_secs_negative(app: App, client: SyncClient) -> None:
@@ -221,7 +229,7 @@ def test_retry_after_secs_negative(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 def test_retry_after_date(app: App, client: SyncClient) -> None:
@@ -235,7 +243,7 @@ def test_retry_after_date(app: App, client: SyncClient) -> None:
     end = monotonic()
     assert res.status == 200
     assert app.count == 2
-    assert end - start >= 1.0
+    assert_duration_at_least(start, end, 1.0)
 
 
 def test_retry_after_date_past(app: App, client: SyncClient) -> None:
@@ -247,7 +255,7 @@ def test_retry_after_date_past(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
 def test_retry_after_invalid(app: App, client: SyncClient) -> None:
@@ -259,4 +267,4 @@ def test_retry_after_invalid(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
-    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+    assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
