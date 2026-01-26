@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -19,6 +18,9 @@ from pyqwest import (
     SyncTransport,
     WriteError,
 )
+from pyqwest._pyqwest import get_sync_timeout
+
+from ._decompress import Decompressor, get_decompressor
 
 if TYPE_CHECKING:
     import sys
@@ -46,6 +48,7 @@ class WSGITransport(SyncTransport):
     _app: WSGIApplication
     _http_version: HTTPVersion
     _closed: bool
+    _app_exception: Exception | None
 
     def __init__(
         self,
@@ -67,12 +70,10 @@ class WSGITransport(SyncTransport):
         self._closed = False
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
-        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
-        if timeout is not None and (timeout < 0 or not math.isfinite(timeout)):
-            msg = "Timeout must be non-negative"
-            raise ValueError(msg)
-
-        deadline = time.monotonic() + timeout if timeout is not None else None
+        timeout = get_sync_timeout()
+        deadline = None
+        if timeout is not None:
+            deadline = time.monotonic() + timeout.total_seconds()
 
         parsed_url = urlparse(request.url)
         raw_path = parsed_url.path or "/"
@@ -172,6 +173,7 @@ class WSGITransport(SyncTransport):
                             response_started.set()
                         response_queue.put(chunk)
             except Exception as e:
+                self._app_exception = e
                 response_queue.put(e)
             else:
                 response_queue.put(None)
@@ -184,7 +186,12 @@ class WSGITransport(SyncTransport):
 
         app_future = self._executor.submit(run_app)
 
-        response_started.wait()
+        if not response_started.wait(
+            timeout=timeout.total_seconds() if timeout is not None else None
+        ):
+            request_input.close()
+            msg = "Application did not start response before timeout"
+            raise WSGITimeoutError(msg, app_future)
 
         if status_str is _UNSET_STATUS:
             return SyncResponse(
@@ -202,19 +209,30 @@ class WSGITransport(SyncTransport):
                 content=str(exc[0]).encode(),
             )
 
+        response_headers = Headers(headers)
+        decompressor = get_decompressor(response_headers.get("content-encoding"))
         response_content = ResponseContent(
-            response_queue, request_input, app_future, deadline
+            response_queue, request_input, app_future, deadline, decompressor
         )
 
         status = int(status_str.split(" ", 1)[0])
 
         return SyncResponse(
             status=status,
+            headers=response_headers,
             http_version=self._http_version,
-            headers=Headers(headers),
             content=response_content,
             trailers=trailers,
         )
+
+    @property
+    def app_exception(self) -> Exception | None:
+        """The exception raised by the ASGI application, if any.
+
+        This will be overwritten for any request which raises an exception, so it is generally
+        expected to be used with a transport that is used only once, or in a precise order.
+        """
+        return self._app_exception
 
 
 class RequestInput:
@@ -309,6 +327,7 @@ class ResponseContent(Iterator[bytes]):
         request_input: RequestInput,
         app_future: Future,
         deadline: float | None,
+        decompressor: Decompressor,
     ) -> None:
         self._response_queue = response_queue
         self._request_input = request_input
@@ -316,6 +335,7 @@ class ResponseContent(Iterator[bytes]):
         self._closed = False
         self._read_pending = False
         self._deadline = deadline
+        self._decompressor = decompressor
 
     def __iter__(self) -> Iterator[bytes]:
         return self
@@ -351,6 +371,13 @@ class ResponseContent(Iterator[bytes]):
                     msg = "Request Failed: Error reading response body"
                     err = ReadError(msg)
         elif message is None:
+            remaining = self._decompressor.feed(b"", end=True)
+            if remaining:
+                self._closed = True
+                self._request_input.close()
+                with contextlib.suppress(Exception):
+                    self._app_future.result()
+                return remaining
             err = StopIteration()
         else:
             chunk = message
@@ -361,7 +388,7 @@ class ResponseContent(Iterator[bytes]):
             with contextlib.suppress(Exception):
                 self._app_future.result()
             raise err
-        return chunk
+        return self._decompressor.feed(chunk, end=False)
 
     def __del__(self) -> None:
         self.close()
@@ -374,3 +401,19 @@ class ResponseContent(Iterator[bytes]):
         self._response_queue.put(ReadError("Response body read cancelled"))
         with contextlib.suppress(Exception):
             self._app_future.result()
+
+
+class WSGITimeoutError(TimeoutError):
+    """Timeout error raised by WSGI transport.
+
+    Contains a handle to the app future to allow joining on its thread.
+    """
+
+    def __init__(self, msg: str, app_future: Future) -> None:
+        super().__init__(msg)
+        self._app_future = app_future
+
+    def wait(self, timeout: float | None = None) -> None:
+        """Waits for the WSGI application to finish."""
+        with contextlib.suppress(Exception):
+            self._app_future.result(timeout)

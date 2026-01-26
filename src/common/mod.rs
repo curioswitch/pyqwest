@@ -10,6 +10,8 @@ use pyo3::{
 
 use crate::{headers::Headers, shared::constants::Constants};
 
+/// Decompressers to use in testing transports without additional dependencies.
+pub(crate) mod decompress;
 /// An enum type corresponding to HTTP header names.
 pub(crate) mod headername;
 /// An enum type corresponding to HTTP versions.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -19,6 +18,7 @@ from pyqwest import (
 )
 
 from ._asgi_compatibility import guarantee_single_callable
+from ._decompress import Decompressor, get_decompressor
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -59,6 +59,7 @@ class ASGITransport(Transport):
     _client: tuple[str, int]
     _state: dict[str, Any]
     _lifespan: Lifespan | None
+    _app_exception: Exception | None
 
     def __init__(
         self,
@@ -160,17 +161,13 @@ class ASGITransport(Transport):
         async def send(message: ASGISendEvent) -> None:
             await send_queue.put(message)
 
-        timeout: float | None = request._timeout  # pyright: ignore[reportAttributeAccessIssue]  # noqa: SLF001
-        if timeout is not None and (timeout < 0 or not math.isfinite(timeout)):
-            msg = "Timeout must be non-negative"
-            raise ValueError(msg)
-
         async def run_app() -> None:
             try:
-                await asyncio.wait_for(self._app(scope, receive, send), timeout=timeout)
+                await self._app(scope, receive, send)
             except asyncio.TimeoutError as e:
                 send_queue.put_nowait(TimeoutError(str(e)))
             except Exception as e:
+                self._app_exception = e
                 send_queue.put_nowait(e)
 
         app_task = asyncio.create_task(run_app())
@@ -200,11 +197,14 @@ class ASGITransport(Transport):
             and request.headers.get("te") == "trailers"
             else None
         )
+
+        decompressor = get_decompressor(headers.get("content-encoding"))
         response_content = ResponseContent(
             send_queue,
             request_task,
             trailers,
             app_task,
+            decompressor,
             read_trailers=message.get("trailers", False),
         )
         return Response(
@@ -264,7 +264,9 @@ class ASGITransport(Transport):
             case "lifespan.startup.complete":
                 return
             case "lifespan.startup.failed":
-                msg = "ASGI application failed to start up"
+                msg = (
+                    f"ASGI application failed to start up: {message.get('message', '')}"
+                )
                 raise RuntimeError(msg)
 
     async def close(self) -> None:
@@ -280,8 +282,17 @@ class ASGITransport(Transport):
             case "lifespan.shutdown.complete":
                 return
             case "lifespan.shutdown.failed":
-                msg = "ASGI application failed to shut down cleanly"
+                msg = f"ASGI application failed to shut down cleanly: {message.get('message', '')}"
                 raise RuntimeError(msg)
+
+    @property
+    def app_exception(self) -> Exception | None:
+        """The exception raised by the ASGI application, if any.
+
+        This will be overwritten for any request which raises an exception, so it is generally
+        expected to be used with a transport that is used only once, or in a precise order.
+        """
+        return self._app_exception
 
 
 class CancelResponse(Exception):
@@ -295,6 +306,7 @@ class ResponseContent(AsyncIterator[bytes]):
         request_task: asyncio.Task[None],
         trailers: Headers | None,
         task: asyncio.Task[None],
+        decompressor: Decompressor,
         *,
         read_trailers: bool,
     ) -> None:
@@ -302,6 +314,7 @@ class ResponseContent(AsyncIterator[bytes]):
         self._request_task = request_task
         self._trailers = trailers
         self._task = task
+        self._decompressor = decompressor
         self._read_trailers = read_trailers
 
         self._read_pending = False
@@ -336,10 +349,11 @@ class ResponseContent(AsyncIterator[bytes]):
                         raise ReadError(msg) from message
             match message["type"]:
                 case "http.response.body":
-                    if not message.get("more_body", False) and not self._read_trailers:
+                    more_body = message.get("more_body", False)
+                    if not more_body and not self._read_trailers:
                         await self._cleanup()
                     if (body := message.get("body", b"")) or self._closed:
-                        return body
+                        return self._decompressor.feed(body, end=not more_body)
                 case "http.response.trailers":
                     if self._trailers is not None:
                         for k, v in message.get("headers", []):

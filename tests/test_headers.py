@@ -561,3 +561,6 @@ def test_all_headers() -> None:
         "x-frame-options": "x-frame-options",
         "x-xss-protection": "x-xss-protection",
     }
+
+    assert str(HTTPHeaderName.CONTENT_TYPE) == "content-type"
+    assert repr(HTTPHeaderName.CONTENT_TYPE) == "HTTPHeaderName('content-type')"

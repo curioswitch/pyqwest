@@ -1,5 +1,4 @@
 use std::fmt;
-use std::time::Duration;
 
 use pyo3::sync::MutexExt as _;
 use pyo3::types::{PyAnyMethods as _, PyString};
@@ -8,22 +7,16 @@ use pyo3::{Bound, PyAny};
 
 use crate::headers::Headers;
 use crate::shared::constants::Constants;
-use crate::shared::validation::validate_timeout;
+use crate::sync::timeout::get_timeout;
 
 pub(crate) struct RequestHead {
     method: http::Method,
     url: reqwest::Url,
     headers: Py<Headers>,
-    timeout: Option<f64>,
 }
 
 impl RequestHead {
-    pub(crate) fn new(
-        method: &str,
-        url: &str,
-        headers: Py<Headers>,
-        timeout: Option<f64>,
-    ) -> PyResult<Self> {
+    pub(crate) fn new(method: &str, url: &str, headers: Py<Headers>) -> PyResult<Self> {
         let method = http::Method::try_from(method)
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
         let url = reqwest::Url::parse(url)
@@ -32,7 +25,6 @@ impl RequestHead {
             method,
             url,
             headers,
-            timeout: validate_timeout(timeout)?,
         })
     }
 
@@ -50,8 +42,8 @@ impl RequestHead {
         for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
             req_builder = req_builder.header(name, value.as_http(py)?);
         }
-        if let Some(timeout) = self.timeout {
-            req_builder = req_builder.timeout(Duration::from_secs_f64(timeout));
+        if let Some(timeout) = get_timeout(py)? {
+            req_builder = req_builder.timeout(timeout);
         }
         Ok(req_builder)
     }
@@ -78,10 +70,6 @@ impl RequestHead {
 
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.headers.clone_ref(py)
-    }
-
-    pub(crate) fn timeout(&self) -> Option<f64> {
-        self.timeout
     }
 }
 

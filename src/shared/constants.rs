@@ -26,8 +26,6 @@ pub(crate) struct ConstantsInner {
     pub add_done_callback: Py<PyString>,
     /// The string "cancel".
     pub cancel: Py<PyString>,
-    /// The string "close".
-    pub close: Py<PyString>,
     /// The string "`create_task`".
     pub create_task: Py<PyString>,
     /// The string "exception".
@@ -37,6 +35,8 @@ pub(crate) struct ConstantsInner {
     /// The string "`execute_sync`".
     pub execute_sync: Py<PyString>,
 
+    /// The _glue.py function `close_request_iterator`.
+    pub close_request_iterator: Py<PyAny>,
     /// The _glue.py function `execute_and_read_full`.
     pub execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
@@ -72,6 +72,13 @@ pub(crate) struct ConstantsInner {
     pub put: Py<PyString>,
     /// The string "TRACE".
     pub trace: Py<PyString>,
+
+    /// ContextVar.get to get request timeout.
+    pub timeout_context_var_get: Py<PyAny>,
+    /// ContextVar.set to store request timeout.
+    pub timeout_context_var_set: Py<PyAny>,
+    /// ContextVar.reset to reset request timeout.
+    pub timeout_context_var_reset: Py<PyAny>,
 
     // HTTP numeric status codes. We only cache non-informational ones
     // since they have no protocol implications.
@@ -371,6 +378,10 @@ impl Constants {
     #[allow(clippy::too_many_lines)]
     fn new(py: Python<'_>) -> PyResult<Self> {
         let glue = py.import("pyqwest._glue")?;
+        let contextvars = py.import("contextvars")?;
+        let timeout_context_var = contextvars
+            .getattr("ContextVar")?
+            .call1(("pyqwest_timeout",))?;
         Ok(Self {
             inner: Arc::new(ConstantsInner {
                 empty_bytes: PyBytes::new(py, b"").unbind(),
@@ -378,17 +389,21 @@ impl Constants {
                 aclose: PyString::new(py, "aclose").unbind(),
                 add_done_callback: PyString::new(py, "add_done_callback").unbind(),
                 cancel: PyString::new(py, "cancel").unbind(),
-                close: PyString::new(py, "close").unbind(),
                 create_task: PyString::new(py, "create_task").unbind(),
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
 
+                close_request_iterator: glue.getattr("close_request_iterator")?.unbind(),
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
 
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
+
+                timeout_context_var_get: timeout_context_var.getattr("get")?.unbind(),
+                timeout_context_var_set: timeout_context_var.getattr("set")?.unbind(),
+                timeout_context_var_reset: timeout_context_var.getattr("reset")?.unbind(),
 
                 http_1: get_class_attr::<HTTPVersion>(py, "HTTP1")?,
                 http_2: get_class_attr::<HTTPVersion>(py, "HTTP2")?,

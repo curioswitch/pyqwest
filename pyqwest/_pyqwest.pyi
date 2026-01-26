@@ -1,3 +1,4 @@
+import datetime
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -84,7 +85,7 @@ class Headers:
             other: The object to compare against.
         """
 
-    def get(self, key: str | HTTPHeaderName, default: str | None = None) -> str | None:
+    def get(self, key: str | HTTPHeaderName, default: _T = None) -> str | _T:
         """Returns the header value for the key, or default if not present.
 
         Args:
@@ -208,6 +209,9 @@ class Client:
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
 
+        The asynchronous client does not expose per-request timeouts on its methods.
+        Use `asyncio.wait_for` or similar to enforce timeouts on requests.
+
         Args:
             transport: The transport to use for requests. If None, the shared default
                        transport will be used.
@@ -217,14 +221,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a GET HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -238,7 +240,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a POST HTTP request.
 
@@ -246,7 +247,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -259,14 +259,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a DELETE HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -279,14 +277,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a HEAD HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -299,14 +295,12 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a OPTIONS HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -320,7 +314,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PATCH HTTP request.
 
@@ -342,7 +335,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PUT HTTP request.
 
@@ -350,7 +342,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -365,7 +356,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes an HTTP request, returning the full buffered response.
 
@@ -374,7 +364,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -389,7 +378,6 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
-        timeout: float | None = None,
     ) -> Awaitable[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
@@ -398,7 +386,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -432,23 +419,20 @@ class HTTPTransport:
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
         timeout: float | None = None,
-        connect_timeout: float | None = None,
+        connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
-        pool_idle_timeout: float | None = None,
+        pool_idle_timeout: float | None = 90.0,
         pool_max_idle_per_host: int | None = None,
-        tcp_keepalive_interval: float | None = None,
-        enable_gzip: bool = False,
-        enable_brotli: bool = False,
-        enable_zstd: bool = False,
+        tcp_keepalive_interval: float | None = 30.0,
+        enable_gzip: bool = True,
+        enable_brotli: bool = True,
+        enable_zstd: bool = True,
         use_system_dns: bool = False,
     ) -> None:
         """Creates a new HTTPTransport object.
 
-        Without any arguments, the transport behaves like a raw, low-level HTTP transport,
-        with no timeouts or other higher level behavior. When creating a transport, take care
-        to set options to meet your needs. Also consider using get_default_transport instead
-        which is preconfigured with reasonable defaults, though does not support custom TLS
-        certificates.
+        Without any arguments, the transport behaves like the default transport. When creating
+        a transport, take care to set options to meet your needs.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
@@ -514,7 +498,6 @@ def get_default_transport() -> HTTPTransport:
     HTTPTransport(
         connect_timeout=30.0,
         pool_idle_timeout=90.0,
-        pool_max_idle_per_host=2,
         tcp_keepalive_interval=30.0,
         enable_gzip: bool = True,
         enable_brotli: bool = True,
@@ -867,23 +850,20 @@ class SyncHTTPTransport:
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
         timeout: float | None = None,
-        connect_timeout: float | None = None,
+        connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
-        pool_idle_timeout: float | None = None,
+        pool_idle_timeout: float | None = 90.0,
         pool_max_idle_per_host: int | None = None,
-        tcp_keepalive_interval: float | None = None,
-        enable_gzip: bool = False,
-        enable_brotli: bool = False,
-        enable_zstd: bool = False,
+        tcp_keepalive_interval: float | None = 30.0,
+        enable_gzip: bool = True,
+        enable_brotli: bool = True,
+        enable_zstd: bool = True,
         use_system_dns: bool = False,
     ) -> None:
         """Creates a new SyncHTTPTransport object.
 
-        Without any arguments, the transport behaves like a raw, low-level HTTP transport,
-        with no timeouts or other higher level behavior. When creating a transport, take care
-        to set options to meet your needs. Also consider using get_default_transport instead
-        which is preconfigured with reasonable defaults, though does not support custom TLS
-        certificates.
+        Without any arguments, the transport behaves like the default transport. When creating
+        a transport, take care to set options to meet your needs.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
@@ -944,7 +924,6 @@ def get_default_sync_transport() -> SyncHTTPTransport:
     SyncHTTPTransport(
         connect_timeout=30.0,
         pool_idle_timeout=90.0,
-        pool_max_idle_per_host=2,
         tcp_keepalive_interval=30.0,
         enable_gzip: bool = True,
         enable_brotli: bool = True,
@@ -1398,6 +1377,15 @@ class HTTPHeaderName:
 
     X_XSS_PROTECTION: HTTPHeaderName
     """The "x-xss-protection" header."""
+
+def set_sync_timeout(timeout: float) -> AbstractContextManager[None]: ...
+def get_sync_timeout() -> datetime.timedelta | None: ...
+
+class _BrotliDecompressor:
+    def feed(self, data: bytes, *, end: bool) -> bytes: ...
+
+class _ZstdDecompressor:
+    def feed(self, data: bytes, *, end: bool) -> bytes: ...
 
 class _Backoff:
     def __init__(

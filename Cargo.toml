@@ -1,6 +1,6 @@
 [package]
 name = "pyqwest"
-version = "0.2.0"
+version = "0.3.3"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 arc-swap = "1.8.0"
 backoff = "0.4.0"
+brotli = "8.0.2"
 bytes = "1"
 errors = "0.1.0"
 futures-core = "0.3"
@@ -36,6 +37,7 @@ pyo3-async-runtimes = { version = "0.27.0", features = [
 tokio = "1.47.1"
 tokio-stream = "0.1.17"
 url = "2.5.7"
+zstd = "0.13.3"
 
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }

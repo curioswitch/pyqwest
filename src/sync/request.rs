@@ -12,6 +12,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::{
     headers::Headers,
     shared::request::{RequestHead, RequestStreamError, RequestStreamResult},
+    sync::timeout::get_timeout,
 };
 
 #[pyclass(module = "_pyqwest", frozen)]
@@ -23,14 +24,13 @@ pub struct SyncRequest {
 #[pymethods]
 impl SyncRequest {
     #[new]
-    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None))]
     pub(crate) fn new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
-        timeout: Option<f64>,
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
         let content: Option<Content> = match content {
@@ -38,7 +38,7 @@ impl SyncRequest {
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers, timeout)?,
+            head: RequestHead::new(method, url, headers)?,
             content,
         })
     }
@@ -68,11 +68,6 @@ impl SyncRequest {
             None => Ok(PyTuple::empty(py).into_any().try_iter()?.into_any()),
         }
     }
-
-    #[getter]
-    fn _timeout(&self) -> Option<f64> {
-        self.head.timeout()
-    }
 }
 
 impl SyncRequest {
@@ -83,6 +78,9 @@ impl SyncRequest {
         http3: bool,
     ) -> PyResult<(reqwest::RequestBuilder, Option<Py<PyAny>>)> {
         let mut req_builder = self.head.new_request_builder(py, client, http3)?;
+        if let Some(timeout) = get_timeout(py)? {
+            req_builder = req_builder.timeout(timeout);
+        }
         let mut request_iter: Option<Py<PyAny>> = None;
         if let Some((body, iter)) = self.content_into_reqwest(py) {
             req_builder = req_builder.body(body);

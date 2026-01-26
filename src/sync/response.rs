@@ -35,7 +35,7 @@ pub(super) fn close_request_iter(
 ) {
     let request_iter = request_iter.lock().unwrap().take();
     if let Some(iter) = request_iter {
-        let _ = iter.bind(py).call_method0(&constants.close);
+        let _ = constants.close_request_iterator.call1(py, (&iter,));
     }
 }
 
