@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from email.utils import formatdate
-from time import monotonic, time
+from time import perf_counter, time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -88,9 +88,9 @@ async def test_success(app: App, client: Client) -> None:
 @pytest.mark.asyncio
 async def test_one_retry(app: App, client: Client) -> None:
     app.status = [500, 200]
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b""
@@ -127,9 +127,9 @@ async def test_not_retryable_response_501(app: App, client: Client) -> None:
 @pytest.mark.asyncio
 async def test_max_retries(app: App, client: Client) -> None:
     app.status = [500, 502, 503, 504, 200]
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
@@ -139,10 +139,10 @@ async def test_max_retries(app: App, client: Client) -> None:
 @pytest.mark.asyncio
 async def test_exceed_max_retries(app: App, client: Client) -> None:
     app.status = [500, 502, 503, 504, 505, 200]
-    start = monotonic()
+    start = perf_counter()
     with pytest.raises(ReadError, match="Maximum retry attempts exceeded: 4"):
         await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert app.count == 5
     assert app.read_content == b""
     assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
@@ -221,9 +221,9 @@ async def test_retry_after_secs(app: App, client: Client) -> None:
     app.status = [429, 200]
     # Unfortunately can't avoid a slow test.
     app.retry_after = "1"
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 2
     assert end - start >= 1.0
@@ -233,9 +233,9 @@ async def test_retry_after_secs(app: App, client: Client) -> None:
 async def test_retry_after_secs_negative(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "-1"
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
@@ -249,9 +249,9 @@ async def test_retry_after_date(app: App, client: Client) -> None:
     # time +1s, it can be a very low delta we can't compare to the
     # standard retry. So we set +2s and check for >=1s.
     app.retry_after = formatdate(time() + 2, usegmt=True)
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 2
     assert end - start >= 1.0
@@ -261,9 +261,9 @@ async def test_retry_after_date(app: App, client: Client) -> None:
 async def test_retry_after_date_past(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "Wed, 21 Oct 2015 07:28:00 GMT"
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
@@ -274,9 +274,9 @@ async def test_retry_after_date_past(app: App, client: Client) -> None:
 async def test_retry_after_invalid(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "Invalid Date String"
-    start = monotonic()
+    start = perf_counter()
     res = await client.get("http://localhost")
-    end = monotonic()
+    end = perf_counter()
     assert res.status == 200
     assert app.count == 5
     assert app.read_content == b""
