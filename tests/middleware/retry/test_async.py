@@ -230,6 +230,19 @@ async def test_retry_after_secs(app: App, client: Client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_retry_after_secs_negative(app: App, client: Client) -> None:
+    app.status = [429, 429, 429, 429, 200]
+    app.retry_after = "-1"
+    start = monotonic()
+    res = await client.get("http://localhost")
+    end = monotonic()
+    assert res.status == 200
+    assert app.count == 5
+    assert app.read_content == b""
+    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+
+
+@pytest.mark.asyncio
 async def test_retry_after_date(app: App, client: Client) -> None:
     app.status = [429, 200]
     # Unfortunately can't avoid a very slow test. If we set for current
@@ -242,3 +255,29 @@ async def test_retry_after_date(app: App, client: Client) -> None:
     assert res.status == 200
     assert app.count == 2
     assert end - start >= 1.0
+
+
+@pytest.mark.asyncio
+async def test_retry_after_date_past(app: App, client: Client) -> None:
+    app.status = [429, 429, 429, 429, 200]
+    app.retry_after = "Wed, 21 Oct 2015 07:28:00 GMT"
+    start = monotonic()
+    res = await client.get("http://localhost")
+    end = monotonic()
+    assert res.status == 200
+    assert app.count == 5
+    assert app.read_content == b""
+    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
+
+
+@pytest.mark.asyncio
+async def test_retry_after_invalid(app: App, client: Client) -> None:
+    app.status = [429, 429, 429, 429, 200]
+    app.retry_after = "Invalid Date String"
+    start = monotonic()
+    res = await client.get("http://localhost")
+    end = monotonic()
+    assert res.status == 200
+    assert app.count == 5
+    assert app.read_content == b""
+    assert end - start >= 0.01 + 0.03 + 0.05 + 0.05
