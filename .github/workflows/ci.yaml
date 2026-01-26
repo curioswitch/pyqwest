@@ -72,7 +72,7 @@ jobs:
         run: uv run poe lint
 
       - name: run tests
-        run: uv run poe test
+        run: uv run poe test ${{ matrix.coverage == 'cov' && '--cov=pyqwest --cov-report=xml' || '' }}
 
       # Needed for connect integration tests runner
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
