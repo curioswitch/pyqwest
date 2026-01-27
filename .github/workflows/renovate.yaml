@@ -11,7 +11,7 @@ permissions: {}
 
 jobs:
   renovate:
-    uses: curioswitch/go-build/.github/workflows/export-renovate.yaml@f60fc8379d735d0415c0c56339d389f680760d96 # v0.6.3
+    uses: curioswitch/go-build/.github/workflows/export-renovate.yaml@8304121f488a5faa0b1ff094b6e2abc8da5b6c43 # v0.7.1
     with:
       github_app_id: "1047503"
     secrets:
