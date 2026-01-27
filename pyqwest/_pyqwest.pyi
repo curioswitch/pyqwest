@@ -1386,3 +1386,13 @@ class _BrotliDecompressor:
 
 class _ZstdDecompressor:
     def feed(self, data: bytes, *, end: bool) -> bytes: ...
+
+class _Backoff:
+    def __init__(
+        self,
+        initial_interval: float,
+        randomization_factor: float,
+        multiplier: float,
+        max_interval: float,
+    ) -> None: ...
+    def next_backoff(self) -> float | None: ...

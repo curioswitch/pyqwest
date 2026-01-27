@@ -59,6 +59,8 @@ mod pyqwest {
     #[pymodule_export]
     use pyerrors::{ReadError, StreamError, StreamErrorCode, WriteError};
     #[pymodule_export]
+    use shared::backoff::Backoff;
+    #[pymodule_export]
     use sync::client::SyncClient;
     #[pymodule_export]
     use sync::request::SyncRequest;

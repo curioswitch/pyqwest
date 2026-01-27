@@ -165,8 +165,8 @@ class WSGITransport(SyncTransport):
             return write
 
         def run_app() -> None:
-            response_iter = self._app(environ, start_response)
             try:
+                response_iter = self._app(environ, start_response)
                 for chunk in response_iter:
                     if chunk:
                         if not response_started.is_set():
@@ -202,11 +202,14 @@ class WSGITransport(SyncTransport):
             )
 
         if exc and exc[0]:
+            if isinstance(exc[1], TimeoutError):
+                # Allow an app to evaluate a TimeoutError itself.
+                raise WSGITimeoutError(str(exc[1]), app_future) from exc[1]
             return SyncResponse(
                 status=500,
                 http_version=self._http_version,
                 headers=Headers((("content-type", "text/plain"),)),
-                content=str(exc[0]).encode(),
+                content=str(exc[1]).encode(),
             )
 
         response_headers = Headers(headers)
