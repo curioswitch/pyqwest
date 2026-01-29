@@ -41,7 +41,7 @@ pub(super) fn close_request_iter(
 
 #[pyclass(module = "_pyqwest", frozen)]
 pub(crate) struct SyncResponse {
-    head: ResponseHead,
+    pub(super) head: ResponseHead,
     content: Content,
     trailers: Py<Headers>,
     request_iter: RequestIterHandle,
@@ -137,13 +137,13 @@ impl SyncResponse {
     }
 
     #[getter]
-    fn status(&self, py: Python<'_>) -> PyResult<Py<PyInt>> {
-        self.head.status(py)
+    fn status(&self, py: Python<'_>) -> Py<PyInt> {
+        self.head.status(py, &self.constants)
     }
 
     #[getter]
-    fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
-        self.head.http_version(py)
+    fn http_version(&self, py: Python<'_>) -> Py<HTTPVersion> {
+        self.head.http_version(py, &self.constants)
     }
 
     #[getter]
@@ -209,7 +209,7 @@ impl SyncResponse {
 
 impl SyncResponse {
     pub(super) fn read_full<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let status = self.head.status(py)?;
+        let status = self.head.status(py, &self.constants);
         let headers = self.head.headers(py);
         let trailers = self.trailers.clone_ref(py);
         let content = match &self.content {

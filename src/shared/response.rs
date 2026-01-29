@@ -19,8 +19,8 @@ use crate::{
 };
 
 pub(crate) struct ResponseHead {
-    status: http::StatusCode,
-    version: http::Version,
+    pub(crate) status: http::StatusCode,
+    pub(crate) version: http::Version,
     pub(crate) headers: Py<Headers>,
 }
 
@@ -55,17 +55,12 @@ impl ResponseHead {
         })
     }
 
-    pub(crate) fn status(&self, py: Python<'_>) -> PyResult<Py<PyInt>> {
-        let constants = Constants::get(py)?;
-        Ok(constants.status_code(py, self.status))
+    pub(crate) fn status(&self, py: Python<'_>, constants: &Constants) -> Py<PyInt> {
+        constants.status_code(py, self.status)
     }
 
-    pub(crate) fn http_status(&self) -> http::StatusCode {
-        self.status
-    }
-
-    pub(crate) fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
-        HTTPVersion::from_rust(self.version, py)
+    pub(crate) fn http_version(&self, py: Python<'_>, constants: &Constants) -> Py<HTTPVersion> {
+        HTTPVersion::from_rust(self.version, py, constants)
     }
 
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
@@ -206,8 +201,7 @@ impl ResponseBody {
 /// We can create this in a tokio future and pyo3 will then call `IntoPyObject`
 /// with the GIL outside of tokio.
 pub(crate) struct RustFullResponse {
-    pub(crate) status: http::StatusCode,
-    pub(crate) headers: Py<Headers>,
+    pub(crate) head: ResponseHead,
     pub(crate) body: Bytes,
     pub(crate) trailers: Py<Headers>,
 }
@@ -219,7 +213,6 @@ impl<'py> IntoPyObject<'py> for RustFullResponse {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let body = PyBytes::new(py, &self.body);
-        FullResponse::new(py, self.status, self.headers, body.unbind(), self.trailers)?
-            .into_pyobject(py)
+        FullResponse::new(py, self.head, body.unbind(), self.trailers)?.into_pyobject(py)
     }
 }

@@ -17,7 +17,7 @@ use crate::{
 
 #[pyclass(module = "_pyqwest", frozen)]
 pub struct SyncRequest {
-    head: RequestHead,
+    pub(super) head: RequestHead,
     content: Option<Content>,
 }
 

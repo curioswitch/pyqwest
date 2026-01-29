@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 import trustme
+from opentelemetry.test.test_base import InMemorySpanExporter, TestBase
 from pyvoy import PyvoyServer
 
 from pyqwest import (
@@ -87,22 +88,54 @@ def http_version(request: pytest.FixtureRequest) -> HTTPVersion | None:
 
 
 @pytest.fixture
-def url(server: PyvoyServer, http_scheme: str, http_version: HTTPVersion | None) -> str:
+def server_port(
+    server: PyvoyServer, http_scheme: str, http_version: HTTPVersion | None
+) -> int:
     match http_scheme:
         case "http":
             if http_version == HTTPVersion.HTTP3:
                 pytest.skip("HTTP/3 over plain HTTP is not supported")
-            return f"http://localhost:{server.listener_port}"
+            return server.listener_port
         case "https":
-            return f"https://localhost:{server.listener_port_tls if http_version != HTTPVersion.HTTP3 else server.listener_port_quic}"
+            port = (
+                server.listener_port_tls
+                if http_version != HTTPVersion.HTTP3
+                else server.listener_port_quic
+            )
+            assert port is not None  # noqa: S101
+            return port
         case _:
             msg = "Invalid scheme"
             raise ValueError(msg)
 
 
+@pytest.fixture
+def url(server_port: int, http_scheme: str) -> str:
+    return f"{http_scheme}://localhost:{server_port}"
+
+
+@pytest.fixture(scope="session")
+def otel_test_base() -> Iterator[TestBase]:
+    test_base = TestBase()
+    test_base.setUp()
+    try:
+        yield test_base
+    finally:
+        test_base.tearDown()
+
+
+@pytest.fixture
+def spans_exporter(otel_test_base: TestBase) -> InMemorySpanExporter:
+    exp = otel_test_base.memory_exporter
+    exp.clear()
+    return exp
+
+
 @pytest_asyncio.fixture(scope="session")
 async def async_transport(
-    certs: Certs, http_version: HTTPVersion | None
+    certs: Certs,
+    http_version: HTTPVersion | None,
+    otel_test_base: TestBase,  # noqa: ARG001
 ) -> AsyncIterator[HTTPTransport]:
     async with HTTPTransport(
         tls_ca_cert=certs.ca,
@@ -148,7 +181,9 @@ def async_client(
 
 @pytest.fixture(scope="session")
 def sync_transport(
-    certs: Certs, http_version: HTTPVersion | None
+    certs: Certs,
+    http_version: HTTPVersion | None,
+    otel_test_base: TestBase,  # noqa: ARG001
 ) -> Iterator[SyncHTTPTransport]:
     with SyncHTTPTransport(
         tls_ca_cert=certs.ca,

@@ -131,7 +131,7 @@ impl Client {
         };
         let request = Request::new(py, method, url, headers, content, self.constants.clone())?;
         match &self.transport {
-            Transport::Http(transport) => transport.do_execute_and_read_full(py, &request),
+            Transport::Http(transport) => transport.do_execute(py, &request),
             Transport::Custom(transport) => self
                 .constants
                 .execute_and_read_full
@@ -160,7 +160,7 @@ impl Client {
         };
         let request = Request::py_new(py, method, url, headers, content)?;
         match &self.transport {
-            Transport::Http(transport) => transport.do_execute(py, &request),
+            Transport::Http(transport) => transport.do_stream(py, &request),
             Transport::Custom(transport) => transport
                 .bind(py)
                 .call_method1(&self.constants.execute, (request,)),

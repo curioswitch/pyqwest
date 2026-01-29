@@ -68,6 +68,10 @@ impl RequestHead {
         self.url.as_str()
     }
 
+    pub(crate) fn parsed_url(&self) -> &reqwest::Url {
+        &self.url
+    }
+
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.headers.clone_ref(py)
     }
