@@ -23,7 +23,7 @@ use crate::{
 
 #[pyclass(module = "_pyqwest", frozen)]
 pub struct Request {
-    head: RequestHead,
+    pub(super) head: RequestHead,
     content: Option<Content>,
 
     constants: Constants,

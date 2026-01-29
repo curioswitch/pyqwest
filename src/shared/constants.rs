@@ -7,7 +7,10 @@ use pyo3::{
     Py, PyAny, PyResult, PyTypeInfo, Python,
 };
 
-use crate::common::{headername::HttpHeaderName, httpversion::HTTPVersion};
+use crate::{
+    common::{headername::HttpHeaderName, httpversion::HTTPVersion},
+    shared::otel::HeadersSetter,
+};
 
 /// Constants used when creating Python objects. These are mostly strings,
 /// which `PyO3` provides the intern! macro for, but it still has a very small amount
@@ -34,6 +37,8 @@ pub(crate) struct ConstantsInner {
     pub execute: Py<PyString>,
     /// The string "`execute_sync`".
     pub execute_sync: Py<PyString>,
+    /// The string "result".
+    pub result: Py<PyString>,
 
     /// The _glue.py function `close_request_iterator`.
     pub close_request_iterator: Py<PyAny>,
@@ -79,6 +84,52 @@ pub(crate) struct ConstantsInner {
     pub timeout_context_var_set: Py<PyAny>,
     /// ContextVar.reset to reset request timeout.
     pub timeout_context_var_reset: Py<PyAny>,
+
+    // OTel.
+    /// The string "end".
+    pub end: Py<PyString>,
+    /// The string "1.0".
+    pub otel_1_0: Py<PyString>,
+    /// The string "1.1".
+    pub otel_1_1: Py<PyString>,
+    /// The string "2".
+    pub otel_2: Py<PyString>,
+    /// The string "3".
+    pub otel_3: Py<PyString>,
+    /// The string "error.type".
+    pub error_type: Py<PyString>,
+    /// The string "http".
+    pub http: Py<PyString>,
+    /// The string "http.request.method".
+    pub http_request_method: Py<PyString>,
+    /// The string "`http.response.status_code`".
+    pub http_response_status_code: Py<PyString>,
+    /// The string "network.protocol.name".
+    pub network_protocol_name: Py<PyString>,
+    /// The string "network.protocol.version".
+    pub network_protocol_version: Py<PyString>,
+    /// The string "`set_attribute`".
+    pub set_attribute: Py<PyString>,
+    /// The string "server.address".
+    pub server_address: Py<PyString>,
+    /// The string "server.port".
+    pub server_port: Py<PyString>,
+    /// The string "url.full".
+    pub url_full: Py<PyString>,
+
+    /// The string "`start_span`".
+    pub start_span: Py<PyString>,
+
+    /// The function `get_tracer`.
+    pub(super) get_tracer: Py<PyAny>,
+    /// The singleton `HeadersSetter` instance.
+    pub(super) headers_setter: Py<HeadersSetter>,
+    /// The function `propagate.inject`.
+    pub(super) inject_context: Py<PyAny>,
+    /// The function `set_span_in_context`.
+    pub(super) set_span_in_context: Py<PyAny>,
+    /// The attribute SpanKind.CLIENT.
+    pub(super) span_kind_client: Py<PyAny>,
 
     // HTTP numeric status codes. We only cache non-informational ones
     // since they have no protocol implications.
@@ -382,6 +433,11 @@ impl Constants {
         let timeout_context_var = contextvars
             .getattr("ContextVar")?
             .call1(("pyqwest_timeout",))?;
+
+        let otel_propagate = py.import("opentelemetry.propagate")?;
+        let otel_trace = py.import("opentelemetry.trace")?;
+        let span_kind = otel_trace.getattr("SpanKind")?;
+
         Ok(Self {
             inner: Arc::new(ConstantsInner {
                 empty_bytes: PyBytes::new(py, b"").unbind(),
@@ -393,6 +449,7 @@ impl Constants {
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
+                result: PyString::new(py, "result").unbind(),
 
                 close_request_iterator: glue.getattr("close_request_iterator")?.unbind(),
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
@@ -404,6 +461,30 @@ impl Constants {
                 timeout_context_var_get: timeout_context_var.getattr("get")?.unbind(),
                 timeout_context_var_set: timeout_context_var.getattr("set")?.unbind(),
                 timeout_context_var_reset: timeout_context_var.getattr("reset")?.unbind(),
+
+                end: PyString::new(py, "end").unbind(),
+                otel_1_0: PyString::new(py, "1.0").unbind(),
+                otel_1_1: PyString::new(py, "1.1").unbind(),
+                otel_2: PyString::new(py, "2").unbind(),
+                otel_3: PyString::new(py, "3").unbind(),
+                error_type: PyString::new(py, "error.type").unbind(),
+                http: PyString::new(py, "http").unbind(),
+                http_request_method: PyString::new(py, "http.request.method").unbind(),
+                http_response_status_code: PyString::new(py, "http.response.status_code").unbind(),
+                network_protocol_name: PyString::new(py, "network.protocol.name").unbind(),
+                network_protocol_version: PyString::new(py, "network.protocol.version").unbind(),
+                set_attribute: PyString::new(py, "set_attribute").unbind(),
+                server_address: PyString::new(py, "server.address").unbind(),
+                server_port: PyString::new(py, "server.port").unbind(),
+                url_full: PyString::new(py, "url.full").unbind(),
+
+                start_span: PyString::new(py, "start_span").unbind(),
+
+                get_tracer: otel_trace.getattr("get_tracer")?.unbind(),
+                headers_setter: Py::new(py, HeadersSetter {})?,
+                inject_context: otel_propagate.getattr("inject")?.unbind(),
+                set_span_in_context: otel_trace.getattr("set_span_in_context")?.unbind(),
+                span_kind_client: span_kind.getattr("CLIENT")?.unbind(),
 
                 http_1: get_class_attr::<HTTPVersion>(py, "HTTP1")?,
                 http_2: get_class_attr::<HTTPVersion>(py, "HTTP2")?,

@@ -131,38 +131,6 @@ impl SyncClient {
         content: Option<Bound<'py, PyAny>>,
         timeout: Option<f64>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let response = self.do_stream(py, method, url, headers, content, timeout)?;
-        response.get().read_full(py)
-    }
-
-    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
-    fn stream<'py>(
-        &self,
-        py: Python<'py>,
-        method: &str,
-        url: &str,
-        headers: Option<Bound<'py, PyAny>>,
-        content: Option<Bound<'py, PyAny>>,
-        timeout: Option<f64>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let response = self.do_stream(py, method, url, headers, content, timeout)?;
-        ResponseContextManager {
-            response: response.unbind(),
-        }
-        .into_bound_py_any(py)
-    }
-}
-
-impl SyncClient {
-    fn do_stream<'py>(
-        &self,
-        py: Python<'py>,
-        method: &str,
-        url: &str,
-        headers: Option<Bound<'py, PyAny>>,
-        content: Option<Bound<'py, PyAny>>,
-        timeout: Option<f64>,
-    ) -> PyResult<Bound<'py, SyncResponse>> {
         let timeout = validate_timeout(timeout)?;
         let _timeout_guard = if let Some(timeout) = timeout {
             Some(set_timeout(py, timeout)?.enter(py))
@@ -180,14 +148,55 @@ impl SyncClient {
         };
         let request = SyncRequest::new(py, method, url, headers, content)?;
         match &self.transport {
-            Transport::Http(transport) => transport.do_execute(py, &request)?.into_pyobject(py),
+            Transport::Http(transport) => transport.do_execute(py, &request),
+            Transport::Custom(transport) => {
+                let res = transport
+                    .bind(py)
+                    .call_method1(&self.constants.execute_sync, (request,))?;
+                res.cast_into::<SyncResponse>()?.get().read_full(py)
+            }
+        }
+    }
+
+    #[pyo3(signature = (method, url, headers=None, content=None, timeout=None))]
+    fn stream<'py>(
+        &self,
+        py: Python<'py>,
+        method: &str,
+        url: &str,
+        headers: Option<Bound<'py, PyAny>>,
+        content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let timeout = validate_timeout(timeout)?;
+        let _timeout_guard = if let Some(timeout) = timeout {
+            Some(set_timeout(py, timeout)?.enter(py))
+        } else {
+            None
+        };
+        let headers = if let Some(headers) = headers {
+            if let Ok(headers) = headers.cast::<Headers>() {
+                Some(headers.clone())
+            } else {
+                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
+            }
+        } else {
+            None
+        };
+        let request = SyncRequest::new(py, method, url, headers, content)?;
+        let response = match &self.transport {
+            Transport::Http(transport) => transport.do_stream(py, &request)?.into_pyobject(py),
             Transport::Custom(transport) => {
                 let res = transport
                     .bind(py)
                     .call_method1(&self.constants.execute_sync, (request,))?;
                 Ok(res.cast_into::<SyncResponse>()?)
             }
+        }?;
+        ResponseContextManager {
+            response: response.unbind(),
         }
+        .into_bound_py_any(py)
     }
 }
 

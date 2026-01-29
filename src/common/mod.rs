@@ -8,7 +8,10 @@ use pyo3::{
     Bound, Py, PyAny, PyResult, Python,
 };
 
-use crate::{headers::Headers, shared::constants::Constants};
+use crate::{
+    headers::Headers,
+    shared::{constants::Constants, response::ResponseHead},
+};
 
 /// Decompressers to use in testing transports without additional dependencies.
 pub(crate) mod decompress;
@@ -82,15 +85,14 @@ impl FullResponse {
 impl FullResponse {
     pub(crate) fn new(
         py: Python<'_>,
-        status: http::StatusCode,
-        headers: Py<Headers>,
+        head: ResponseHead,
         content: Py<PyBytes>,
         trailers: Py<Headers>,
     ) -> PyResult<Self> {
         let constants = Constants::get(py)?;
         Ok(Self {
-            status: constants.status_code(py, status),
-            headers,
+            status: constants.status_code(py, head.status),
+            headers: head.headers,
             content,
             trailers,
         })

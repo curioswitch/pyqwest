@@ -2,12 +2,12 @@
   "folders": [
     {
       "name": "/",
-      "path": "."
+      "path": ".",
     },
     {
       "name": "example/docker",
-      "path": "example/docker"
-    }
+      "path": "example/docker",
+    },
   ],
   "extensions": {
     "recommendations": [
@@ -17,8 +17,8 @@
       "golang.go",
       "ms-python.python",
       "ms-python.vscode-pylance",
-      "rust-lang.rust-analyzer"
-    ]
+      "rust-lang.rust-analyzer",
+    ],
   },
   "settings": {
     "editor.formatOnSave": true,
@@ -26,11 +26,11 @@
     "python.analysis.typeCheckingMode": "basic",
     "python.defaultInterpreterPath": "${workspaceFolder:/}/.venv/bin/python",
     "python.testing.pytestEnabled": true,
-    "python.testing.pytestArgs": ["tests"],
+    "python.testing.pytestArgs": ["tests", "-vv"],
     "python.testing.unittestEnabled": false,
     "[github-actions-workflow]": {
       "editor.formatOnSave": true,
-      "editor.defaultFormatter": "esbenp.prettier-vscode"
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
     },
     "debugpy.debugJustMyCode": false,
     "rust-analyzer.cargo.cfgs": ["debug_assertions", "miri", "Py_GIL_DISABLED"],
@@ -38,18 +38,18 @@
       "editor.formatOnSave": true,
       "editor.codeActionsOnSave": {
         "source.fixAll": "explicit",
-        "source.organizeImports": "explicit"
+        "source.organizeImports": "explicit",
       },
-      "editor.defaultFormatter": "charliermarsh.ruff"
+      "editor.defaultFormatter": "charliermarsh.ruff",
     },
     "[json][jsonc]": {
       "editor.formatOnSave": true,
-      "editor.defaultFormatter": "esbenp.prettier-vscode"
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
     },
     "yaml.format.enable": false,
     "[yaml]": {
       "editor.formatOnSave": true,
-      "editor.defaultFormatter": "esbenp.prettier-vscode"
-    }
-  }
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+    },
+  },
 }

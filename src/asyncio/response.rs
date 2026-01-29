@@ -78,8 +78,7 @@ impl Response {
         // SAFETY - we only call into_full_response without allowing the user to close this response.
         let bytes = body.as_ref().unwrap().read_full().await?;
         Ok(RustFullResponse {
-            status: self.head.http_status(),
-            headers: self.head.headers,
+            head: self.head,
             body: bytes,
             trailers: self.trailers,
         })
@@ -137,13 +136,13 @@ impl Response {
     }
 
     #[getter]
-    fn status(&self, py: Python<'_>) -> PyResult<Py<PyInt>> {
-        self.head.status(py)
+    fn status(&self, py: Python<'_>) -> Py<PyInt> {
+        self.head.status(py, &self.constants)
     }
 
     #[getter]
-    fn http_version(&self, py: Python<'_>) -> PyResult<Py<HTTPVersion>> {
-        self.head.http_version(py)
+    fn http_version(&self, py: Python<'_>) -> Py<HTTPVersion> {
+        self.head.http_version(py, &self.constants)
     }
 
     #[getter]

@@ -1,4 +1,4 @@
-use pyo3::{pyclass, pymethods, types::PyString, Py, PyResult, Python};
+use pyo3::{pyclass, pymethods, types::PyString, Py, Python};
 
 use crate::shared::constants::Constants;
 
@@ -59,12 +59,15 @@ impl HTTPVersion {
 }
 
 impl HTTPVersion {
-    pub(crate) fn from_rust(version: http::Version, py: Python<'_>) -> PyResult<Py<Self>> {
-        let constants = Constants::get(py)?;
+    pub(crate) fn from_rust(
+        version: http::Version,
+        py: Python<'_>,
+        constants: &Constants,
+    ) -> Py<Self> {
         match version {
-            http::Version::HTTP_2 => Ok(constants.http_2.clone_ref(py)),
-            http::Version::HTTP_3 => Ok(constants.http_3.clone_ref(py)),
-            _ => Ok(constants.http_1.clone_ref(py)),
+            http::Version::HTTP_2 => constants.http_2.clone_ref(py),
+            http::Version::HTTP_3 => constants.http_3.clone_ref(py),
+            _ => constants.http_1.clone_ref(py),
         }
     }
 
