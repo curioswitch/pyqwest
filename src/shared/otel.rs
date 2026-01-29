@@ -58,11 +58,11 @@ impl Instrumentation {
         )?;
 
         Ok(Operation {
-            inner: Arc::new(Operationinner {
+            inner: Arc::new(OperationInner {
                 span: span.unbind(),
                 response_info: Mutex::new(None),
-                constants: self.constants.clone(),
             }),
+            constants: self.constants.clone(),
         })
     }
 }
@@ -72,32 +72,30 @@ struct ResponseInfo {
     http_version: http::Version,
 }
 
-struct Operationinner {
+struct OperationInner {
     span: Py<PyAny>,
     response_info: Mutex<Option<ResponseInfo>>,
-
-    constants: Constants,
 }
 
 #[derive(Clone)]
 pub(crate) struct Operation {
-    inner: Arc<Operationinner>,
+    inner: Arc<OperationInner>,
+
+    constants: Constants,
 }
 
 impl Operation {
     pub(crate) fn inject(&self, py: Python<'_>, request: &mut reqwest::Request) -> PyResult<()> {
-        let inner = &self.inner;
-        let context = inner
+        let context = self
             .constants
             .set_span_in_context
-            .call1(py, (&inner.span,))?;
+            .call1(py, (&self.inner.span,))?;
 
         let headers = std::mem::take(request.headers_mut());
         let carrier = Headers(Some(headers)).into_pyobject(py)?;
-        inner
-            .constants
+        self.constants
             .inject_context
-            .call1(py, (&carrier, &context, &inner.constants.headers_setter))?;
+            .call1(py, (&carrier, &context, &self.constants.headers_setter))?;
         // SAFETY: This is only called in inject as an implementation detail, where we know
         // we set the headers, call inject, then retrieve them, in order in a single function.
         let hdrs = carrier.borrow_mut().0.take().unwrap();
@@ -116,37 +114,42 @@ impl Operation {
     }
 
     pub(crate) fn end(&self, py: Python<'_>, err: Option<&PyErr>) -> PyResult<()> {
-        let inner = &self.inner;
+        let span = self.inner.span.bind(py);
 
-        if let Some(response_info) = inner.response_info.lock_py_attached(py).unwrap().take() {
-            let span = inner.span.bind(py);
+        if let Some(response_info) = self
+            .inner
+            .response_info
+            .lock_py_attached(py)
+            .unwrap()
+            .take()
+        {
             let _ = span.call_method1(
-                &inner.constants.set_attribute,
+                &self.constants.set_attribute,
                 (
-                    &inner.constants.http_response_status_code,
-                    inner.constants.status_code(py, response_info.status_code),
+                    &self.constants.http_response_status_code,
+                    self.constants.status_code(py, response_info.status_code),
                 ),
             );
             let _ = span.call_method1(
-                &inner.constants.set_attribute,
+                &self.constants.set_attribute,
                 (
-                    &inner.constants.network_protocol_version,
-                    network_protocol_version(py, response_info.http_version, &inner.constants),
+                    &self.constants.network_protocol_version,
+                    network_protocol_version(py, response_info.http_version, &self.constants),
                 ),
             );
         }
 
         if let Some(err) = err {
-            let span = inner.span.bind(py);
+            let span = self.inner.span.bind(py);
             if let Ok(qualname) = err.get_type(py).qualname() {
                 let _ = span.call_method1(
-                    &inner.constants.set_attribute,
-                    (&inner.constants.error_type, &qualname),
+                    &self.constants.set_attribute,
+                    (&self.constants.error_type, &qualname),
                 );
             }
         }
 
-        inner.span.call_method0(py, &inner.constants.end)?;
+        span.call_method0(&self.constants.end)?;
         Ok(())
     }
 }
