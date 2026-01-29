@@ -246,7 +246,7 @@ async def test_parent(
     cleanup = ExitStack()
     cleanup.callback(context.detach, reset_ctx)
 
-    with cleanup, tracer.start_as_current_span("parent", ctx) as parent:
+    with cleanup, tracer.start_as_current_span("parent") as parent:
         ctx = context.get_current()
         url = f"{url}/echo?animal=bear"
         headers = [("content-type", "text/plain")]
