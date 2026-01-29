@@ -71,22 +71,21 @@ impl SyncRequest {
 }
 
 impl SyncRequest {
-    pub(crate) fn new_reqwest_builder(
+    pub(crate) fn new_reqwest(
         &self,
         py: Python<'_>,
-        client: &reqwest::Client,
         http3: bool,
-    ) -> PyResult<(reqwest::RequestBuilder, Option<Py<PyAny>>)> {
-        let mut req_builder = self.head.new_request_builder(py, client, http3)?;
+    ) -> PyResult<(reqwest::Request, Option<Py<PyAny>>)> {
+        let mut req = self.head.new_reqwest(py, http3)?;
         if let Some(timeout) = get_timeout(py)? {
-            req_builder = req_builder.timeout(timeout);
+            *req.timeout_mut() = Some(timeout);
         }
         let mut request_iter: Option<Py<PyAny>> = None;
         if let Some((body, iter)) = self.content_into_reqwest(py) {
-            req_builder = req_builder.body(body);
+            *req.body_mut() = Some(body);
             request_iter = iter;
         }
-        Ok((req_builder, request_iter))
+        Ok((req, request_iter))
     }
 
     fn content_into_reqwest(&self, py: Python<'_>) -> Option<(reqwest::Body, Option<Py<PyAny>>)> {

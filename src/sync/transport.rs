@@ -155,14 +155,15 @@ impl SyncHttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let (req_builder, request_iter) = request.new_reqwest_builder(py, client, self.http3)?;
+        let (mut request_rs, request_iter) = request.new_reqwest(py, self.http3)?;
         let request_iter: RequestIterHandle = Arc::new(Mutex::new(request_iter));
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
         let mut response = SyncResponse::pending(py, request_iter.clone(), self.constants.clone())?;
-        let req_builder = operation.inject(py, req_builder)?;
+        operation.inject(py, &mut request_rs)?;
+        let client = client.clone();
         let operation = operation.clone();
         get_runtime().spawn(async move {
-            match req_builder.send().await {
+            match client.execute(request_rs).await {
                 Ok(res) => {
                     operation.fill_response(&res);
                     response.fill(res).await;

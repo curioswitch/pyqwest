@@ -134,16 +134,16 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let (req_builder, request_iter_task) =
-            request.new_reqwest_builder(py, client, self.http3)?;
+        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3)?;
         let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
         let operation = self.instrumentation.start(py, &request.head)?;
-        let req_builder = operation.inject(py, req_builder)?;
+        operation.inject(py, &mut request_rs)?;
         let fut = future_into_py(py, {
+            let client = client.clone();
             let operation = operation.clone();
             async move {
-                let res = req_builder
-                    .send()
+                let res = client
+                    .execute(request_rs)
                     .await
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);
@@ -173,16 +173,16 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let (req_builder, request_iter_task) =
-            request.new_reqwest_builder(py, client, self.http3)?;
+        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3)?;
         let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
         let operation = self.instrumentation.start(py, &request.head)?;
-        let req_builder = operation.inject(py, req_builder)?;
+        operation.inject(py, &mut request_rs)?;
         let fut = future_into_py(py, {
+            let client = client.clone();
             let operation = operation.clone();
             async move {
-                let res = req_builder
-                    .send()
+                let res = client
+                    .execute(request_rs)
                     .await
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);

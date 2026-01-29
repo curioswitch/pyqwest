@@ -58,11 +58,11 @@ impl Instrumentation {
         )?;
 
         Ok(Operation {
-            inner: Arc::new(Mutex::new(Operationinner {
+            inner: Arc::new(OperationInner {
                 span: span.unbind(),
-                response_info: None,
-                constants: self.constants.clone(),
-            })),
+                response_info: Mutex::new(None),
+            }),
+            constants: self.constants.clone(),
         })
     }
 }
@@ -72,93 +72,84 @@ struct ResponseInfo {
     http_version: http::Version,
 }
 
-struct Operationinner {
+struct OperationInner {
     span: Py<PyAny>,
-    response_info: Option<ResponseInfo>,
-
-    constants: Constants,
+    response_info: Mutex<Option<ResponseInfo>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct Operation {
-    inner: Arc<Mutex<Operationinner>>,
+    inner: Arc<OperationInner>,
+
+    constants: Constants,
 }
 
 impl Operation {
-    pub(crate) fn inject(
-        &self,
-        py: Python<'_>,
-        mut request: reqwest::RequestBuilder,
-    ) -> PyResult<reqwest::RequestBuilder> {
-        let inner = &self.inner.lock_py_attached(py).unwrap();
-        let context = inner
+    pub(crate) fn inject(&self, py: Python<'_>, request: &mut reqwest::Request) -> PyResult<()> {
+        let context = self
             .constants
             .set_span_in_context
-            .call1(py, (&inner.span,))?;
+            .call1(py, (&self.inner.span,))?;
 
-        // Not empirically verified, but it seems very likely an intermediary
-        // is better than trying to pass the RequestBuilder itself in and out of Python.
-        let carrier = Headers(Some(HeaderMap::new())).into_pyobject(py)?;
-        inner
-            .constants
+        // Avoid allocating a new map - we have an exclusive borrow on Request, so we can take the
+        // headers out, pass to python, and take them back, which only copies the HeaderMap struct
+        // to/from the Python wrapper and not its heap allocations.
+        let headers = std::mem::take(request.headers_mut());
+        let carrier = Headers(headers).into_pyobject(py)?;
+        self.constants
             .inject_context
-            .call1(py, (&carrier, &context, &inner.constants.headers_setter))?;
-        // SAFETY: This is only called in inject as an implementation detail, where we know
-        // we set the headers, call inject, then retrieve them, in order.
-        let hdrs = carrier.borrow_mut().0.take().unwrap();
-        let mut current_key: Option<HeaderName> = None;
-        for (key, value) in hdrs {
-            if let Some(key) = key {
-                current_key = Some(key);
-            }
-            // SAFETY: A key is guaranteed to be present on the first iteration.
-            request = request.header(current_key.as_ref().unwrap(), value);
-        }
+            .call1(py, (&carrier, &context, &self.constants.headers_setter))?;
+        let hdrs = std::mem::take(&mut carrier.borrow_mut().0);
+        *request.headers_mut() = hdrs;
 
-        Ok(request)
+        Ok(())
     }
 
     pub(crate) fn fill_response(&self, response: &reqwest::Response) {
-        let inner = &mut self.inner.lock().unwrap();
+        let mut response_info = self.inner.response_info.lock().unwrap();
 
-        inner.response_info = Some(ResponseInfo {
+        *response_info = Some(ResponseInfo {
             status_code: response.status(),
             http_version: response.version(),
         });
     }
 
     pub(crate) fn end(&self, py: Python<'_>, err: Option<&PyErr>) -> PyResult<()> {
-        let inner = &self.inner.lock().unwrap();
+        let span = self.inner.span.bind(py);
 
-        if let Some(response_info) = &inner.response_info {
-            let span = inner.span.bind(py);
+        if let Some(response_info) = self
+            .inner
+            .response_info
+            .lock_py_attached(py)
+            .unwrap()
+            .take()
+        {
             let _ = span.call_method1(
-                &inner.constants.set_attribute,
+                &self.constants.set_attribute,
                 (
-                    &inner.constants.http_response_status_code,
-                    inner.constants.status_code(py, response_info.status_code),
+                    &self.constants.http_response_status_code,
+                    self.constants.status_code(py, response_info.status_code),
                 ),
             );
             let _ = span.call_method1(
-                &inner.constants.set_attribute,
+                &self.constants.set_attribute,
                 (
-                    &inner.constants.network_protocol_version,
-                    network_protocol_version(py, response_info.http_version, &inner.constants),
+                    &self.constants.network_protocol_version,
+                    network_protocol_version(py, response_info.http_version, &self.constants),
                 ),
             );
         }
 
         if let Some(err) = err {
-            let span = inner.span.bind(py);
             if let Ok(qualname) = err.get_type(py).qualname() {
                 let _ = span.call_method1(
-                    &inner.constants.set_attribute,
-                    (&inner.constants.error_type, &qualname),
+                    &self.constants.set_attribute,
+                    (&self.constants.error_type, &qualname),
                 );
             }
         }
 
-        inner.span.call_method0(py, &inner.constants.end)?;
+        span.call_method0(&self.constants.end)?;
         Ok(())
     }
 }
@@ -177,21 +168,31 @@ fn network_protocol_version(
 }
 
 #[pyclass(module = "_pyqwest.otel", name = "_Headers")]
-struct Headers(Option<HeaderMap>);
+struct Headers(HeaderMap);
 
 #[pyclass(module = "_pyqwest.otel", name = "_HeadersSetter", frozen)]
 pub(super) struct HeadersSetter;
+
+const HEADER_NAME_BAGGAGE: HeaderName = HeaderName::from_static("baggage");
+const HEADER_NAME_TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
+const HEADER_NAME_TRACESTATE: HeaderName = HeaderName::from_static("tracestate");
+
+fn header_name(name: &str) -> PyResult<HeaderName> {
+    match name {
+        "baggage" => Ok(HEADER_NAME_BAGGAGE),
+        "traceparent" => Ok(HEADER_NAME_TRACEPARENT),
+        "tracestate" => Ok(HEADER_NAME_TRACESTATE),
+        _ => HeaderName::from_str(name)
+            .map_err(|_| PyValueError::new_err(format!("Invalid header name '{name}'"))),
+    }
+}
 
 #[pymethods]
 impl HeadersSetter {
     #[allow(clippy::unused_self)]
     fn set(&self, carrier: &mut Headers, key: &str, value: &str) -> PyResult<()> {
-        // SAFETY: This is only called in inject as an implementation detail, where we know
-        // we set the headers, call inject, then retrieve them, in order.
-        let carrier = carrier.0.as_mut().unwrap();
-        carrier.append(
-            HeaderName::from_str(key)
-                .map_err(|_| PyValueError::new_err(format!("Invalid header name '{key}'")))?,
+        carrier.0.append(
+            header_name(key)?,
             HeaderValue::from_str(value)
                 .map_err(|_| PyValueError::new_err(format!("Invalid header value '{value}'")))?,
         );
