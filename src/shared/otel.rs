@@ -58,11 +58,11 @@ impl Instrumentation {
         )?;
 
         Ok(Operation {
-            inner: Arc::new(Mutex::new(Operationinner {
+            inner: Arc::new(Operationinner {
                 span: span.unbind(),
-                response_info: None,
+                response_info: Mutex::new(None),
                 constants: self.constants.clone(),
-            })),
+            }),
         })
     }
 }
@@ -74,63 +74,51 @@ struct ResponseInfo {
 
 struct Operationinner {
     span: Py<PyAny>,
-    response_info: Option<ResponseInfo>,
+    response_info: Mutex<Option<ResponseInfo>>,
 
     constants: Constants,
 }
 
 #[derive(Clone)]
 pub(crate) struct Operation {
-    inner: Arc<Mutex<Operationinner>>,
+    inner: Arc<Operationinner>,
 }
 
 impl Operation {
-    pub(crate) fn inject(
-        &self,
-        py: Python<'_>,
-        mut request: reqwest::RequestBuilder,
-    ) -> PyResult<reqwest::RequestBuilder> {
-        let inner = &self.inner.lock_py_attached(py).unwrap();
+    pub(crate) fn inject(&self, py: Python<'_>, request: &mut reqwest::Request) -> PyResult<()> {
+        let inner = &self.inner;
         let context = inner
             .constants
             .set_span_in_context
             .call1(py, (&inner.span,))?;
 
-        // Not empirically verified, but it seems very likely an intermediary
-        // is better than trying to pass the RequestBuilder itself in and out of Python.
-        let carrier = Headers(Some(HeaderMap::new())).into_pyobject(py)?;
+        let headers = std::mem::take(request.headers_mut());
+        let carrier = Headers(Some(headers)).into_pyobject(py)?;
         inner
             .constants
             .inject_context
             .call1(py, (&carrier, &context, &inner.constants.headers_setter))?;
         // SAFETY: This is only called in inject as an implementation detail, where we know
-        // we set the headers, call inject, then retrieve them, in order.
+        // we set the headers, call inject, then retrieve them, in order in a single function.
         let hdrs = carrier.borrow_mut().0.take().unwrap();
-        let mut current_key: Option<HeaderName> = None;
-        for (key, value) in hdrs {
-            if let Some(key) = key {
-                current_key = Some(key);
-            }
-            // SAFETY: A key is guaranteed to be present on the first iteration.
-            request = request.header(current_key.as_ref().unwrap(), value);
-        }
+        let _ = std::mem::replace(request.headers_mut(), hdrs);
 
-        Ok(request)
+        Ok(())
     }
 
     pub(crate) fn fill_response(&self, response: &reqwest::Response) {
-        let inner = &mut self.inner.lock().unwrap();
+        let mut response_info = self.inner.response_info.lock().unwrap();
 
-        inner.response_info = Some(ResponseInfo {
+        *response_info = Some(ResponseInfo {
             status_code: response.status(),
             http_version: response.version(),
         });
     }
 
     pub(crate) fn end(&self, py: Python<'_>, err: Option<&PyErr>) -> PyResult<()> {
-        let inner = &self.inner.lock().unwrap();
+        let inner = &self.inner;
 
-        if let Some(response_info) = &inner.response_info {
+        if let Some(response_info) = inner.response_info.lock_py_attached(py).unwrap().take() {
             let span = inner.span.bind(py);
             let _ = span.call_method1(
                 &inner.constants.set_attribute,
