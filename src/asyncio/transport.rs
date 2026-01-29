@@ -139,15 +139,17 @@ impl HttpTransport {
         let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
         let operation = self.instrumentation.start(py, &request.head)?;
         let req_builder = operation.inject(py, req_builder)?;
-        let operation2 = operation.clone();
-        let fut = future_into_py(py, async move {
-            let res = req_builder
-                .send()
-                .await
-                .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
-            operation2.fill_response(&res);
-            response.fill(res).await;
-            Ok(response)
+        let fut = future_into_py(py, {
+            let operation = operation.clone();
+            async move {
+                let res = req_builder
+                    .send()
+                    .await
+                    .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                operation.fill_response(&res);
+                response.fill(res).await;
+                Ok(response)
+            }
         })?;
         fut.call_method1(
             &self.constants.add_done_callback,
@@ -176,16 +178,18 @@ impl HttpTransport {
         let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
         let operation = self.instrumentation.start(py, &request.head)?;
         let req_builder = operation.inject(py, req_builder)?;
-        let operation2 = operation.clone();
-        let fut = future_into_py(py, async move {
-            let res = req_builder
-                .send()
-                .await
-                .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
-            operation2.fill_response(&res);
-            response.fill(res).await;
-            let full_response = response.into_full_response().await?;
-            Ok(full_response)
+        let fut = future_into_py(py, {
+            let operation = operation.clone();
+            async move {
+                let res = req_builder
+                    .send()
+                    .await
+                    .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                operation.fill_response(&res);
+                response.fill(res).await;
+                let full_response = response.into_full_response().await?;
+                Ok(full_response)
+            }
         })?;
         fut.call_method1(
             &self.constants.add_done_callback,

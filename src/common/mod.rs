@@ -23,7 +23,7 @@ pub(crate) mod httpversion;
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct FullResponse {
     #[pyo3(get)]
-    pub(crate) status: Py<PyInt>,
+    status: Py<PyInt>,
     #[pyo3(get)]
     headers: Py<Headers>,
     #[pyo3(get)]

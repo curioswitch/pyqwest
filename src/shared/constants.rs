@@ -23,8 +23,6 @@ pub(crate) struct ConstantsInner {
 
     /// The string "__aiter__".
     pub __aiter__: Py<PyString>,
-    /// The string "__enter__".
-    pub __enter__: Py<PyString>,
     /// The string "aclose".
     pub aclose: Py<PyString>,
     /// The string "`add_done_callback`".
@@ -444,7 +442,6 @@ impl Constants {
             inner: Arc::new(ConstantsInner {
                 empty_bytes: PyBytes::new(py, b"").unbind(),
                 __aiter__: PyString::new(py, "__aiter__").unbind(),
-                __enter__: PyString::new(py, "__enter__").unbind(),
                 aclose: PyString::new(py, "aclose").unbind(),
                 add_done_callback: PyString::new(py, "add_done_callback").unbind(),
                 cancel: PyString::new(py, "cancel").unbind(),
