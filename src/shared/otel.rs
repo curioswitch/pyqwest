@@ -99,7 +99,7 @@ impl Operation {
         // SAFETY: This is only called in inject as an implementation detail, where we know
         // we set the headers, call inject, then retrieve them, in order in a single function.
         let hdrs = carrier.borrow_mut().0.take().unwrap();
-        let _ = std::mem::replace(request.headers_mut(), hdrs);
+        *request.headers_mut() = hdrs;
 
         Ok(())
     }
@@ -140,7 +140,6 @@ impl Operation {
         }
 
         if let Some(err) = err {
-            let span = self.inner.span.bind(py);
             if let Ok(qualname) = err.get_type(py).qualname() {
                 let _ = span.call_method1(
                     &self.constants.set_attribute,
@@ -173,6 +172,20 @@ struct Headers(Option<HeaderMap>);
 #[pyclass(module = "_pyqwest.otel", name = "_HeadersSetter", frozen)]
 pub(super) struct HeadersSetter;
 
+const HEADER_NAME_BAGGAGE: HeaderName = HeaderName::from_static("baggage");
+const HEADER_NAME_TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
+const HEADER_NAME_TRACESTATE: HeaderName = HeaderName::from_static("tracestate");
+
+fn header_name(name: &str) -> PyResult<HeaderName> {
+    match name {
+        "baggage" => Ok(HEADER_NAME_BAGGAGE),
+        "traceparent" => Ok(HEADER_NAME_TRACEPARENT),
+        "tracestate" => Ok(HEADER_NAME_TRACESTATE),
+        _ => HeaderName::from_str(name)
+            .map_err(|_| PyValueError::new_err(format!("Invalid header name '{name}'"))),
+    }
+}
+
 #[pymethods]
 impl HeadersSetter {
     #[allow(clippy::unused_self)]
@@ -181,8 +194,7 @@ impl HeadersSetter {
         // we set the headers, call inject, then retrieve them, in order.
         let carrier = carrier.0.as_mut().unwrap();
         carrier.append(
-            HeaderName::from_str(key)
-                .map_err(|_| PyValueError::new_err(format!("Invalid header name '{key}'")))?,
+            header_name(key)?,
             HeaderValue::from_str(value)
                 .map_err(|_| PyValueError::new_err(format!("Invalid header value '{value}'")))?,
         );
