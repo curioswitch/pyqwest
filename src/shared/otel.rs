@@ -91,14 +91,15 @@ impl Operation {
             .set_span_in_context
             .call1(py, (&self.inner.span,))?;
 
+        // Avoid allocating a new map - we have an exclusive borrow on Request, so we can take the
+        // headers out, pass to python, and take them back, which only copies the HeaderMap struct
+        // to/from the Python wrapper and not its heap allocations.
         let headers = std::mem::take(request.headers_mut());
-        let carrier = Headers(Some(headers)).into_pyobject(py)?;
+        let carrier = Headers(headers).into_pyobject(py)?;
         self.constants
             .inject_context
             .call1(py, (&carrier, &context, &self.constants.headers_setter))?;
-        // SAFETY: This is only called in inject as an implementation detail, where we know
-        // we set the headers, call inject, then retrieve them, in order in a single function.
-        let hdrs = carrier.borrow_mut().0.take().unwrap();
+        let hdrs = std::mem::take(&mut carrier.borrow_mut().0);
         *request.headers_mut() = hdrs;
 
         Ok(())
@@ -167,7 +168,7 @@ fn network_protocol_version(
 }
 
 #[pyclass(module = "_pyqwest.otel", name = "_Headers")]
-struct Headers(Option<HeaderMap>);
+struct Headers(HeaderMap);
 
 #[pyclass(module = "_pyqwest.otel", name = "_HeadersSetter", frozen)]
 pub(super) struct HeadersSetter;
@@ -190,10 +191,7 @@ fn header_name(name: &str) -> PyResult<HeaderName> {
 impl HeadersSetter {
     #[allow(clippy::unused_self)]
     fn set(&self, carrier: &mut Headers, key: &str, value: &str) -> PyResult<()> {
-        // SAFETY: This is only called in inject as an implementation detail, where we know
-        // we set the headers, call inject, then retrieve them, in order.
-        let carrier = carrier.0.as_mut().unwrap();
-        carrier.append(
+        carrier.0.append(
             header_name(key)?,
             HeaderValue::from_str(value)
                 .map_err(|_| PyValueError::new_err(format!("Invalid header value '{value}'")))?,
