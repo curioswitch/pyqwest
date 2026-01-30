@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 import trustme
-from opentelemetry.test.test_base import InMemorySpanExporter, TestBase
 from pyvoy import PyvoyServer
 
 from pyqwest import (
@@ -114,28 +113,9 @@ def url(server_port: int, http_scheme: str) -> str:
     return f"{http_scheme}://localhost:{server_port}"
 
 
-@pytest.fixture(scope="session")
-def otel_test_base() -> Iterator[TestBase]:
-    test_base = TestBase()
-    test_base.setUp()
-    try:
-        yield test_base
-    finally:
-        test_base.tearDown()
-
-
-@pytest.fixture
-def spans_exporter(otel_test_base: TestBase) -> InMemorySpanExporter:
-    exp = otel_test_base.memory_exporter
-    exp.clear()
-    return exp
-
-
 @pytest_asyncio.fixture(scope="session")
 async def async_transport(
-    certs: Certs,
-    http_version: HTTPVersion | None,
-    otel_test_base: TestBase,  # noqa: ARG001
+    certs: Certs, http_version: HTTPVersion | None
 ) -> AsyncIterator[HTTPTransport]:
     async with HTTPTransport(
         tls_ca_cert=certs.ca,
@@ -181,9 +161,7 @@ def async_client(
 
 @pytest.fixture(scope="session")
 def sync_transport(
-    certs: Certs,
-    http_version: HTTPVersion | None,
-    otel_test_base: TestBase,  # noqa: ARG001
+    certs: Certs, http_version: HTTPVersion | None
 ) -> Iterator[SyncHTTPTransport]:
     with SyncHTTPTransport(
         tls_ca_cert=certs.ca,
