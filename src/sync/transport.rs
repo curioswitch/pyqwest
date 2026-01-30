@@ -45,6 +45,8 @@ impl SyncHttpTransport {
         enable_brotli = true,
         enable_zstd = true,
         use_system_dns = false,
+        meter_provider = None,
+        tracer_provider = None,
     ))]
     pub(crate) fn new(
         py: Python<'_>,
@@ -62,6 +64,8 @@ impl SyncHttpTransport {
         enable_brotli: bool,
         enable_zstd: bool,
         use_system_dns: bool,
+        meter_provider: Option<Bound<'_, PyAny>>,
+        tracer_provider: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let (client, http3) = new_reqwest_client(ClientParams {
             tls_ca_cert,
@@ -84,7 +88,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
             close: true,
-            instrumentation: Instrumentation::new(py, &constants)?,
+            instrumentation: Instrumentation::new(py, meter_provider, tracer_provider, &constants)?,
             constants,
         })
     }
@@ -188,7 +192,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
             http3: false,
             close: false,
-            instrumentation: Instrumentation::new(py, &constants)?,
+            instrumentation: Instrumentation::new(py, None, None, &constants)?,
             constants,
         })
     }

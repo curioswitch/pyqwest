@@ -14,6 +14,9 @@ from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import Protocol, TypeAlias, TypeVar, overload, runtime_checkable
 
+from opentelemetry.metrics import MeterProvider
+from opentelemetry.trace import TracerProvider
+
 _T = TypeVar("_T")
 JSON: TypeAlias = Mapping[str, JSON] | Sequence[JSON] | str | int | float | bool | None
 
@@ -428,6 +431,8 @@ class HTTPTransport:
         enable_brotli: bool = True,
         enable_zstd: bool = True,
         use_system_dns: bool = False,
+        meter_provider: MeterProvider | None = None,
+        tracer_provider: TracerProvider | None = None,
     ) -> None:
         """Creates a new HTTPTransport object.
 
@@ -859,6 +864,8 @@ class SyncHTTPTransport:
         enable_brotli: bool = True,
         enable_zstd: bool = True,
         use_system_dns: bool = False,
+        meter_provider: MeterProvider | None = None,
+        tracer_provider: TracerProvider | None = None,
     ) -> None:
         """Creates a new SyncHTTPTransport object.
 

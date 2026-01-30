@@ -3,7 +3,7 @@ use std::{ops::Deref, sync::Arc};
 use http::{header, HeaderName, StatusCode};
 use pyo3::{
     sync::PyOnceLock,
-    types::{PyAnyMethods as _, PyBytes, PyInt, PyString},
+    types::{PyAnyMethods as _, PyBytes, PyInt, PyString, PyTuple},
     Py, PyAny, PyResult, PyTypeInfo, Python,
 };
 
@@ -86,6 +86,9 @@ pub(crate) struct ConstantsInner {
     pub timeout_context_var_reset: Py<PyAny>,
 
     // OTel.
+    /// The string "pyqwest".
+    pub pyqwest: Py<PyString>,
+
     /// The string "end".
     pub end: Py<PyString>,
     /// The string "1.0".
@@ -96,10 +99,24 @@ pub(crate) struct ConstantsInner {
     pub otel_2: Py<PyString>,
     /// The string "3".
     pub otel_3: Py<PyString>,
+    /// The string "s".
+    pub(super) otel_s: Py<PyString>,
+    /// The string "{request}".
+    pub(super) otel_request: Py<PyString>,
     /// The string "error.type".
     pub error_type: Py<PyString>,
     /// The string "http".
     pub http: Py<PyString>,
+    /// The string "`http.client.active_requests`".
+    pub(super) http_client_active_requests: Py<PyString>,
+    /// The string "Number of active HTTP requests.".
+    pub(super) http_client_active_requests_description: Py<PyString>,
+    /// The string "http.client.request.duration".
+    pub(super) http_client_request_duration: Py<PyString>,
+    /// The string "Duration of HTTP client requests.".
+    pub(super) http_client_request_duration_description: Py<PyString>,
+    /// The buckets for HTTP client request duration histograms.
+    pub(super) http_client_request_duration_buckets: Py<PyTuple>,
     /// The string "http.request.method".
     pub http_request_method: Py<PyString>,
     /// The string "`http.response.status_code`".
@@ -117,11 +134,27 @@ pub(crate) struct ConstantsInner {
     /// The string "url.full".
     pub url_full: Py<PyString>,
 
+    /// The string `add`.
+    pub(super) add: Py<PyString>,
+    /// The string `create_histogram`.
+    pub(super) create_histogram: Py<PyString>,
+    /// The string `create_up_down_counter`.
+    pub(super) create_up_down_counter: Py<PyString>,
+    /// The string `explicit_bucket_boundaries_advisory`.
+    pub(super) explicit_bucket_boundaries_advisory: Py<PyString>,
+    /// The string `get_meter`.
+    pub(super) get_meter: Py<PyString>,
+    /// The string `get_tracer`.
+    pub(super) get_tracer: Py<PyString>,
+    /// The string `record`.
+    pub(super) record: Py<PyString>,
     /// The string "`start_span`".
-    pub start_span: Py<PyString>,
+    pub(super) start_span: Py<PyString>,
 
-    /// The function `get_tracer`.
-    pub(super) get_tracer: Py<PyAny>,
+    /// The function `get_meter_provider`.
+    pub(super) get_meter_provider: Py<PyAny>,
+    /// The function `get_tracer_provider`.
+    pub(super) get_tracer_provider: Py<PyAny>,
     /// The singleton `HeadersSetter` instance.
     pub(super) headers_setter: Py<HeadersSetter>,
     /// The function `propagate.inject`.
@@ -434,6 +467,7 @@ impl Constants {
             .getattr("ContextVar")?
             .call1(("pyqwest_timeout",))?;
 
+        let otel_metrics = py.import("opentelemetry.metrics")?;
         let otel_propagate = py.import("opentelemetry.propagate")?;
         let otel_trace = py.import("opentelemetry.trace")?;
         let span_kind = otel_trace.getattr("SpanKind")?;
@@ -462,13 +496,38 @@ impl Constants {
                 timeout_context_var_set: timeout_context_var.getattr("set")?.unbind(),
                 timeout_context_var_reset: timeout_context_var.getattr("reset")?.unbind(),
 
+                pyqwest: PyString::new(py, "pyqwest").unbind(),
                 end: PyString::new(py, "end").unbind(),
                 otel_1_0: PyString::new(py, "1.0").unbind(),
                 otel_1_1: PyString::new(py, "1.1").unbind(),
                 otel_2: PyString::new(py, "2").unbind(),
                 otel_3: PyString::new(py, "3").unbind(),
+                otel_s: PyString::new(py, "s").unbind(),
+                otel_request: PyString::new(py, "{request}").unbind(),
                 error_type: PyString::new(py, "error.type").unbind(),
                 http: PyString::new(py, "http").unbind(),
+                http_client_active_requests: PyString::new(py, "http.client.active_requests")
+                    .unbind(),
+                http_client_active_requests_description: PyString::new(
+                    py,
+                    "Number of active HTTP requests.",
+                )
+                .unbind(),
+                http_client_request_duration: PyString::new(py, "http.client.request.duration")
+                    .unbind(),
+                http_client_request_duration_description: PyString::new(
+                    py,
+                    "Duration of HTTP client requests.",
+                )
+                .unbind(),
+                http_client_request_duration_buckets: PyTuple::new(
+                    py,
+                    [
+                        0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5,
+                        10.0,
+                    ],
+                )?
+                .unbind(),
                 http_request_method: PyString::new(py, "http.request.method").unbind(),
                 http_response_status_code: PyString::new(py, "http.response.status_code").unbind(),
                 network_protocol_name: PyString::new(py, "network.protocol.name").unbind(),
@@ -478,9 +537,21 @@ impl Constants {
                 server_port: PyString::new(py, "server.port").unbind(),
                 url_full: PyString::new(py, "url.full").unbind(),
 
+                add: PyString::new(py, "add").unbind(),
+                create_histogram: PyString::new(py, "create_histogram").unbind(),
+                create_up_down_counter: PyString::new(py, "create_up_down_counter").unbind(),
+                explicit_bucket_boundaries_advisory: PyString::new(
+                    py,
+                    "explicit_bucket_boundaries_advisory",
+                )
+                .unbind(),
+                get_meter: PyString::new(py, "get_meter").unbind(),
+                get_tracer: PyString::new(py, "get_tracer").unbind(),
+                record: PyString::new(py, "record").unbind(),
                 start_span: PyString::new(py, "start_span").unbind(),
 
-                get_tracer: otel_trace.getattr("get_tracer")?.unbind(),
+                get_meter_provider: otel_metrics.getattr("get_meter_provider")?.unbind(),
+                get_tracer_provider: otel_trace.getattr("get_tracer_provider")?.unbind(),
                 headers_setter: Py::new(py, HeadersSetter {})?,
                 inject_context: otel_propagate.getattr("inject")?.unbind(),
                 set_span_in_context: otel_trace.getattr("set_span_in_context")?.unbind(),

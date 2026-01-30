@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import socket
 from contextlib import AsyncExitStack, ExitStack
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
+import pytest_asyncio
 from opentelemetry import context
 from opentelemetry.baggage import set_baggage
 from opentelemetry.propagate import extract
+from opentelemetry.test.test_base import TestBase
 from opentelemetry.trace import (
     NonRecordingSpan,
     SpanContext,
@@ -22,15 +24,21 @@ from opentelemetry.trace import (
 
 from pyqwest import (
     Client,
+    HTTPTransport,
     HTTPVersion,
     ReadError,
     StreamError,
     SyncClient,
+    SyncHTTPTransport,
     SyncResponse,
 )
 
 if TYPE_CHECKING:
-    from opentelemetry.test.test_base import InMemorySpanExporter
+    from collections.abc import AsyncIterator, Iterator
+
+    from opentelemetry.sdk.metrics._internal.point import Histogram, Metric, Sum
+
+    from .conftest import Certs
 
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http", "https"], indirect=True),
@@ -49,12 +57,58 @@ def version_str(http_version: HTTPVersion) -> str:
             return "1.1"
 
 
+@pytest.fixture
+def otel_test_base() -> Iterator[TestBase]:
+    test_base = TestBase()
+    test_base.setUp()
+    try:
+        yield test_base
+    finally:
+        test_base.tearDown()
+
+
+@pytest_asyncio.fixture
+async def async_transport(
+    certs: Certs, http_version: HTTPVersion | None, otel_test_base: TestBase
+) -> AsyncIterator[HTTPTransport]:
+    async with HTTPTransport(
+        tls_ca_cert=certs.ca,
+        http_version=http_version,
+        meter_provider=otel_test_base.meter_provider,
+        tracer_provider=otel_test_base.tracer_provider,
+    ) as transport:
+        yield transport
+
+
+@pytest.fixture
+def sync_transport(
+    certs: Certs, http_version: HTTPVersion | None, otel_test_base: TestBase
+) -> Iterator[SyncHTTPTransport]:
+    with SyncHTTPTransport(
+        tls_ca_cert=certs.ca,
+        http_version=http_version,
+        meter_provider=otel_test_base.meter_provider,
+        tracer_provider=otel_test_base.tracer_provider,
+    ) as transport:
+        yield transport
+
+
+@pytest.fixture
+def async_client(async_transport: HTTPTransport) -> Client:
+    return Client(async_transport)
+
+
+@pytest.fixture
+def sync_client(sync_transport: SyncHTTPTransport) -> SyncClient:
+    return SyncClient(sync_transport)
+
+
 @pytest.mark.asyncio
 async def test_basic(
     client: Client | SyncClient,
     url: str,
     http_version: HTTPVersion,
-    spans_exporter: InMemorySpanExporter,
+    otel_test_base: TestBase,
     server_port: int,
 ) -> None:
     url = f"{url}/echo?animal=bear"
@@ -71,7 +125,7 @@ async def test_basic(
     server_ctx = extract({"traceparent": resp.headers["x-echo-traceparent"]})
     server_span_ctx = get_current_span(server_ctx).get_span_context()
 
-    spans = spans_exporter.get_finished_spans()
+    spans = otel_test_base.memory_exporter.get_finished_spans()
     assert len(spans) == 1
     span = spans[0]
     span_ctx = span.get_span_context()
@@ -91,13 +145,54 @@ async def test_basic(
         "http.response.status_code": 200,
     }
 
+    metrics = otel_test_base.get_sorted_metrics()
+    assert len(metrics) == 2
+    active_requests_metric = cast("Metric", metrics[0])
+    assert active_requests_metric.name == "http.client.active_requests"
+    assert active_requests_metric.unit == "{request}"
+    assert active_requests_metric.description == "Number of active HTTP requests."
+    active_requests_data = cast("Sum", active_requests_metric.data)
+    assert len(active_requests_data.data_points) == 1
+    assert active_requests_data.data_points[0].value == 0
+    assert active_requests_data.data_points[0].attributes == {
+        "http.request.method": "POST",
+        "server.address": "localhost",
+        "server.port": server_port,
+    }
+    assert len(active_requests_data.data_points[0].exemplars) == 1
+    assert (
+        active_requests_data.data_points[0].exemplars[0].trace_id == span_ctx.trace_id
+    )
+    assert active_requests_data.data_points[0].exemplars[0].span_id == span_ctx.span_id
+
+    request_duration_metric = cast("Metric", metrics[1])
+    assert request_duration_metric.name == "http.client.request.duration"
+    assert request_duration_metric.unit == "s"
+    assert request_duration_metric.description == "Duration of HTTP client requests."
+    request_duration_data = cast("Histogram", request_duration_metric.data)
+    assert len(request_duration_data.data_points) == 1
+    assert request_duration_data.data_points[0].count == 1
+    assert request_duration_data.data_points[0].attributes == {
+        "http.request.method": "POST",
+        "http.response.status_code": 200,
+        "network.protocol.name": "http",
+        "network.protocol.version": version_str(http_version),
+        "server.address": "localhost",
+        "server.port": server_port,
+    }
+    assert len(request_duration_data.data_points[0].exemplars) == 1
+    assert (
+        request_duration_data.data_points[0].exemplars[0].trace_id == span_ctx.trace_id
+    )
+    assert request_duration_data.data_points[0].exemplars[0].span_id == span_ctx.span_id
+
 
 @pytest.mark.asyncio
 async def test_stream(
     client: Client | SyncClient,
     url: str,
     http_version: HTTPVersion,
-    spans_exporter: InMemorySpanExporter,
+    otel_test_base: TestBase,
     server_port: int,
 ) -> None:
     url = f"{url}/echo?animal=bear"
@@ -123,7 +218,7 @@ async def test_stream(
         server_ctx = extract({"traceparent": resp.headers["x-echo-traceparent"]})
         server_span_ctx = get_current_span(server_ctx).get_span_context()
 
-        spans = spans_exporter.get_finished_spans()
+        spans = otel_test_base.memory_exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
         span_ctx = span.get_span_context()
@@ -143,10 +238,43 @@ async def test_stream(
             "http.response.status_code": 200,
         }
 
+        metrics = otel_test_base.get_sorted_metrics()
+        assert len(metrics) == 2
+        active_requests_metric = cast("Metric", metrics[0])
+        assert active_requests_metric.name == "http.client.active_requests"
+        assert active_requests_metric.unit == "{request}"
+        assert active_requests_metric.description == "Number of active HTTP requests."
+        active_requests_data = cast("Sum", active_requests_metric.data)
+        assert len(active_requests_data.data_points) == 1
+        assert active_requests_data.data_points[0].value == 0
+        assert active_requests_data.data_points[0].attributes == {
+            "http.request.method": "POST",
+            "server.address": "localhost",
+            "server.port": server_port,
+        }
+
+        request_duration_metric = cast("Metric", metrics[1])
+        assert request_duration_metric.name == "http.client.request.duration"
+        assert request_duration_metric.unit == "s"
+        assert (
+            request_duration_metric.description == "Duration of HTTP client requests."
+        )
+        request_duration_data = cast("Histogram", request_duration_metric.data)
+        assert len(request_duration_data.data_points) == 1
+        assert request_duration_data.data_points[0].count == 1
+        assert request_duration_data.data_points[0].attributes == {
+            "http.request.method": "POST",
+            "http.response.status_code": 200,
+            "network.protocol.name": "http",
+            "network.protocol.version": version_str(http_version),
+            "server.address": "localhost",
+            "server.port": server_port,
+        }
+
 
 @pytest.mark.asyncio
 async def test_connection_error(
-    client: Client | SyncClient, url: str, spans_exporter: InMemorySpanExporter
+    client: Client | SyncClient, url: str, otel_test_base: TestBase
 ) -> None:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -160,7 +288,7 @@ async def test_connection_error(
         else:
             await client.get(url, headers=headers)
 
-    spans = spans_exporter.get_finished_spans()
+    spans = otel_test_base.memory_exporter.get_finished_spans()
     assert len(spans) == 1
     span = spans[0]
     span_ctx = span.get_span_context()
@@ -177,12 +305,42 @@ async def test_connection_error(
         "error.type": "ConnectionError",
     }
 
+    metrics = otel_test_base.get_sorted_metrics()
+    assert len(metrics) == 2
+    active_requests_metric = cast("Metric", metrics[0])
+    assert active_requests_metric.name == "http.client.active_requests"
+    assert active_requests_metric.unit == "{request}"
+    assert active_requests_metric.description == "Number of active HTTP requests."
+    active_requests_data = cast("Sum", active_requests_metric.data)
+    assert len(active_requests_data.data_points) == 1
+    assert active_requests_data.data_points[0].value == 0
+    assert active_requests_data.data_points[0].attributes == {
+        "http.request.method": "GET",
+        "server.address": "localhost",
+        "server.port": port,
+    }
+
+    request_duration_metric = cast("Metric", metrics[1])
+    assert request_duration_metric.name == "http.client.request.duration"
+    assert request_duration_metric.unit == "s"
+    assert request_duration_metric.description == "Duration of HTTP client requests."
+    request_duration_data = cast("Histogram", request_duration_metric.data)
+    assert len(request_duration_data.data_points) == 1
+    assert request_duration_data.data_points[0].count == 1
+    assert request_duration_data.data_points[0].attributes == {
+        "http.request.method": "GET",
+        "server.address": "localhost",
+        "server.port": port,
+        "network.protocol.name": "http",
+        "error.type": "ConnectionError",
+    }
+
 
 @pytest.mark.asyncio
 async def test_response_error(
     client: Client | SyncClient,
     url: str,
-    spans_exporter: InMemorySpanExporter,
+    otel_test_base: TestBase,
     http_version: HTTPVersion,
     server_port: int,
 ) -> None:
@@ -195,7 +353,7 @@ async def test_response_error(
         else:
             await client.get(url, headers=headers)
 
-    spans = spans_exporter.get_finished_spans()
+    spans = otel_test_base.memory_exporter.get_finished_spans()
     assert len(spans) == 1
     span = spans[0]
     span_ctx = span.get_span_context()
@@ -206,6 +364,38 @@ async def test_response_error(
     assert span.attributes == {
         "http.request.method": "GET",
         "url.full": url,
+        "server.address": "localhost",
+        "server.port": server_port,
+        "network.protocol.name": "http",
+        "network.protocol.version": version_str(http_version),
+        "http.response.status_code": 200,
+        "error.type": exc_info.type.__qualname__,
+    }
+
+    metrics = otel_test_base.get_sorted_metrics()
+    assert len(metrics) == 2
+    active_requests_metric = cast("Metric", metrics[0])
+    assert active_requests_metric.name == "http.client.active_requests"
+    assert active_requests_metric.unit == "{request}"
+    assert active_requests_metric.description == "Number of active HTTP requests."
+    active_requests_data = cast("Sum", active_requests_metric.data)
+    assert len(active_requests_data.data_points) == 1
+    assert active_requests_data.data_points[0].value == 0
+    assert active_requests_data.data_points[0].attributes == {
+        "http.request.method": "GET",
+        "server.address": "localhost",
+        "server.port": server_port,
+    }
+
+    request_duration_metric = cast("Metric", metrics[1])
+    assert request_duration_metric.name == "http.client.request.duration"
+    assert request_duration_metric.unit == "s"
+    assert request_duration_metric.description == "Duration of HTTP client requests."
+    request_duration_data = cast("Histogram", request_duration_metric.data)
+    assert len(request_duration_data.data_points) == 1
+    assert request_duration_data.data_points[0].count == 1
+    assert request_duration_data.data_points[0].attributes == {
+        "http.request.method": "GET",
         "server.address": "localhost",
         "server.port": server_port,
         "network.protocol.name": "http",
@@ -234,7 +424,7 @@ async def test_parent(
     client: Client | SyncClient,
     url: str,
     http_version: HTTPVersion,
-    spans_exporter: InMemorySpanExporter,
+    otel_test_base: TestBase,
     server_port: int,
 ) -> None:
     tracer = get_tracer("test")
@@ -268,7 +458,7 @@ async def test_parent(
         baggage_header = resp.headers.get("x-echo-baggage", "")
         assert "animal=bear" in baggage_header
 
-        spans = spans_exporter.get_finished_spans()
+        spans = otel_test_base.memory_exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
         span_ctx = span.get_span_context()
