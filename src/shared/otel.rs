@@ -20,12 +20,13 @@ struct InstrumentationInner {
 
     metric_http_client_active_requests: Py<PyAny>,
     metric_http_client_request_duration: Py<PyAny>,
+
+    constants: Constants,
 }
 
 #[derive(Clone)]
 pub(crate) struct Instrumentation {
-    inner: Arc<Option<InstrumentationInner>>,
-    constants: Constants,
+    inner: Option<Arc<InstrumentationInner>>,
 }
 
 impl Instrumentation {
@@ -37,10 +38,7 @@ impl Instrumentation {
         constants: &Constants,
     ) -> PyResult<Self> {
         if !enable_otel {
-            return Ok(Self {
-                inner: Arc::new(None),
-                constants: constants.clone(),
-            });
+            return Ok(Self { inner: None });
         }
         let meter_provider = match meter_provider {
             Some(mp) => mp,
@@ -78,22 +76,18 @@ impl Instrumentation {
         )?;
 
         Ok(Self {
-            inner: Arc::new(Some(InstrumentationInner {
+            inner: Some(Arc::new(InstrumentationInner {
                 tracer: tracer.unbind(),
                 metric_http_client_active_requests: metric_http_client_active_requests.unbind(),
                 metric_http_client_request_duration: metric_http_client_request_duration.unbind(),
+                constants: constants.clone(),
             })),
-            constants: constants.clone(),
         })
     }
 
     pub(crate) fn start(&self, py: Python<'_>, request: &RequestHead) -> PyResult<Operation> {
         let Some(inner) = self.inner.as_ref() else {
-            return Ok(Operation {
-                inner: Arc::new(None),
-                instrumentation: self.inner.clone(),
-                constants: self.constants.clone(),
-            });
+            return Ok(Operation { inner: None });
         };
         let http_method = request.method(py)?;
         let base_attrs = PyDict::new(py);
@@ -105,43 +99,46 @@ impl Instrumentation {
             // We only support schemes with a known default port.
             .unwrap_or_default();
 
-        base_attrs.set_item(&self.constants.http_request_method, &http_method)?;
-        base_attrs.set_item(&self.constants.server_address, host)?;
-        base_attrs.set_item(&self.constants.server_port, port)?;
+        base_attrs.set_item(&inner.constants.http_request_method, &http_method)?;
+        base_attrs.set_item(&inner.constants.server_address, host)?;
+        base_attrs.set_item(&inner.constants.server_port, port)?;
 
         let span_attrs = base_attrs.copy()?;
-        span_attrs.set_item(&self.constants.network_protocol_name, &self.constants.http)?;
-        span_attrs.set_item(&self.constants.url_full, request.url())?;
+        span_attrs.set_item(
+            &inner.constants.network_protocol_name,
+            &inner.constants.http,
+        )?;
+        span_attrs.set_item(&inner.constants.url_full, request.url())?;
 
         // Because we are wrapping Rust code, we have no use case for setting the current span,
         // which luckily simplifies the asyncio path substantially.
         let span = inner.tracer.bind(py).call_method1(
-            &self.constants.start_span,
+            &inner.constants.start_span,
             (
                 http_method,
                 py.None(),
-                &self.constants.span_kind_client,
+                &inner.constants.span_kind_client,
                 span_attrs,
             ),
         )?;
-        let context = self.constants.set_span_in_context.call1(py, (&span,))?;
+        let context = inner.constants.set_span_in_context.call1(py, (&span,))?;
 
         inner.metric_http_client_active_requests.call_method1(
             py,
-            &self.constants.add,
+            &inner.constants.add,
             (1, &base_attrs, &context),
         )?;
 
         Ok(Operation {
-            inner: Arc::new(Some(OperationInner {
+            inner: Some(Arc::new(OperationInner {
                 span: span.unbind(),
                 context,
                 start_time: Instant::now(),
                 response_info: Mutex::new(None),
                 base_attrs: base_attrs.unbind(),
+                instrumentation: inner.clone(),
+                constants: inner.constants.clone(),
             })),
-            instrumentation: self.inner.clone(),
-            constants: self.constants.clone(),
         })
     }
 }
@@ -157,14 +154,14 @@ struct OperationInner {
     start_time: Instant,
     response_info: Mutex<Option<ResponseInfo>>,
     base_attrs: Py<PyDict>,
+    instrumentation: Arc<InstrumentationInner>,
+
+    constants: Constants,
 }
 
 #[derive(Clone)]
 pub(crate) struct Operation {
-    inner: Arc<Option<OperationInner>>,
-
-    instrumentation: Arc<Option<InstrumentationInner>>,
-    constants: Constants,
+    inner: Option<Arc<OperationInner>>,
 }
 
 impl Operation {
@@ -177,9 +174,9 @@ impl Operation {
         // to/from the Python wrapper and not its heap allocations.
         let headers = std::mem::take(request.headers_mut());
         let carrier = Headers(headers).into_pyobject(py)?;
-        self.constants.inject_context.call1(
+        inner.constants.inject_context.call1(
             py,
-            (&carrier, &inner.context, &self.constants.headers_setter),
+            (&carrier, &inner.context, &inner.constants.headers_setter),
         )?;
         let hdrs = std::mem::take(&mut carrier.borrow_mut().0);
         *request.headers_mut() = hdrs;
@@ -203,51 +200,53 @@ impl Operation {
         let Some(inner) = self.inner.as_ref() else {
             return Ok(());
         };
-        let Some(instrumentation) = self.instrumentation.as_ref() else {
-            return Ok(());
-        };
         let span = inner.span.bind(py);
         let context = inner.context.bind(py);
 
         let base_attrs = inner.base_attrs.bind(py);
         let attrs = base_attrs.copy()?;
-        instrumentation
+        inner
+            .instrumentation
             .metric_http_client_active_requests
-            .call_method1(py, &self.constants.add, (-1, base_attrs, context))?;
+            .call_method1(py, &inner.constants.add, (-1, base_attrs, context))?;
 
-        attrs.set_item(&self.constants.network_protocol_name, &self.constants.http)?;
+        attrs.set_item(
+            &inner.constants.network_protocol_name,
+            &inner.constants.http,
+        )?;
         if let Some(response_info) = inner.response_info.lock_py_attached(py).unwrap().take() {
-            let status = self.constants.status_code(py, response_info.status_code);
+            let status = inner.constants.status_code(py, response_info.status_code);
             span.call_method1(
-                &self.constants.set_attribute,
-                (&self.constants.http_response_status_code, &status),
+                &inner.constants.set_attribute,
+                (&inner.constants.http_response_status_code, &status),
             )?;
-            attrs.set_item(&self.constants.http_response_status_code, status)?;
+            attrs.set_item(&inner.constants.http_response_status_code, status)?;
             let protocol =
-                network_protocol_version(py, response_info.http_version, &self.constants);
+                network_protocol_version(py, response_info.http_version, &inner.constants);
             span.call_method1(
-                &self.constants.set_attribute,
-                (&self.constants.network_protocol_version, &protocol),
+                &inner.constants.set_attribute,
+                (&inner.constants.network_protocol_version, &protocol),
             )?;
-            attrs.set_item(&self.constants.network_protocol_version, protocol)?;
+            attrs.set_item(&inner.constants.network_protocol_version, protocol)?;
         }
 
         if let Some(err) = err {
             if let Ok(qualname) = err.get_type(py).qualname() {
                 span.call_method1(
-                    &self.constants.set_attribute,
-                    (&self.constants.error_type, &qualname),
+                    &inner.constants.set_attribute,
+                    (&inner.constants.error_type, &qualname),
                 )?;
-                attrs.set_item(&self.constants.error_type, qualname)?;
+                attrs.set_item(&inner.constants.error_type, qualname)?;
             }
         }
 
         let duration = inner.start_time.elapsed().as_secs_f64();
-        instrumentation
+        inner
+            .instrumentation
             .metric_http_client_request_duration
-            .call_method1(py, &self.constants.record, (duration, attrs, context))?;
+            .call_method1(py, &inner.constants.record, (duration, attrs, context))?;
 
-        span.call_method0(&self.constants.end)?;
+        span.call_method0(&inner.constants.end)?;
 
         Ok(())
     }
