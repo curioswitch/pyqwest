@@ -45,6 +45,7 @@ impl SyncHttpTransport {
         enable_brotli = true,
         enable_zstd = true,
         use_system_dns = false,
+        enable_otel = true,
         meter_provider = None,
         tracer_provider = None,
     ))]
@@ -64,6 +65,7 @@ impl SyncHttpTransport {
         enable_brotli: bool,
         enable_zstd: bool,
         use_system_dns: bool,
+        enable_otel: bool,
         meter_provider: Option<Bound<'_, PyAny>>,
         tracer_provider: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
@@ -88,7 +90,13 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
             close: true,
-            instrumentation: Instrumentation::new(py, meter_provider, tracer_provider, &constants)?,
+            instrumentation: Instrumentation::new(
+                py,
+                enable_otel,
+                meter_provider,
+                tracer_provider,
+                &constants,
+            )?,
             constants,
         })
     }
@@ -192,7 +200,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
             http3: false,
             close: false,
-            instrumentation: Instrumentation::new(py, None, None, &constants)?,
+            instrumentation: Instrumentation::new(py, true, None, None, &constants)?,
             constants,
         })
     }
