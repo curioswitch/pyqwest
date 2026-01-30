@@ -481,3 +481,47 @@ async def test_parent(
 
     # Would be a disaster for other tests if we leaked, confirm it since it's easy.
     assert context.get_current() == {}
+
+
+@pytest.mark.asyncio
+async def test_disable_otel(
+    url: str,
+    otel_test_base: TestBase,
+    client_type: str,
+    certs: Certs,
+    http_version: HTTPVersion,
+) -> None:
+    match client_type:
+        case "async":
+            async with HTTPTransport(
+                tls_ca_cert=certs.ca,
+                http_version=http_version,
+                enable_otel=False,
+                meter_provider=otel_test_base.meter_provider,
+                tracer_provider=otel_test_base.tracer_provider,
+            ) as transport:
+                client = Client(transport)
+                url = f"{url}/echo?animal=bear"
+                headers = [("content-type", "text/plain")]
+                req_content = b"Hello, World!"
+                resp = await client.post(url, headers=headers, content=req_content)
+        case "sync":
+            with SyncHTTPTransport(
+                tls_ca_cert=certs.ca,
+                http_version=http_version,
+                enable_otel=False,
+                meter_provider=otel_test_base.meter_provider,
+                tracer_provider=otel_test_base.tracer_provider,
+            ) as transport:
+                client = SyncClient(transport)
+                url = f"{url}/echo?animal=bear"
+                headers = [("content-type", "text/plain")]
+                req_content = b"Hello, World!"
+                resp = client.post(url, headers=headers, content=req_content)
+    assert resp.status == 200
+
+    spans = otel_test_base.memory_exporter.get_finished_spans()
+    assert len(spans) == 0
+
+    metrics = otel_test_base.get_sorted_metrics()
+    assert len(metrics) == 0

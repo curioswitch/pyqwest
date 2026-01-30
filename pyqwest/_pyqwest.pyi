@@ -431,6 +431,7 @@ class HTTPTransport:
         enable_brotli: bool = True,
         enable_zstd: bool = True,
         use_system_dns: bool = False,
+        enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
     ) -> None:
@@ -864,6 +865,7 @@ class SyncHTTPTransport:
         enable_brotli: bool = True,
         enable_zstd: bool = True,
         use_system_dns: bool = False,
+        enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
     ) -> None:
