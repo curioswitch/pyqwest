@@ -57,6 +57,8 @@ def version_str(http_version: HTTPVersion) -> str:
             return "1.1"
 
 
+# Make sure there is a separate meterprovider per transport or its not practical
+# to differentiate the data points from each.
 @pytest.fixture
 def otel_test_base() -> Iterator[TestBase]:
     test_base = TestBase()
@@ -103,6 +105,18 @@ def sync_client(sync_transport: SyncHTTPTransport) -> SyncClient:
     return SyncClient(sync_transport)
 
 
+def get_http_metrics(otel_test_base: TestBase) -> list[Metric]:
+    metrics = cast("list[Metric]", otel_test_base.get_sorted_metrics())
+    return [metric for metric in metrics if metric.name.startswith("http.client.")]
+
+
+def get_runtime_metrics(otel_test_base: TestBase) -> list[Metric]:
+    metrics = cast("list[Metric]", otel_test_base.get_sorted_metrics())
+    return [
+        metric for metric in metrics if metric.name.startswith("rust.async_runtime.")
+    ]
+
+
 @pytest.mark.asyncio
 async def test_basic(
     client: Client | SyncClient,
@@ -145,9 +159,9 @@ async def test_basic(
         "http.response.status_code": 200,
     }
 
-    metrics = otel_test_base.get_sorted_metrics()
+    metrics = get_http_metrics(otel_test_base)
     assert len(metrics) == 2
-    active_requests_metric = cast("Metric", metrics[0])
+    active_requests_metric = metrics[0]
     assert active_requests_metric.name == "http.client.active_requests"
     assert active_requests_metric.unit == "{request}"
     assert active_requests_metric.description == "Number of active HTTP requests."
@@ -165,7 +179,7 @@ async def test_basic(
     )
     assert active_requests_data.data_points[0].exemplars[0].span_id == span_ctx.span_id
 
-    request_duration_metric = cast("Metric", metrics[1])
+    request_duration_metric = metrics[1]
     assert request_duration_metric.name == "http.client.request.duration"
     assert request_duration_metric.unit == "s"
     assert request_duration_metric.description == "Duration of HTTP client requests."
@@ -238,9 +252,9 @@ async def test_stream(
             "http.response.status_code": 200,
         }
 
-        metrics = otel_test_base.get_sorted_metrics()
+        metrics = get_http_metrics(otel_test_base)
         assert len(metrics) == 2
-        active_requests_metric = cast("Metric", metrics[0])
+        active_requests_metric = metrics[0]
         assert active_requests_metric.name == "http.client.active_requests"
         assert active_requests_metric.unit == "{request}"
         assert active_requests_metric.description == "Number of active HTTP requests."
@@ -253,7 +267,7 @@ async def test_stream(
             "server.port": server_port,
         }
 
-        request_duration_metric = cast("Metric", metrics[1])
+        request_duration_metric = metrics[1]
         assert request_duration_metric.name == "http.client.request.duration"
         assert request_duration_metric.unit == "s"
         assert (
@@ -305,9 +319,9 @@ async def test_connection_error(
         "error.type": "ConnectionError",
     }
 
-    metrics = otel_test_base.get_sorted_metrics()
+    metrics = get_http_metrics(otel_test_base)
     assert len(metrics) == 2
-    active_requests_metric = cast("Metric", metrics[0])
+    active_requests_metric = metrics[0]
     assert active_requests_metric.name == "http.client.active_requests"
     assert active_requests_metric.unit == "{request}"
     assert active_requests_metric.description == "Number of active HTTP requests."
@@ -320,7 +334,7 @@ async def test_connection_error(
         "server.port": port,
     }
 
-    request_duration_metric = cast("Metric", metrics[1])
+    request_duration_metric = metrics[1]
     assert request_duration_metric.name == "http.client.request.duration"
     assert request_duration_metric.unit == "s"
     assert request_duration_metric.description == "Duration of HTTP client requests."
@@ -372,9 +386,9 @@ async def test_response_error(
         "error.type": exc_info.type.__qualname__,
     }
 
-    metrics = otel_test_base.get_sorted_metrics()
+    metrics = get_http_metrics(otel_test_base)
     assert len(metrics) == 2
-    active_requests_metric = cast("Metric", metrics[0])
+    active_requests_metric = metrics[0]
     assert active_requests_metric.name == "http.client.active_requests"
     assert active_requests_metric.unit == "{request}"
     assert active_requests_metric.description == "Number of active HTTP requests."
@@ -387,7 +401,7 @@ async def test_response_error(
         "server.port": server_port,
     }
 
-    request_duration_metric = cast("Metric", metrics[1])
+    request_duration_metric = metrics[1]
     assert request_duration_metric.name == "http.client.request.duration"
     assert request_duration_metric.unit == "s"
     assert request_duration_metric.description == "Duration of HTTP client requests."
@@ -523,5 +537,5 @@ async def test_disable_otel(
     spans = otel_test_base.memory_exporter.get_finished_spans()
     assert len(spans) == 0
 
-    metrics = otel_test_base.get_sorted_metrics()
+    metrics = get_http_metrics(otel_test_base)
     assert len(metrics) == 0

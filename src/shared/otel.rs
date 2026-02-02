@@ -8,10 +8,15 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use pyo3::{
     exceptions::PyValueError,
     pyclass, pymethods,
-    sync::MutexExt as _,
-    types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyString, PyTypeMethods as _},
+    sync::{MutexExt as _, PyOnceLock},
+    types::{
+        PyAnyMethods as _, PyDict, PyDictMethods as _, PyFloat, PyInt, PyString, PyTuple,
+        PyTypeMethods as _,
+    },
     Bound, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
+use pyo3_async_runtimes::tokio::get_runtime;
+use tokio::runtime::RuntimeMetrics;
 
 use crate::shared::{constants::Constants, request::RequestHead};
 
@@ -50,6 +55,8 @@ impl Instrumentation {
         };
         let meter = meter_provider.call_method1(&constants.get_meter, (&constants.pyqwest,))?;
         let tracer = tracer_provider.call_method1(&constants.get_tracer, (&constants.pyqwest,))?;
+
+        start_runtime_metrics(py, &meter, constants)?;
 
         let kwargs = PyDict::new(py);
         kwargs.set_item(
@@ -296,5 +303,216 @@ impl HeadersSetter {
         );
 
         Ok(())
+    }
+}
+
+// Not clear if metrics can be GC'd and disappear, we keep a reference in case.
+struct TokioRuntimeMetrics {
+    _workers: Py<PyAny>,
+    _blocking_threads: Py<PyAny>,
+    _num_alive_tasks: Py<PyAny>,
+    _queue_depth: Py<PyAny>,
+    _worker_busy_duration: Py<PyAny>,
+}
+
+static RUNTIME_METRICS: PyOnceLock<TokioRuntimeMetrics> = PyOnceLock::new();
+
+#[allow(clippy::too_many_lines)]
+fn start_runtime_metrics(
+    py: Python<'_>,
+    meter: &Bound<'_, PyAny>,
+    constants: &Constants,
+) -> PyResult<()> {
+    RUNTIME_METRICS.get_or_try_init(py, || {
+        let runtime_metrics = get_runtime().metrics();
+
+        // We go ahead and use inline strings here for values not used outside, since we are inside a PyOnceLock.
+
+        let base_attrs = PyDict::new(py);
+        base_attrs.set_item("rust.runtime", "tokio")?;
+        let workers = meter.call_method1(
+            &constants.create_up_down_counter,
+            (
+                "rust.async_runtime.workers.count",
+                "{thread}",
+                "Number of runtime worker threads",
+            ),
+        )?;
+        workers.call_method1(&constants.add, (runtime_metrics.num_workers(), base_attrs))?;
+
+        let blocking_threads = meter.call_method1(
+            &constants.create_observable_up_down_counter,
+            (
+                "rust.async_runtime.blocking_threads.count",
+                (
+                    TokioRuntimeMetricsCallback {
+                        metrics: runtime_metrics.clone(),
+                        metric_type: RuntimeMetricType::BlockingThreadsActive,
+                        attrs: PyDict::from_sequence(
+                            PyTuple::new(
+                                py,
+                                [("rust.runtime", "tokio"), ("rust.thread.state", "active")],
+                            )?
+                            .as_any(),
+                        )?
+                        .unbind(),
+                        constants: constants.clone(),
+                    },
+                    TokioRuntimeMetricsCallback {
+                        metrics: runtime_metrics.clone(),
+                        metric_type: RuntimeMetricType::BlockingThreadsIdle,
+                        attrs: PyDict::from_sequence(
+                            PyTuple::new(
+                                py,
+                                [("rust.runtime", "tokio"), ("rust.thread.state", "idle")],
+                            )?
+                            .as_any(),
+                        )?
+                        .unbind(),
+                        constants: constants.clone(),
+                    },
+                ),
+                "{thread}",
+                "Number of runtime blocking threads",
+            ),
+        )?;
+
+        let num_alive_tasks = meter.call_method1(
+            &constants.create_observable_up_down_counter,
+            (
+                "rust.async_runtime.alive_tasks.count",
+                (TokioRuntimeMetricsCallback {
+                    metrics: runtime_metrics.clone(),
+                    metric_type: RuntimeMetricType::NumAliveTasks,
+                    attrs: PyDict::from_sequence(
+                        PyTuple::new(py, [("rust.runtime", "tokio")])?.as_any(),
+                    )?
+                    .unbind(),
+                    constants: constants.clone(),
+                },),
+                "{task}",
+                "Number of live tasks",
+            ),
+        )?;
+
+        let queue_depth = meter.call_method1(
+            &constants.create_observable_up_down_counter,
+            (
+                "rust.async_runtime.task_queue.size",
+                (
+                    TokioRuntimeMetricsCallback {
+                        metrics: runtime_metrics.clone(),
+                        metric_type: RuntimeMetricType::QueueDepthBlocking,
+                        attrs: PyDict::from_sequence(
+                            PyTuple::new(
+                                py,
+                                [("rust.runtime", "tokio"), ("rust.task.type", "blocking")],
+                            )?
+                            .as_any(),
+                        )?
+                        .unbind(),
+                        constants: constants.clone(),
+                    },
+                    TokioRuntimeMetricsCallback {
+                        metrics: runtime_metrics.clone(),
+                        metric_type: RuntimeMetricType::QueueDepthGlobal,
+                        attrs: PyDict::from_sequence(
+                            PyTuple::new(
+                                py,
+                                [("rust.runtime", "tokio"), ("rust.task.type", "global")],
+                            )?
+                            .as_any(),
+                        )?
+                        .unbind(),
+                        constants: constants.clone(),
+                    },
+                ),
+                "{task}",
+                "Number of pending runtime tasks in queue",
+            ),
+        )?;
+
+        let worker_busy_duration = meter.call_method1(
+            "create_observable_counter",
+            (
+                "rust.async_runtime.worker_busy_duration",
+                (TokioRuntimeMetricsCallback {
+                    metrics: runtime_metrics.clone(),
+                    metric_type: RuntimeMetricType::WorkerBusyDuration,
+                    attrs: PyDict::from_sequence(
+                        PyTuple::new(py, [("rust.runtime", "tokio")])?.as_any(),
+                    )?
+                    .unbind(),
+                    constants: constants.clone(),
+                },),
+                "s",
+                "Time worker is busy processing tasks",
+            ),
+        )?;
+
+        Ok::<_, PyErr>(TokioRuntimeMetrics {
+            _workers: workers.unbind(),
+            _blocking_threads: blocking_threads.unbind(),
+            _num_alive_tasks: num_alive_tasks.unbind(),
+            _queue_depth: queue_depth.unbind(),
+            _worker_busy_duration: worker_busy_duration.unbind(),
+        })
+    })?;
+    Ok(())
+}
+
+enum RuntimeMetricType {
+    BlockingThreadsActive,
+    BlockingThreadsIdle,
+    NumAliveTasks,
+    QueueDepthBlocking,
+    QueueDepthGlobal,
+    WorkerBusyDuration,
+}
+
+#[pyclass(module = "_pyqwest.otel", name = "TokioRuntimeMetricsCallback", frozen)]
+struct TokioRuntimeMetricsCallback {
+    metrics: RuntimeMetrics,
+    metric_type: RuntimeMetricType,
+    attrs: Py<PyDict>,
+    constants: Constants,
+}
+
+#[pymethods]
+impl TokioRuntimeMetricsCallback {
+    fn __call__<'py>(
+        &self,
+        py: Python<'py>,
+        _options: &Bound<'py, PyAny>,
+    ) -> PyResult<(Bound<'py, PyAny>,)> {
+        let observation_class = self.constants.observation_class.bind(py);
+        let value = match self.metric_type {
+            RuntimeMetricType::BlockingThreadsActive => {
+                let total = self.metrics.num_blocking_threads();
+                let idle = self.metrics.num_idle_blocking_threads();
+                PyInt::new(py, total - idle).into_any()
+            }
+            RuntimeMetricType::BlockingThreadsIdle => {
+                PyInt::new(py, self.metrics.num_idle_blocking_threads()).into_any()
+            }
+            RuntimeMetricType::NumAliveTasks => {
+                PyInt::new(py, self.metrics.num_alive_tasks()).into_any()
+            }
+            RuntimeMetricType::QueueDepthBlocking => {
+                PyInt::new(py, self.metrics.blocking_queue_depth()).into_any()
+            }
+            RuntimeMetricType::QueueDepthGlobal => {
+                PyInt::new(py, self.metrics.global_queue_depth()).into_any()
+            }
+            RuntimeMetricType::WorkerBusyDuration => {
+                let mut busy_secs = 0.0;
+                for i in 0..self.metrics.num_workers() {
+                    busy_secs += self.metrics.worker_total_busy_duration(i).as_secs_f64();
+                }
+                PyFloat::new(py, busy_secs).into_any()
+            }
+        };
+        let observation = observation_class.call1((value, &self.attrs))?;
+        Ok((observation,))
     }
 }

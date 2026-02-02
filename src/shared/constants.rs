@@ -138,6 +138,8 @@ pub(crate) struct ConstantsInner {
     pub(super) add: Py<PyString>,
     /// The string `create_histogram`.
     pub(super) create_histogram: Py<PyString>,
+    /// The string `create_observable_up_down_counter`.
+    pub(super) create_observable_up_down_counter: Py<PyString>,
     /// The string `create_up_down_counter`.
     pub(super) create_up_down_counter: Py<PyString>,
     /// The string `explicit_bucket_boundaries_advisory`.
@@ -159,6 +161,8 @@ pub(crate) struct ConstantsInner {
     pub(super) headers_setter: Py<HeadersSetter>,
     /// The function `propagate.inject`.
     pub(super) inject_context: Py<PyAny>,
+    /// The class `Observation`.
+    pub(super) observation_class: Py<PyAny>,
     /// The function `set_span_in_context`.
     pub(super) set_span_in_context: Py<PyAny>,
     /// The attribute SpanKind.CLIENT.
@@ -539,6 +543,11 @@ impl Constants {
 
                 add: PyString::new(py, "add").unbind(),
                 create_histogram: PyString::new(py, "create_histogram").unbind(),
+                create_observable_up_down_counter: PyString::new(
+                    py,
+                    "create_observable_up_down_counter",
+                )
+                .unbind(),
                 create_up_down_counter: PyString::new(py, "create_up_down_counter").unbind(),
                 explicit_bucket_boundaries_advisory: PyString::new(
                     py,
@@ -554,6 +563,7 @@ impl Constants {
                 get_tracer_provider: otel_trace.getattr("get_tracer_provider")?.unbind(),
                 headers_setter: Py::new(py, HeadersSetter {})?,
                 inject_context: otel_propagate.getattr("inject")?.unbind(),
+                observation_class: otel_metrics.getattr("Observation")?.unbind(),
                 set_span_in_context: otel_trace.getattr("set_span_in_context")?.unbind(),
                 span_kind_client: span_kind.getattr("CLIENT")?.unbind(),
 
