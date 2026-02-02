@@ -38,6 +38,7 @@ dev = [
     "pytest-asyncio",
     "pytest-benchmark",
     "pytest-cov",
+    "pytest-order",
     "pyvoy",
     "ruff",
     "trustme",
