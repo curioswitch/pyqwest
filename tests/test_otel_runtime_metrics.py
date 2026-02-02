@@ -41,6 +41,9 @@ async def test_basic(
     else:
         await asyncio.to_thread(client.get, url)
 
+    # Tokio takes some time to update internal metrics, unfortunately the best we can do is sleep.
+    await asyncio.sleep(0.05)
+
     metrics = get_runtime_metrics(otel_test_base)
     assert len(metrics) == 5
     alive_tasks = metrics[0]
