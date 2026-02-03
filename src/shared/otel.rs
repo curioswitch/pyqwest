@@ -10,8 +10,7 @@ use pyo3::{
     pyclass, pymethods,
     sync::{MutexExt as _, PyOnceLock},
     types::{
-        PyAnyMethods as _, PyDict, PyDictMethods as _, PyFloat, PyInt, PyString, PyTuple,
-        PyTypeMethods as _,
+        PyAnyMethods as _, PyDict, PyDictMethods as _, PyFloat, PyInt, PyString, PyTypeMethods as _,
     },
     Bound, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
@@ -348,27 +347,23 @@ fn start_runtime_metrics(
                     TokioRuntimeMetricsCallback {
                         metrics: runtime_metrics.clone(),
                         metric_type: RuntimeMetricType::BlockingThreadsActive,
-                        attrs: PyDict::from_sequence(
-                            PyTuple::new(
-                                py,
-                                [("rust.runtime", "tokio"), ("rust.thread.state", "active")],
-                            )?
-                            .as_any(),
-                        )?
-                        .unbind(),
+                        attrs: {
+                            let attrs = PyDict::new(py);
+                            attrs.set_item("rust.runtime", "tokio")?;
+                            attrs.set_item("rust.thread.state", "active")?;
+                            attrs.unbind()
+                        },
                         constants: constants.clone(),
                     },
                     TokioRuntimeMetricsCallback {
                         metrics: runtime_metrics.clone(),
                         metric_type: RuntimeMetricType::BlockingThreadsIdle,
-                        attrs: PyDict::from_sequence(
-                            PyTuple::new(
-                                py,
-                                [("rust.runtime", "tokio"), ("rust.thread.state", "idle")],
-                            )?
-                            .as_any(),
-                        )?
-                        .unbind(),
+                        attrs: {
+                            let attrs = PyDict::new(py);
+                            attrs.set_item("rust.runtime", "tokio")?;
+                            attrs.set_item("rust.thread.state", "idle")?;
+                            attrs.unbind()
+                        },
                         constants: constants.clone(),
                     },
                 ),
@@ -384,10 +379,11 @@ fn start_runtime_metrics(
                 (TokioRuntimeMetricsCallback {
                     metrics: runtime_metrics.clone(),
                     metric_type: RuntimeMetricType::NumAliveTasks,
-                    attrs: PyDict::from_sequence(
-                        PyTuple::new(py, [("rust.runtime", "tokio")])?.as_any(),
-                    )?
-                    .unbind(),
+                    attrs: {
+                        let attrs = PyDict::new(py);
+                        attrs.set_item("rust.runtime", "tokio")?;
+                        attrs.unbind()
+                    },
                     constants: constants.clone(),
                 },),
                 "{task}",
@@ -403,27 +399,23 @@ fn start_runtime_metrics(
                     TokioRuntimeMetricsCallback {
                         metrics: runtime_metrics.clone(),
                         metric_type: RuntimeMetricType::QueueDepthBlocking,
-                        attrs: PyDict::from_sequence(
-                            PyTuple::new(
-                                py,
-                                [("rust.runtime", "tokio"), ("rust.task.type", "blocking")],
-                            )?
-                            .as_any(),
-                        )?
-                        .unbind(),
+                        attrs: {
+                            let attrs = PyDict::new(py);
+                            attrs.set_item("rust.runtime", "tokio")?;
+                            attrs.set_item("rust.task.type", "blocking")?;
+                            attrs.unbind()
+                        },
                         constants: constants.clone(),
                     },
                     TokioRuntimeMetricsCallback {
                         metrics: runtime_metrics.clone(),
                         metric_type: RuntimeMetricType::QueueDepthGlobal,
-                        attrs: PyDict::from_sequence(
-                            PyTuple::new(
-                                py,
-                                [("rust.runtime", "tokio"), ("rust.task.type", "global")],
-                            )?
-                            .as_any(),
-                        )?
-                        .unbind(),
+                        attrs: {
+                            let attrs = PyDict::new(py);
+                            attrs.set_item("rust.runtime", "tokio")?;
+                            attrs.set_item("rust.task.type", "global")?;
+                            attrs.unbind()
+                        },
                         constants: constants.clone(),
                     },
                 ),
@@ -439,10 +431,11 @@ fn start_runtime_metrics(
                 (TokioRuntimeMetricsCallback {
                     metrics: runtime_metrics.clone(),
                     metric_type: RuntimeMetricType::WorkerBusyDuration,
-                    attrs: PyDict::from_sequence(
-                        PyTuple::new(py, [("rust.runtime", "tokio")])?.as_any(),
-                    )?
-                    .unbind(),
+                    attrs: {
+                        let attrs = PyDict::new(py);
+                        attrs.set_item("rust.runtime", "tokio")?;
+                        attrs.unbind()
+                    },
                     constants: constants.clone(),
                 },),
                 "s",
