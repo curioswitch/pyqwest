@@ -15,7 +15,12 @@ use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, C
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
 
-#[pyclass(module = "_pyqwest", name = "SyncHTTPTransport", frozen)]
+#[pyclass(
+    module = "_pyqwest",
+    name = "SyncHTTPTransport",
+    frozen,
+    from_py_object
+)]
 #[derive(Clone)]
 pub struct SyncHttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,

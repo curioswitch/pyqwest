@@ -15,7 +15,7 @@ use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 
-#[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen)]
+#[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct HttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
