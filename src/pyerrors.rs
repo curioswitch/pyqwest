@@ -30,36 +30,29 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
     }
 }
 
-#[pyclass(module = "pyqwest", frozen, eq, eq_int)]
+#[pyclass(
+    module = "pyqwest",
+    frozen,
+    eq,
+    eq_int,
+    skip_from_py_object,
+    rename_all = "SCREAMING_SNAKE_CASE"
+)]
 #[derive(Clone, PartialEq)]
 pub(crate) enum StreamErrorCode {
-    #[pyo3(name = "NO_ERROR")]
     NoError,
-    #[pyo3(name = "PROTOCOL_ERROR")]
     ProtocolError,
-    #[pyo3(name = "INTERNAL_ERROR")]
     InternalError,
-    #[pyo3(name = "FLOW_CONTROL_ERROR")]
     FlowControlError,
-    #[pyo3(name = "SETTINGS_TIMEOUT")]
     SettingsTimeout,
-    #[pyo3(name = "STREAM_CLOSED")]
     StreamClosed,
-    #[pyo3(name = "FRAME_SIZE_ERROR")]
     FrameSizeError,
-    #[pyo3(name = "REFUSED_STREAM")]
     RefusedStream,
-    #[pyo3(name = "CANCEL")]
     Cancel,
-    #[pyo3(name = "COMPRESSION_ERROR")]
     CompressionError,
-    #[pyo3(name = "CONNECT_ERROR")]
     ConnectError,
-    #[pyo3(name = "ENHANCE_YOUR_CALM")]
     EnhanceYourCalm,
-    #[pyo3(name = "INADEQUATE_SECURITY")]
     InadequateSecurity,
-    #[pyo3(name = "HTTP_1_1_REQUIRED")]
     HTTP11Required,
 }
 

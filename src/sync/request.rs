@@ -3,7 +3,7 @@ use pyo3::{
     pybacked::PyBackedBytes,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyIterator, PyString, PyTuple},
-    Borrowed, Bound, FromPyObject, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
+    Borrowed, Bound, FromPyObject, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::mpsc;
@@ -90,15 +90,10 @@ impl SyncRequest {
 
     fn content_into_reqwest(&self, py: Python<'_>) -> Option<(reqwest::Body, Option<Py<PyAny>>)> {
         match &self.content {
-            Some(Content::Bytes(bytes)) => {
-                // TODO: Replace this dance with clone_ref when released.
-                // https://github.com/PyO3/pyo3/pull/5654
-                // SAFETY: Implementation known never to error, we unwrap to easily
-                // switch to clone_ref later.
-                let bytes = bytes.into_pyobject(py).unwrap();
-                let bytes = PyBackedBytes::from(bytes);
-                Some((reqwest::Body::from(Bytes::from_owner(bytes)), None))
-            }
+            Some(Content::Bytes(bytes)) => Some((
+                reqwest::Body::from(Bytes::from_owner(bytes.clone_ref(py))),
+                None,
+            )),
             Some(Content::Iter(iter)) => {
                 let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
                 let read_iter = iter.clone_ref(py);

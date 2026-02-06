@@ -5,7 +5,7 @@ use pyo3::{
     pyclass, pyfunction, pymethods,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyModule, PyString},
-    Bound, IntoPyObject as _, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
+    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use tokio_stream::StreamExt as _;
 
@@ -111,15 +111,10 @@ impl Request {
         py: Python<'_>,
     ) -> PyResult<(Option<reqwest::Body>, Option<Py<PyAny>>)> {
         match &self.content {
-            Some(Content::Bytes(bytes)) => {
-                // TODO: Replace this dance with clone_ref when released.
-                // https://github.com/PyO3/pyo3/pull/5654
-                // SAFETY: Implementation known never to error, we unwrap to easily
-                // switch to clone_ref later.
-                let bytes = bytes.into_pyobject(py).unwrap();
-                let bytes = PyBackedBytes::from(bytes);
-                Ok((Some(reqwest::Body::from(Bytes::from_owner(bytes))), None))
-            }
+            Some(Content::Bytes(bytes)) => Ok((
+                Some(reqwest::Body::from(Bytes::from_owner(bytes.clone_ref(py)))),
+                None,
+            )),
             Some(Content::AsyncIter(iter)) => {
                 let iter = wrap_async_iter(py, iter)?;
                 let (stream, task) = into_stream(py, iter, &self.constants)?;
