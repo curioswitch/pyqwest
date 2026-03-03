@@ -94,6 +94,9 @@ class ASGITransport(Transport):
                 http_version = "3"
             case _:
                 http_version = "1.1"
+        if "host" not in request.headers:
+            request.headers["host"] = parsed_url.netloc
+
         scope: HTTPScope = {
             "type": "http",
             "asgi": _asgi,

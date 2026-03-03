@@ -40,7 +40,7 @@ async def request_body(queue: asyncio.Queue) -> AsyncIterator[bytes]:
 
 @pytest.mark.asyncio
 async def test_basic(
-    client: Client | SyncClient, url: str, http_version: HTTPVersion
+    client: Client | SyncClient, url: str, http_version: HTTPVersion, server_port: int
 ) -> None:
     method = "POST"
     url = f"{url}/echo"
@@ -64,6 +64,7 @@ async def test_basic(
             async for chunk in resp.content:
                 content += chunk
     assert resp.status == 200
+    assert resp.headers["x-echo-host"] == f"localhost:{server_port}"
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.headers["x-echo-x-hello"] == "rust"
