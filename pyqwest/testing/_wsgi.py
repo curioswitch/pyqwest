@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -35,10 +36,20 @@ _UNSET_STATUS = "unset"
 _DEFAULT_EXECUTOR: ThreadPoolExecutor | None = None
 
 
+class ContextCopyingExecutor(ThreadPoolExecutor):
+    """ThreadPoolExecutor that copies context variables from the submitting thread to the worker thread."""
+
+    def submit(
+        self, fn: Callable[..., object], *args: object, **kwargs: object
+    ) -> Future:
+        ctx = contextvars.copy_context()
+        return super().submit(lambda: ctx.run(fn, *args, **kwargs))
+
+
 def get_default_executor() -> ThreadPoolExecutor:
     global _DEFAULT_EXECUTOR  # noqa: PLW0603
     if _DEFAULT_EXECUTOR is None:
-        _DEFAULT_EXECUTOR = ThreadPoolExecutor()
+        _DEFAULT_EXECUTOR = ContextCopyingExecutor()
     return _DEFAULT_EXECUTOR
 
 
