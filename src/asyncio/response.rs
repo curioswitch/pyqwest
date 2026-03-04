@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 use pyo3::{
@@ -66,7 +66,7 @@ impl Response {
         }
     }
 
-    pub(super) fn set_request_iter_task(&self, task: Arc<ArcSwapOption<Py<PyAny>>>) {
+    pub(super) fn set_request_iter_task(&self, task: &Arc<ArcSwapOption<Py<PyAny>>>) {
         if let Some(task) = task.swap(None) {
             self.request_iter_task.store(Some(task));
         }

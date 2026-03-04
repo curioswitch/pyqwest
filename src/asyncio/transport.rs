@@ -161,7 +161,7 @@ impl HttpTransport {
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);
                 response.fill(res).await;
-                response.set_request_iter_task(request_iter_task);
+                response.set_request_iter_task(&request_iter_task);
                 Ok(response)
             }
         })?;
