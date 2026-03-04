@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,46 @@ from .apps.wsgi.kitchensink import app as kitchensink_app_wsgi
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
+
+
+_ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION = False
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
+    if not _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION:
+        return
+
+    if session.exitstatus == 0:
+        pytest.exit(
+            "Tests failed due to unhandled asyncio loop exceptions.",
+            returncode=pytest.ExitCode.TESTS_FAILED,
+        )
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def track_asyncio_loop_exceptions() -> AsyncIterator[None]:
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+
+    def handler(loop: asyncio.AbstractEventLoop, context: dict[str, object]) -> None:
+        global _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION  # noqa: PLW0603
+        _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION = True
+        if previous_handler is not None:
+            previous_handler(loop, context)
+        else:
+            loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def fail_on_asyncio_loop_exception() -> Iterator[None]:
+    yield
+    global _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION  # noqa: PLW0603
+    if _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION:
+        _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION = False
+        pytest.fail("Unhandled asyncio loop exception encountered.", pytrace=False)
 
 
 @dataclass
