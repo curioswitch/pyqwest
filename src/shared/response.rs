@@ -128,6 +128,11 @@ impl ResponseBody {
                             return Ok(None);
                         }
                     }
+                    if let Some(e) = errors::find::<h3::error::StreamError>(&e) {
+                        if e.is_h3_no_error() {
+                            return Ok(None);
+                        }
+                    }
                     return Err(pyerrors::from_reqwest(&e, "Error reading content"));
                 }
             };
@@ -184,7 +189,7 @@ impl ResponseBody {
             res = body.collect() => res,
         };
         let collected =
-            collected.map_err(|e| pyerrors::from_reqwest(&e, "Error reading content"))?;
+            collected.map_err(|e| pyerrors::from_reqwest(&e, "Error reading full content"))?;
 
         if let Some(trailers) = collected.trailers() {
             self.inner.trailers.get().fill(trailers.clone());
