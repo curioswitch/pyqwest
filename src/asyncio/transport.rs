@@ -147,12 +147,13 @@ impl HttpTransport {
             ));
         };
         let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3)?;
-        let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
+        let mut response = Response::pending(py, self.constants.clone())?;
         let operation = self.instrumentation.start(py, &request.head)?;
         operation.inject(py, &mut request_rs)?;
         let fut = future_into_py(py, {
             let client = client.clone();
             let operation = operation.clone();
+            let request_iter_task = request_iter_task.clone();
             async move {
                 let res = client
                     .execute(request_rs)
@@ -160,6 +161,7 @@ impl HttpTransport {
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);
                 response.fill(res).await;
+                response.set_request_iter_task(&request_iter_task);
                 Ok(response)
             }
         })?;
@@ -168,6 +170,7 @@ impl HttpTransport {
             (EndOperationCallback {
                 operation,
                 constants: self.constants.clone(),
+                request_iter_task,
             }
             .into_bound_py_any(py)?,),
         )?;
@@ -186,7 +189,7 @@ impl HttpTransport {
             ));
         };
         let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3)?;
-        let mut response = Response::pending(py, request_iter_task, self.constants.clone())?;
+        let mut response = Response::pending(py, self.constants.clone())?;
         let operation = self.instrumentation.start(py, &request.head)?;
         operation.inject(py, &mut request_rs)?;
         let fut = future_into_py(py, {
@@ -208,6 +211,7 @@ impl HttpTransport {
             (EndOperationCallback {
                 operation,
                 constants: self.constants.clone(),
+                request_iter_task,
             }
             .into_bound_py_any(py)?,),
         )?;
@@ -239,11 +243,15 @@ pub(crate) fn get_default_transport(py: Python<'_>) -> PyResult<Py<HttpTransport
 struct EndOperationCallback {
     operation: Operation,
     constants: Constants,
+    request_iter_task: Arc<ArcSwapOption<Py<PyAny>>>,
 }
 
 #[pymethods]
 impl EndOperationCallback {
     fn __call__(&self, py: Python<'_>, fut: &Bound<'_, PyAny>) -> PyResult<()> {
+        if let Some(task) = self.request_iter_task.swap(None) {
+            task.call_method0(py, &self.constants.cancel)?;
+        }
         let res = fut.call_method0(&self.constants.result);
         self.operation.end(py, res.as_ref().err())
     }

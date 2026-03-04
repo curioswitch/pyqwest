@@ -176,7 +176,10 @@ class ASGITransport(Transport):
         app_task = asyncio.create_task(run_app())
         message = await send_queue.get()
         if isinstance(message, Exception):
-            await app_task
+            request_task.cancel()
+            with contextlib.suppress(BaseException):
+                await app_task
+                await request_task
             if isinstance(message, TimeoutError):
                 raise message
             return Response(
@@ -380,4 +383,6 @@ class ResponseContent(AsyncIterator[bytes]):
         self._request_task.cancel()
         with contextlib.suppress(BaseException):
             await self._request_task
+        self._task.cancel()
+        with contextlib.suppress(BaseException):
             await self._task
