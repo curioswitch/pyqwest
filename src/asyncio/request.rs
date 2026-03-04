@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
 use bytes::Bytes;
 use pyo3::{
     exceptions::PyTypeError,
@@ -96,12 +99,14 @@ impl Request {
         &self,
         py: Python<'_>,
         http3: bool,
-    ) -> PyResult<(reqwest::Request, Option<Py<PyAny>>)> {
+    ) -> PyResult<(reqwest::Request, Arc<ArcSwapOption<Py<PyAny>>>)> {
         let mut req = self.head.new_reqwest(py, http3)?;
-        let mut request_iter_task: Option<Py<PyAny>> = None;
+        let request_iter_task: Arc<ArcSwapOption<Py<PyAny>>> = Arc::new(ArcSwapOption::empty());
         if let (Some(body), task) = self.content_into_reqwest(py)? {
             *req.body_mut() = Some(body);
-            request_iter_task = task;
+            if let Some(task) = task {
+                request_iter_task.store(Some(Arc::new(task)));
+            }
         }
         Ok((req, request_iter_task))
     }

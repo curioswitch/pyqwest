@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pyqwest import Client, SyncClient, WriteError
+from pyqwest import Client, ReadError, SyncClient, WriteError
 
 from ._util import SyncRequestBody
 
@@ -129,7 +129,8 @@ async def test_connection_error(
 async def test_request_not_bytes(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
-    with pytest.raises(WriteError):
+    # This can also surface either on read or write side based on timing
+    with pytest.raises((ReadError, WriteError)):
         if isinstance(client, SyncClient):
 
             def request_content_sync():
