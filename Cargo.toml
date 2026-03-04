@@ -46,3 +46,6 @@ fn_params_excessive_bools = "allow"
 struct_excessive_bools = "allow"
 too_many_arguments = "allow"
 unused_trait_names = "deny"
+
+[patch.crates-io]
+reqwest = { git = "https://github.com/seanmonstar/reqwest.git", rev = "fa74a8b835b2f194253cebdab8d049c0e5d23af3" }
