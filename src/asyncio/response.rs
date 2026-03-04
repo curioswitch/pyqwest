@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
 use pyo3::{
@@ -32,17 +32,13 @@ pub(crate) struct Response {
     pub(super) head: ResponseHead,
     content: Content,
     trailers: Py<Headers>,
-    request_iter_task: Mutex<Option<Py<PyAny>>>,
+    request_iter_task: ArcSwapOption<Py<PyAny>>,
 
     constants: Constants,
 }
 
 impl Response {
-    pub(super) fn pending(
-        py: Python<'_>,
-        request_iter_task: Option<Py<PyAny>>,
-        constants: Constants,
-    ) -> PyResult<Response> {
+    pub(super) fn pending(py: Python<'_>, constants: Constants) -> PyResult<Response> {
         let trailers = Py::new(py, Headers::empty())?;
         Ok(Response {
             head: ResponseHead::pending(py),
@@ -51,7 +47,7 @@ impl Response {
                 ContentGenerator::new(ResponseBody::pending(trailers.clone_ref(py))),
             )?),
             trailers,
-            request_iter_task: Mutex::new(request_iter_task),
+            request_iter_task: ArcSwapOption::empty(),
             constants,
         })
     }
@@ -67,6 +63,12 @@ impl Response {
             content_body.as_ref().unwrap().fill(body).await;
         } else {
             unreachable!("fill is only called on HTTP responses");
+        }
+    }
+
+    pub(super) fn set_request_iter_task(&self, task: Arc<ArcSwapOption<Py<PyAny>>>) {
+        if let Some(task) = task.swap(None) {
+            self.request_iter_task.store(Some(task));
         }
     }
 
@@ -113,7 +115,7 @@ impl Response {
             head: ResponseHead::new(py, status, http_version, headers)?,
             content: Content::Custom(content.unbind()),
             trailers,
-            request_iter_task: Mutex::new(None),
+            request_iter_task: ArcSwapOption::empty(),
             constants,
         })
     }
@@ -174,8 +176,7 @@ impl Response {
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let request_iter_task = self.request_iter_task.lock().unwrap().take();
-        if let Some(task) = request_iter_task {
+        if let Some(task) = self.request_iter_task.swap(None) {
             task.call_method0(py, &self.constants.cancel)?;
         }
         match &self.content {
