@@ -324,7 +324,6 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -958,7 +957,6 @@ class SyncRequest:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
-            timeout: The timeout for the request in seconds.
         """
 
     @property

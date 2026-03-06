@@ -12,3 +12,8 @@
 ::: pyqwest.SyncResponse
 ::: pyqwest.Headers
 ::: pyqwest.FullResponse
+
+## HTTPX Adapter
+
+::: pyqwest.httpx.AsyncPyqwestTransport
+::: pyqwest.httpx.PyqwestTransport
