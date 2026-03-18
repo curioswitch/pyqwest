@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - "*"
-  # TODO: Remove
-  pull_request:
   workflow_dispatch:
 
 permissions:
