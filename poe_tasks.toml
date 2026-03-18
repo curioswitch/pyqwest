@@ -1,6 +1,6 @@
 [tasks.build]
 help = "Builds native extensions"
-cmd = "uv run maturin develop"
+cmd = "uv run maturin develop ${MATURIN_DEVELOP_ARGS}"
 
 [tasks.check]
 help = "Runs all checks"

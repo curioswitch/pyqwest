@@ -42,7 +42,7 @@ jobs:
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --features pyo3/abi3-py310
+          args: --release --out dist -i 3.10 --features pyo3/abi3-py310
           sccache: true
           manylinux: auto
 
@@ -82,7 +82,7 @@ jobs:
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --features pyo3/abi3-py310
+          args: --release --out dist -i 3.10 --features pyo3/abi3-py310
           sccache: true
           manylinux: musllinux_1_2
 
@@ -137,7 +137,7 @@ jobs:
       - name: Build abi3 wheels
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
-          args: --release --out dist --features pyo3/abi3-py310
+          args: --release --out dist -i 3.10 --features pyo3/abi3-py310
           sccache: true
 
       - name: Upload wheels
@@ -180,7 +180,7 @@ jobs:
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --features pyo3/abi3-py310
+          args: --release --out dist -i 3.10 --features pyo3/abi3-py310
           sccache: true
 
       - name: Upload wheels
