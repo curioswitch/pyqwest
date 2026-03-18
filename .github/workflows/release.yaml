@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "*"
+  # TODO: Remove
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -32,7 +34,15 @@ jobs:
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
+          args: --release --out dist -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
+          sccache: true
+          manylinux: auto
+
+      - name: Build abi3 wheels
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --features pyo3/abi3-py310
           sccache: true
           manylinux: auto
 
@@ -64,7 +74,15 @@ jobs:
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
+          args: --release --out dist -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
+          sccache: true
+          manylinux: musllinux_1_2
+
+      - name: Build abi3 wheels
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --features pyo3/abi3-py310
           sccache: true
           manylinux: musllinux_1_2
 
@@ -113,7 +131,13 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i ${{ steps.python-314.outputs.python-path }} -i ${{ steps.python-314t.outputs.python-path }} -i ${{ steps.python-pypy311.outputs.python-path }}
+          args: --release --out dist -i 3.12 -i 3.13 -i ${{ steps.python-314.outputs.python-path }} -i ${{ steps.python-314t.outputs.python-path }} -i ${{ steps.python-pypy311.outputs.python-path }}
+          sccache: true
+
+      - name: Build abi3 wheels
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          args: --release --out dist --features pyo3/abi3-py310
           sccache: true
 
       - name: Upload wheels
@@ -149,7 +173,14 @@ jobs:
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 -i 3.11 -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
+          args: --release --out dist -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
+          sccache: true
+
+      - name: Build abi3 wheels
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --features pyo3/abi3-py310
           sccache: true
 
       - name: Upload wheels
