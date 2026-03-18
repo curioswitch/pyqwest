@@ -40,6 +40,9 @@ tokio-stream = "0.1.17"
 url = "2.5.7"
 zstd = "0.13.3"
 
+[build-dependencies]
+pyo3-build-config = { version = "0.28.0", features = ["resolve-config"] }
+
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }
 

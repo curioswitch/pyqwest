@@ -25,6 +25,7 @@ __all__ = [
 
 from . import _pyqwest
 from ._coro import Client, Response
+from ._errors import StreamError, StreamErrorCode
 from ._pyqwest import (
     FullResponse,
     Headers,
@@ -33,8 +34,6 @@ from ._pyqwest import (
     HTTPVersion,
     ReadError,
     Request,
-    StreamError,
-    StreamErrorCode,
     SyncClient,
     SyncHTTPTransport,
     SyncRequest,

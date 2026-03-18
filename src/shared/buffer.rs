@@ -42,25 +42,37 @@ impl<'py> IntoPyObject<'py> for BytesMemoryView {
     type Output = Bound<'py, PyMemoryView>;
     type Error = PyErr;
 
+    #[cfg(not(Py_LIMITED_API))]
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let buffer = Buffer::new(self.data).into_bound_py_any(py)?;
         PyMemoryView::from(&buffer)
+    }
+
+    #[cfg(Py_LIMITED_API)]
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        use pyo3::types::PyBytes;
+
+        let bytes = PyBytes::new(py, &self.data).into_any();
+        PyMemoryView::from(&bytes)
     }
 }
 
 // Mostly same as https://github.com/apache/opendal/blob/d001321b0f9834bc1e2e7d463bcfdc3683e968c9/bindings/python/src/utils.rs#L51-L72
 
+#[cfg(not(Py_LIMITED_API))]
 #[pyclass(module = "_pyqwest.shared", frozen)]
 struct Buffer {
     data: Bytes,
 }
 
+#[cfg(not(Py_LIMITED_API))]
 impl Buffer {
     pub(crate) fn new(data: Bytes) -> Self {
         Self { data }
     }
 }
 
+#[cfg(not(Py_LIMITED_API))]
 #[pymethods]
 impl Buffer {
     #[allow(clippy::needless_pass_by_value)]

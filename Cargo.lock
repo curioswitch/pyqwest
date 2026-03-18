@@ -1212,6 +1212,7 @@ dependencies = [
  "mime",
  "pyo3",
  "pyo3-async-runtimes",
+ "pyo3-build-config",
  "reqwest",
  "tokio",
  "tokio-stream",
