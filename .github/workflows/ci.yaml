@@ -55,7 +55,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Setup rust
         run: |
@@ -94,5 +94,5 @@ jobs:
           $(rustc --print=target-libdir)/../bin/llvm-profdata merge -sparse default_*.profraw -o tests.profdata
           $(rustc --print=target-libdir)/../bin/llvm-cov export -format=lcov --ignore-filename-regex='/.cargo/registry' --ignore-filename-regex='.cargo/git/checkouts' --ignore-filename-regex='.rustup/toolchains' -instr-profile tests.profdata pyqwest/_pyqwest.*.so > tests.lcov
 
-      - uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+      - uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5.5.3
         if: ${{ matrix.coverage == 'cov' }}
