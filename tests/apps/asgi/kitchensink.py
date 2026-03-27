@@ -134,6 +134,36 @@ async def _read_all(
     await send({"type": "http.response.body", "body": bytes(buf), "more_body": False})
 
 
+async def _set_cookie(
+    _scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [(b"set-cookie", b"testcookie=hello")],
+            "trailers": False,
+        }
+    )
+    await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+
+async def _get_cookie(
+    scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    headers_dict = dict(scope["headers"])
+    cookie = headers_dict.get(b"cookie", b"")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [],
+            "trailers": False,
+        }
+    )
+    await send({"type": "http.response.body", "body": cookie, "more_body": False})
+
+
 async def app(
     scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
@@ -147,6 +177,10 @@ async def app(
             await _content_encoding(scope, receive, send)
         case "/read_all":
             await _read_all(scope, receive, send)
+        case "/set-cookie":
+            await _set_cookie(scope, receive, send)
+        case "/get-cookie":
+            await _get_cookie(scope, receive, send)
         case _:
             await send(
                 {

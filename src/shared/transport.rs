@@ -26,6 +26,7 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) enable_brotli: bool,
     pub(crate) enable_zstd: bool,
     pub(crate) use_system_dns: bool,
+    pub(crate) enable_cookie_store: bool,
 }
 
 pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Client, bool)> {
@@ -86,6 +87,7 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     builder = builder.brotli(params.enable_brotli);
     builder = builder.zstd(params.enable_zstd);
     builder = builder.hickory_dns(!params.use_system_dns);
+    builder = builder.cookie_store(params.enable_cookie_store);
 
     let client = if http3 {
         // Workaround https://github.com/seanmonstar/reqwest/issues/2910
@@ -118,6 +120,7 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 enable_brotli: true,
                 enable_zstd: true,
                 use_system_dns: false,
+                enable_cookie_store: false,
             })
             .unwrap();
             client

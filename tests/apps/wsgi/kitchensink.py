@@ -89,6 +89,21 @@ def _read_all(
     yield bytes(request_body)
 
 
+def _set_cookie(
+    _environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    start_response("200 OK", [("set-cookie", "testcookie=hello")])
+    return [b""]
+
+
+def _get_cookie(
+    environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    cookie = environ.get("HTTP_COOKIE", "")
+    start_response("200 OK", [])
+    return [cookie.encode()]
+
+
 def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
     path = cast("str", environ["PATH_INFO"]).encode("latin-1").decode("utf-8")
     match path:
@@ -100,6 +115,10 @@ def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[byt
             return _content_encoding(environ, start_response)
         case "/read_all":
             return _read_all(environ, start_response)
+        case "/set-cookie":
+            return _set_cookie(environ, start_response)
+        case "/get-cookie":
+            return _get_cookie(environ, start_response)
         case "/no_start":
             return []
         case _:

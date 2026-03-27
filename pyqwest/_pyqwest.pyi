@@ -430,6 +430,7 @@ class HTTPTransport:
         enable_brotli: bool = True,
         enable_zstd: bool = True,
         use_system_dns: bool = False,
+        enable_cookie_store: bool = False,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
@@ -463,6 +464,9 @@ class HTTPTransport:
                             asynchronous DNS resolver implemented in Rust, but it can have different
                             behavior from system DNS in certain environments. Try enabling this option if
                             you have any DNS resolution issues.
+            enable_cookie_store: Whether to enable automatic cookie storage and sending. When enabled,
+                          the transport will automatically store cookies from responses and send
+                          them with subsequent requests.
         """
 
     def __aenter__(self) -> Awaitable[HTTPTransport]:
@@ -864,6 +868,7 @@ class SyncHTTPTransport:
         enable_brotli: bool = True,
         enable_zstd: bool = True,
         use_system_dns: bool = False,
+        enable_cookie_store: bool = False,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
@@ -897,6 +902,9 @@ class SyncHTTPTransport:
                             asynchronous DNS resolver implemented in Rust, but it can have different
                             behavior from system DNS in certain environments. Try enabling this option if
                             you have any DNS resolution issues.
+            enable_cookie_store: Whether to enable automatic cookie storage and sending. When enabled,
+                          the transport will automatically store cookies from responses and send
+                          them with subsequent requests.
         """
 
     def __enter__(self) -> SyncHTTPTransport:
