@@ -154,3 +154,39 @@ async def test_sync_transport_options(url: str) -> None:
 
     with pytest.raises(RuntimeError, match="already closed transport"):
         SyncClient(transport).get(url)
+
+
+@pytest.mark.asyncio
+async def test_cookie_store(url: str) -> None:
+    async with HTTPTransport(enable_cookie_store=True) as transport:
+        client = Client(transport)
+        await client.get(f"{url}/set-cookie")
+        res = await client.get(f"{url}/get-cookie")
+        assert res.content == b"testcookie=hello"
+
+
+@pytest.mark.asyncio
+async def test_cookie_store_disabled(url: str) -> None:
+    async with HTTPTransport() as transport:
+        client = Client(transport)
+        await client.get(f"{url}/set-cookie")
+        res = await client.get(f"{url}/get-cookie")
+        assert res.content == b""
+
+
+@pytest.mark.asyncio
+async def test_cookie_store_sync(url: str) -> None:
+    with SyncHTTPTransport(enable_cookie_store=True) as transport:
+        client = SyncClient(transport)
+        await asyncio.to_thread(client.get, f"{url}/set-cookie")
+        res = await asyncio.to_thread(client.get, f"{url}/get-cookie")
+        assert res.content == b"testcookie=hello"
+
+
+@pytest.mark.asyncio
+async def test_cookie_store_sync_disabled(url: str) -> None:
+    with SyncHTTPTransport() as transport:
+        client = SyncClient(transport)
+        await asyncio.to_thread(client.get, f"{url}/set-cookie")
+        res = await asyncio.to_thread(client.get, f"{url}/get-cookie")
+        assert res.content == b""

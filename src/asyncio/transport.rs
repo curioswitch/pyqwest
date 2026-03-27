@@ -45,6 +45,7 @@ impl HttpTransport {
         enable_brotli = true,
         enable_zstd = true,
         use_system_dns = false,
+        enable_cookie_store = false,
         enable_otel = true,
         meter_provider = None,
         tracer_provider = None,
@@ -65,6 +66,7 @@ impl HttpTransport {
         enable_brotli: bool,
         enable_zstd: bool,
         use_system_dns: bool,
+        enable_cookie_store: bool,
         enable_otel: bool,
         meter_provider: Option<Bound<'_, PyAny>>,
         tracer_provider: Option<Bound<'_, PyAny>>,
@@ -84,6 +86,7 @@ impl HttpTransport {
             enable_brotli,
             enable_zstd,
             use_system_dns,
+            enable_cookie_store,
         })?;
         let constants = Constants::get(py)?;
         Ok(Self {
