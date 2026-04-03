@@ -1,3 +1,7 @@
+---
+icon: material/hammer-wrench
+---
+
 # Usage
 
 The entrypoint to pyqwest is [`Client`](/api/#pyqwest.Client) for asyncio applications
