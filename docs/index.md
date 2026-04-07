@@ -1,3 +1,7 @@
+---
+icon: material/home
+---
+
 #
 
 <img alt="logo" src="./img/logo.png" width="320" height="320">
@@ -63,11 +67,11 @@ a shared connection pool and are safe to use for production.
     print(len(response.content))
     ```
 
-If you already use HTTPX, you can use initialize clients with `pyqwest.httpx.PyQwestTransport`
+If you are already using HTTPX, you can initialize clients with either `pyqwest.httpx.PyQwestTransport`
 or `pyqwest.httpx.AsyncPyQwestTransport` to enable all the features of pyqwest without changing
 your business logic.
 
-See the [API reference](https://curioswitch.github.io/pyqwest/api/) for all the APIs available.
+Check out the [API reference](https://curioswitch.github.io/pyqwest/api/) page for all the available APIs.
 
 ## Why pyqwest?
 
