@@ -8,30 +8,29 @@ repo_name = "pyqwest"
 repo_url = "https://github.com/curioswitch/pyqwest"
 edit_uri = "edit/main/docs/"
 nav = [
-    { "Home" = "index.md" },
-    { "Usage" = "usage.md" },
-    { "Reference" = [
-        "reference/index.md",
-        { "Clients" = "reference/clients.md" },
-        { "HTTP Transports" = "reference/transports.md"},
-        { "Headers" = "reference/headers.md" },
-        { "Requests" = "reference/requests.md" },
-        { "Responses" = "reference/responses.md" },
-        { "Adapters" = "reference/adapters.md" },
-    ]},
+  { "Home" = "index.md" },
+  { "Usage" = "usage.md" },
+  { "Reference" = [
+    "reference/index.md",
+    { "Async Client" = "reference/async.md" },
+    { "Sync Client" = "reference/sync.md" },
+    { "Common" = "reference/common.md" },
+    { "Testing" = "reference/testing.md" },
+    { "HTTPX Adapters" = "reference/httpx.md" },
+  ] },
 ]
 
 [project.theme]
 favicon = "img/favicon.png"
 logo = "img/logo.png"
 features = [
-    "content.action.edit",
-    "content.code.copy",
-    "content.tabs.link",
-    "navigation.expand",
-    "navigation.indexes",
-    "navigation.top",
-    "toc.follow",
+  "content.action.edit",
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.expand",
+  "navigation.indexes",
+  "navigation.top",
+  "toc.follow",
 ]
 
 [project.theme.icon]
@@ -58,15 +57,22 @@ toggle.icon = "lucide/moon"
 toggle.name = "Switch to system preference"
 
 [project.markdown_extensions.attr_list]
+
 [project.markdown_extensions.md_in_html]
+
 [project.markdown_extensions.pymdownx.blocks.caption]
+
 [project.markdown_extensions.pymdownx.highlight]
 anchor_linenums = true
 line_spans = "__span"
 pygments_lang_class = true
+
 [project.markdown_extensions.pymdownx.inlinehilite]
+
 [project.markdown_extensions.pymdownx.snippets]
+
 [project.markdown_extensions.pymdownx.superfences]
+
 [project.markdown_extensions.pymdownx.tabbed]
 alternate_style = true
 
@@ -77,6 +83,7 @@ paths = ["."]
 [project.plugins.mkdocstrings.handlers.python.options]
 docstring_options = { ignore_init_summary = true }
 docstring_style = "google"
+allow_inspection = false
 inherited_members = false
 members_order = "source"
 merge_init_into_class = true

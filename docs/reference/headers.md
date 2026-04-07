@@ -1,3 +1,0 @@
-# Headers
-
-::: pyqwest.Headers
