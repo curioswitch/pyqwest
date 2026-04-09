@@ -18,9 +18,12 @@ from opentelemetry.metrics import MeterProvider
 from opentelemetry.trace import TracerProvider
 
 _T = TypeVar("_T")
-JSON: TypeAlias = Mapping[str, JSON] | Sequence[JSON] | str | int | float | bool | None
+_JSON: TypeAlias = (
+    Mapping[str, _JSON] | Sequence[_JSON] | str | int | float | bool | None
+)
 
-Buffer: TypeAlias = bytes | memoryview | bytearray
+_Buffer: TypeAlias = bytes | memoryview | bytearray
+_QueryParams: TypeAlias = dict[str, str | None] | Iterable[tuple[str, str | None]]
 
 class Headers:
     """Container of HTTP headers.
@@ -224,12 +227,15 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a GET HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -243,6 +249,8 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a POST HTTP request.
 
@@ -250,6 +258,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -262,13 +271,15 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a DELETE HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-
+            params: Query parameters to append to the URL. None values will be treated as key-only.
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
@@ -280,12 +291,15 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a HEAD HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -298,12 +312,15 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a OPTIONS HTTP request.
 
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -317,6 +334,8 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PATCH HTTP request.
 
@@ -324,6 +343,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -337,6 +357,8 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PUT HTTP request.
 
@@ -344,6 +366,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -358,6 +381,8 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes an HTTP request, returning the full buffered response.
 
@@ -366,6 +391,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -380,6 +406,8 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> Awaitable[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
@@ -388,6 +416,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -524,6 +553,8 @@ class Request:
         url: str,
         headers: Headers | None = None,
         content: bytes | AsyncIterator[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> None:
         """Creates a new Request object.
 
@@ -532,6 +563,7 @@ class Request:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
     @property
@@ -559,7 +591,7 @@ class Response:
         status: int,
         http_version: HTTPVersion | None = None,
         headers: Headers | None = None,
-        content: bytes | AsyncIterator[Buffer] | None = None,
+        content: bytes | AsyncIterator[_Buffer] | None = None,
         trailers: Headers | None = None,
     ) -> None:
         """Creates a new Response object.
@@ -607,7 +639,7 @@ class Response:
         """Returns the response headers."""
 
     @property
-    def content(self) -> AsyncIterator[Buffer]:
+    def content(self) -> AsyncIterator[_Buffer]:
         """Returns an asynchronous iterator over the response content."""
 
     @property
@@ -644,7 +676,9 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a GET HTTP request.
 
@@ -652,6 +686,7 @@ class SyncClient:
             url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -665,7 +700,9 @@ class SyncClient:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a POST HTTP request.
 
@@ -674,6 +711,7 @@ class SyncClient:
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -686,7 +724,9 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a DELETE HTTP request.
 
@@ -694,6 +734,7 @@ class SyncClient:
             url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -706,7 +747,9 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a HEAD HTTP request.
 
@@ -714,6 +757,7 @@ class SyncClient:
             url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -726,7 +770,9 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a OPTIONS HTTP request.
 
@@ -734,6 +780,7 @@ class SyncClient:
             url: The unencoded request URL.
             headers: The request headers.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -747,7 +794,9 @@ class SyncClient:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a PATCH HTTP request.
 
@@ -756,6 +805,7 @@ class SyncClient:
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -769,7 +819,9 @@ class SyncClient:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a PUT HTTP request.
 
@@ -778,6 +830,7 @@ class SyncClient:
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -792,7 +845,9 @@ class SyncClient:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes an HTTP request, returning the full buffered response.
 
@@ -802,6 +857,7 @@ class SyncClient:
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -816,7 +872,9 @@ class SyncClient:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        *,
         timeout: float | None = None,
+        params: _QueryParams | None = None,
     ) -> AbstractContextManager[SyncResponse]:
         """Executes an HTTP request, allowing the response content to be streamed.
 
@@ -826,6 +884,7 @@ class SyncClient:
             headers: The request headers.
             content: The request content.
             timeout: The timeout for the request in seconds.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
             ConnectionError: If the connection fails.
@@ -957,6 +1016,8 @@ class SyncRequest:
         url: str,
         headers: Headers | None = None,
         content: bytes | Iterable[bytes] | None = None,
+        *,
+        params: _QueryParams | None = None,
     ) -> None:
         """Creates a new SyncRequest object.
 
@@ -965,6 +1026,7 @@ class SyncRequest:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content.
+            params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
     @property
@@ -992,7 +1054,7 @@ class SyncResponse:
         status: int,
         http_version: HTTPVersion | None = None,
         headers: Headers | None = None,
-        content: bytes | Iterable[Buffer] | None = None,
+        content: bytes | Iterable[_Buffer] | None = None,
         trailers: Headers | None = None,
     ) -> None:
         """Creates a new SyncResponse object.
@@ -1040,7 +1102,7 @@ class SyncResponse:
         """Returns the response headers."""
 
     @property
-    def content(self) -> Iterator[Buffer]:
+    def content(self) -> Iterator[_Buffer]:
         """Returns an iterator over the response content."""
 
     @property
@@ -1096,7 +1158,7 @@ class FullResponse:
         defaulting to UTF-8 otherwise.
         """
 
-    def json(self) -> JSON:
+    def json(self) -> _JSON:
         """Parses and returns the response content as JSON.
 
         The content-type header is not checked when using this method.

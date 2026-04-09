@@ -1,9 +1,11 @@
 use std::fmt;
 
 use pyo3::sync::MutexExt as _;
-use pyo3::types::{PyAnyMethods as _, PyString};
+use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyString, PyStringMethods as _};
 use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 use pyo3::{Bound, PyAny};
+use url::form_urlencoded::Serializer;
+use url::UrlQuery;
 
 use crate::headers::Headers;
 use crate::shared::constants::Constants;
@@ -16,11 +18,31 @@ pub(crate) struct RequestHead {
 }
 
 impl RequestHead {
-    pub(crate) fn new(method: &str, url: &str, headers: Py<Headers>) -> PyResult<Self> {
+    pub(crate) fn new(
+        method: &str,
+        url: &str,
+        headers: Py<Headers>,
+        params: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         let method = http::Method::try_from(method)
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
-        let url = reqwest::Url::parse(url)
+        let mut url = reqwest::Url::parse(url)
             .map_err(|e| PyValueError::new_err(format!("Invalid URL: {e}")))?;
+        if let Some(params) = params {
+            let mut url_params = url.query_pairs_mut();
+            if let Ok(params_dict) = params.cast::<PyDict>() {
+                for (key, value) in params_dict.iter() {
+                    append_query_param(&mut url_params, &key, &value)?;
+                }
+            } else {
+                for item in params.try_iter()? {
+                    let item = item?;
+                    let key = item.get_item(0)?;
+                    let value = item.get_item(1)?;
+                    append_query_param(&mut url_params, &key, &value)?;
+                }
+            }
+        }
         Ok(Self {
             method,
             url,
@@ -103,4 +125,19 @@ impl fmt::Display for RequestStreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.msg.fmt(f)
     }
+}
+
+fn append_query_param(
+    url_params: &mut Serializer<'_, UrlQuery<'_>>,
+    key: &Bound<'_, PyAny>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let key = key.cast::<PyString>()?;
+    if value.is_none() {
+        url_params.append_key_only(key.to_str()?);
+    } else {
+        let value = value.cast::<PyString>()?;
+        url_params.append_pair(key.to_str()?, value.to_str()?);
+    }
+    Ok(())
 }

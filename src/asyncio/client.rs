@@ -38,80 +38,87 @@ impl Client {
         })
     }
 
-    #[pyo3(signature = (url, headers=None))]
+    #[pyo3(signature = (url, headers=None, *, params=None))]
     fn get<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "GET", url, headers, None)
+        self.execute(py, "GET", url, headers, None, params)
     }
 
-    #[pyo3(signature = (url, headers=None, content=None))]
+    #[pyo3(signature = (url, headers=None, content=None, *, params=None))]
     fn post<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "POST", url, headers, content)
+        self.execute(py, "POST", url, headers, content, params)
     }
 
-    #[pyo3(signature = (url, headers=None))]
+    #[pyo3(signature = (url, headers=None, *, params=None))]
     fn delete<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "DELETE", url, headers, None)
+        self.execute(py, "DELETE", url, headers, None, params)
     }
 
-    #[pyo3(signature = (url, headers=None))]
+    #[pyo3(signature = (url, headers=None, *, params=None))]
     fn head<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "HEAD", url, headers, None)
+        self.execute(py, "HEAD", url, headers, None, params)
     }
 
-    #[pyo3(signature = (url, headers=None))]
+    #[pyo3(signature = (url, headers=None, *, params=None))]
     fn options<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "OPTIONS", url, headers, None)
+        self.execute(py, "OPTIONS", url, headers, None, params)
     }
 
-    #[pyo3(signature = (url, headers=None, content=None))]
+    #[pyo3(signature = (url, headers=None, content=None, *, params=None))]
     fn patch<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "PATCH", url, headers, content)
+        self.execute(py, "PATCH", url, headers, content, params)
     }
 
-    #[pyo3(signature = (url, headers=None, content=None))]
+    #[pyo3(signature = (url, headers=None, content=None, *, params=None))]
     fn put<'py>(
         &self,
         py: Python<'py>,
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        self.execute(py, "PUT", url, headers, content)
+        self.execute(py, "PUT", url, headers, content, params)
     }
 
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, *, params=None))]
     fn execute<'py>(
         &self,
         py: Python<'py>,
@@ -119,6 +126,7 @@ impl Client {
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let headers = if let Some(headers) = headers {
             if let Ok(headers) = headers.cast::<Headers>() {
@@ -129,7 +137,15 @@ impl Client {
         } else {
             None
         };
-        let request = Request::new(py, method, url, headers, content, self.constants.clone())?;
+        let request = Request::new(
+            py,
+            method,
+            url,
+            headers,
+            content,
+            params,
+            self.constants.clone(),
+        )?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),
             Transport::Custom(transport) => self
@@ -140,7 +156,7 @@ impl Client {
         }
     }
 
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, *, params=None))]
     fn stream<'py>(
         &self,
         py: Python<'py>,
@@ -148,6 +164,7 @@ impl Client {
         url: &str,
         headers: Option<Bound<'py, PyAny>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let headers = if let Some(headers) = headers {
             if let Ok(headers) = headers.cast::<Headers>() {
@@ -158,7 +175,7 @@ impl Client {
         } else {
             None
         };
-        let request = Request::py_new(py, method, url, headers, content)?;
+        let request = Request::py_new(py, method, url, headers, content, params)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_stream(py, &request),
             Transport::Custom(transport) => transport

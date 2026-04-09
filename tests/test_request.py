@@ -139,3 +139,61 @@ async def test_request_methods(method: str):
 def test_sync_request_methods(method: str):
     request = SyncRequest(method=method, url="https://example.com/")
     assert request.method == method
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        pytest.param(
+            {"key1": "value1", "key2": "value2"},
+            "https://example.com/?existing=bar&key1=value1&key2=value2",
+            id="simple dict",
+        ),
+        pytest.param(
+            {"key1": "value with spaces", "key2": "value/with/special?chars&"},
+            "https://example.com/?existing=bar&key1=value+with+spaces&key2=value%2Fwith%2Fspecial%3Fchars%26",
+            id="dict with special characters",
+        ),
+        pytest.param(
+            {"key1": "value1", "key2": None},
+            "https://example.com/?existing=bar&key1=value1&key2",
+            id="dict with None value",
+        ),
+        pytest.param(
+            [("key1", "value1"), ("key2", "value2")],
+            "https://example.com/?existing=bar&key1=value1&key2=value2",
+            id="simple list of tuples",
+        ),
+        pytest.param(
+            [("key1", "value with spaces"), ("key2", "value/with/special?chars&")],
+            "https://example.com/?existing=bar&key1=value+with+spaces&key2=value%2Fwith%2Fspecial%3Fchars%26",
+            id="list of tuples with special characters",
+        ),
+        pytest.param(
+            [("key1", "value1"), ("key2", None)],
+            "https://example.com/?existing=bar&key1=value1&key2",
+            id="list of tuples with None value",
+        ),
+        pytest.param(
+            [("key1", "value1"), ("key1", "value2")],
+            "https://example.com/?existing=bar&key1=value1&key1=value2",
+            id="list of tuples with multiple values for same key",
+        ),
+    ],
+)
+def test_request_query_params(
+    mode: str,
+    params: dict[str, str | None] | list[tuple[str, str | None]],
+    expected: str,
+):
+    if mode == "sync":
+        request = SyncRequest(
+            method="GET", url="https://example.com/?existing=bar", params=params
+        )
+    else:
+        request = Request(
+            method="GET", url="https://example.com/?existing=bar", params=params
+        )
+
+    assert request.url == expected
