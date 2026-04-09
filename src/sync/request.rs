@@ -24,13 +24,14 @@ pub struct SyncRequest {
 #[pymethods]
 impl SyncRequest {
     #[new]
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, *, params=None))]
     pub(crate) fn new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
         let content: Option<Content> = match content {
@@ -38,7 +39,7 @@ impl SyncRequest {
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers)?,
+            head: RequestHead::new(method, url, headers, params)?,
             content,
         })
     }

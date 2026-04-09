@@ -53,18 +53,24 @@ async def test_basic(
     if isinstance(client, SyncClient):
 
         def run():
-            with client.stream(method, url, headers, req_content) as resp:
+            with client.stream(
+                method, url, headers, req_content, params={"foo": "bar"}
+            ) as resp:
                 content = b"".join(resp.content)
             return (resp, content)
 
         resp, content = await asyncio.to_thread(run)
     else:
-        async with client.stream(method, url, headers, req_content) as resp:
+        async with client.stream(
+            method, url, headers, req_content, params={"foo": "bar"}
+        ) as resp:
             content = b""
             async for chunk in resp.content:
                 content += chunk
     assert resp.status == 200
     assert resp.headers["x-echo-host"] == f"localhost:{server_port}"
+    assert resp.headers["x-echo-method"] == "POST"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.headers["x-echo-x-hello"] == "rust"
@@ -276,12 +282,15 @@ async def test_execute(client: Client | SyncClient, url: str) -> None:
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
         resp = await asyncio.to_thread(
-            client.execute, method, url, headers, req_content
+            client.execute, method, url, headers, req_content, params={"foo": "bar"}
         )
     else:
-        resp = await client.execute(method, url, headers, req_content)
+        resp = await client.execute(
+            method, url, headers, req_content, params={"foo": "bar"}
+        )
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "POST"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.headers["x-echo-x-hello"] == "rust"
@@ -323,11 +332,12 @@ async def test_execute_json(client: Client | SyncClient, url: str) -> None:
 async def test_get(client: Client | SyncClient, url: str) -> None:
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.get, url)
+        resp = await asyncio.to_thread(client.get, url, params={"foo": "bar"})
     else:
-        resp = await client.get(url)
+        resp = await client.get(url, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "GET"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.content == b""
     assert len(resp.trailers) == 0
 
@@ -340,11 +350,14 @@ async def test_post(
     headers = [("content-type", "text/plain"), ("te", "trailers")]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.post, url, headers, req_content)
+        resp = await asyncio.to_thread(
+            client.post, url, headers, req_content, params={"foo": "bar"}
+        )
     else:
-        resp = await client.post(url, headers, req_content)
+        resp = await client.post(url, headers, req_content, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "POST"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.content == b"Hello, World!"
@@ -358,11 +371,12 @@ async def test_post(
 async def test_delete(client: Client | SyncClient, url: str) -> None:
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.delete, url)
+        resp = await asyncio.to_thread(client.delete, url, params={"foo": "bar"})
     else:
-        resp = await client.delete(url)
+        resp = await client.delete(url, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "DELETE"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.content == b""
     assert len(resp.trailers) == 0
 
@@ -371,11 +385,12 @@ async def test_delete(client: Client | SyncClient, url: str) -> None:
 async def test_head(client: Client | SyncClient, url: str) -> None:
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.head, url)
+        resp = await asyncio.to_thread(client.head, url, params={"foo": "bar"})
     else:
-        resp = await client.head(url)
+        resp = await client.head(url, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "HEAD"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.content == b""
     assert len(resp.trailers) == 0
 
@@ -384,11 +399,12 @@ async def test_head(client: Client | SyncClient, url: str) -> None:
 async def test_options(client: Client | SyncClient, url: str) -> None:
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.options, url)
+        resp = await asyncio.to_thread(client.options, url, params={"foo": "bar"})
     else:
-        resp = await client.options(url)
+        resp = await client.options(url, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "OPTIONS"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.content == b""
     assert len(resp.trailers) == 0
 
@@ -399,11 +415,14 @@ async def test_patch(client: Client | SyncClient, url: str) -> None:
     headers = [("content-type", "text/plain")]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.patch, url, headers, req_content)
+        resp = await asyncio.to_thread(
+            client.patch, url, headers, req_content, params={"foo": "bar"}
+        )
     else:
-        resp = await client.patch(url, headers, req_content)
+        resp = await client.patch(url, headers, req_content, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "PATCH"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.content == b"Hello, World!"
@@ -416,11 +435,14 @@ async def test_put(client: Client | SyncClient, url: str) -> None:
     headers = [("content-type", "text/plain")]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.put, url, headers, req_content)
+        resp = await asyncio.to_thread(
+            client.put, url, headers, req_content, params={"foo": "bar"}
+        )
     else:
-        resp = await client.put(url, headers, req_content)
+        resp = await client.put(url, headers, req_content, params={"foo": "bar"})
     assert resp.status == 200
     assert resp.headers["x-echo-method"] == "PUT"
+    assert resp.headers["x-echo-query-string"] == "foo=bar"
     assert resp.headers["x-echo-content-type"] == "text/plain"
     assert resp.headers.getall("x-echo-content-type") == ["text/plain"]
     assert resp.content == b"Hello, World!"

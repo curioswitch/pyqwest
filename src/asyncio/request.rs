@@ -35,15 +35,24 @@ pub struct Request {
 #[pymethods]
 impl Request {
     #[new]
-    #[pyo3(signature = (method, url, headers=None, content=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, *, params=None))]
     pub(crate) fn py_new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
-        Request::new(py, method, url, headers, content, Constants::get(py)?)
+        Request::new(
+            py,
+            method,
+            url,
+            headers,
+            content,
+            params,
+            Constants::get(py)?,
+        )
     }
 
     #[getter]
@@ -81,6 +90,7 @@ impl Request {
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
         constants: Constants,
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
@@ -89,7 +99,7 @@ impl Request {
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers)?,
+            head: RequestHead::new(method, url, headers, params)?,
             content,
             constants,
         })

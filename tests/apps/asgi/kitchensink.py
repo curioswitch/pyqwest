@@ -154,12 +154,7 @@ async def _get_cookie(
     headers_dict = dict(scope["headers"])
     cookie = headers_dict.get(b"cookie", b"")
     await send(
-        {
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [],
-            "trailers": False,
-        }
+        {"type": "http.response.start", "status": 200, "headers": [], "trailers": False}
     )
     await send({"type": "http.response.body", "body": cookie, "more_body": False})
 
