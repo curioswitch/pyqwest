@@ -9,7 +9,7 @@ from ._pyqwest import FullResponse, Headers, Response, Transport
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Mapping
 
-    from ._pyqwest import _QueryParams
+    from ._pyqwest import _QueryParams, _RequestContent
 
 # We expose plain-Python wrappers for the async methods as the easiest way
 # of making them coroutines rather than methods that return Futures,
@@ -64,7 +64,7 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> FullResponse:
@@ -73,7 +73,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -156,7 +156,7 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> FullResponse:
@@ -165,7 +165,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -182,7 +182,7 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> FullResponse:
@@ -191,7 +191,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -209,7 +209,7 @@ class Client:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> FullResponse:
@@ -219,7 +219,7 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -238,7 +238,7 @@ class Client:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> AsyncIterator[Response]:
@@ -248,7 +248,7 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:

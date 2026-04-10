@@ -1,5 +1,6 @@
 use std::fmt;
 
+use http::HeaderValue;
 use pyo3::sync::MutexExt as _;
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyString, PyStringMethods as _};
 use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
@@ -11,10 +12,14 @@ use crate::headers::Headers;
 use crate::shared::constants::Constants;
 use crate::sync::timeout::get_timeout;
 
+const CONTENT_TYPE_JSON: HeaderValue = HeaderValue::from_static("application/json");
+
 pub(crate) struct RequestHead {
     method: http::Method,
     url: reqwest::Url,
     headers: Py<Headers>,
+    /// Whether to append JSON content type header automatically.
+    json: bool,
 }
 
 impl RequestHead {
@@ -23,6 +28,7 @@ impl RequestHead {
         url: &str,
         headers: Py<Headers>,
         params: Option<Bound<'_, PyAny>>,
+        json: bool,
     ) -> PyResult<Self> {
         let method = http::Method::try_from(method)
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
@@ -47,6 +53,7 @@ impl RequestHead {
             method,
             url,
             headers,
+            json,
         })
     }
 
@@ -58,6 +65,10 @@ impl RequestHead {
         let hdrs = self.headers.bind(py).borrow();
         for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
             req.headers_mut().append(name, value.as_http(py)?);
+        }
+        if self.json && !req.headers().contains_key(http::header::CONTENT_TYPE) {
+            req.headers_mut()
+                .insert(http::header::CONTENT_TYPE, CONTENT_TYPE_JSON);
         }
         if let Some(timeout) = get_timeout(py)? {
             *req.timeout_mut() = Some(timeout);
@@ -91,6 +102,10 @@ impl RequestHead {
 
     pub(crate) fn headers(&self, py: Python<'_>) -> Py<Headers> {
         self.headers.clone_ref(py)
+    }
+
+    pub(crate) fn json(&self) -> bool {
+        self.json
     }
 }
 
@@ -140,4 +155,19 @@ fn append_query_param(
         url_params.append_pair(key.to_str()?, value.to_str()?);
     }
     Ok(())
+}
+
+pub(crate) fn maybe_encode_json_content<'py>(
+    py: Python<'py>,
+    value: Option<&Bound<'py, PyAny>>,
+    constants: &Constants,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if !value.is_instance_of::<PyDict>() {
+        return Ok(None);
+    }
+    let json_str = constants.json_dumps.bind(py).call1((value,))?;
+    Ok(Some(json_str.cast::<PyString>()?.encode_utf8()?.into_any()))
 }

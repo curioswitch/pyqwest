@@ -20,7 +20,7 @@ use crate::{
     headers::Headers,
     shared::{
         constants::Constants,
-        request::{RequestHead, RequestStreamResult},
+        request::{maybe_encode_json_content, RequestHead, RequestStreamResult},
     },
 };
 
@@ -81,6 +81,11 @@ impl Request {
             None => EmptyAsyncIterator.into_bound_py_any(py),
         }
     }
+
+    #[getter]
+    fn _json(&self) -> bool {
+        self.head.json()
+    }
 }
 
 impl Request {
@@ -94,12 +99,18 @@ impl Request {
         constants: Constants,
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
+        let (content, json) =
+            if let Some(content) = maybe_encode_json_content(py, content.as_ref(), &constants)? {
+                (Some(content), true)
+            } else {
+                (content, false)
+            };
         let content: Option<Content> = match content {
             Some(content) => Some(Content::from_py(&content, &constants)?),
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers, params)?,
+            head: RequestHead::new(method, url, headers, params, json)?,
             content,
             constants,
         })

@@ -94,8 +94,11 @@ class ASGITransport(Transport):
                 http_version = "3"
             case _:
                 http_version = "1.1"
-        if "host" not in request.headers:
-            request.headers["host"] = parsed_url.netloc
+        request_headers = Headers(request.headers.items())
+        if "host" not in request_headers:
+            request_headers["host"] = parsed_url.netloc
+        if request._json and "content-type" not in request_headers:  # noqa: SLF001
+            request_headers["content-type"] = "application/json"
 
         scope: HTTPScope = {
             "type": "http",
@@ -108,7 +111,7 @@ class ASGITransport(Transport):
             "query_string": parsed_url.query.encode(),
             "headers": [
                 (k.lower().encode("utf-8"), v.encode("utf-8"))
-                for k, v in request.headers.items()
+                for k, v in request_headers.items()
             ],
             "server": (
                 parsed_url.hostname or "",

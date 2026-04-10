@@ -11,7 +11,12 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     headers::Headers,
-    shared::request::{RequestHead, RequestStreamError, RequestStreamResult},
+    shared::{
+        constants::Constants,
+        request::{
+            maybe_encode_json_content, RequestHead, RequestStreamError, RequestStreamResult,
+        },
+    },
     sync::timeout::get_timeout,
 };
 
@@ -25,7 +30,7 @@ pub struct SyncRequest {
 impl SyncRequest {
     #[new]
     #[pyo3(signature = (method, url, headers=None, content=None, *, params=None))]
-    pub(crate) fn new<'py>(
+    pub(crate) fn py_new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
@@ -33,15 +38,15 @@ impl SyncRequest {
         content: Option<Bound<'py, PyAny>>,
         params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
-        let headers = Headers::from_option(py, headers)?;
-        let content: Option<Content> = match content {
-            Some(content) => Some(content.extract()?),
-            None => None,
-        };
-        Ok(Self {
-            head: RequestHead::new(method, url, headers, params)?,
+        Self::new(
+            py,
+            method,
+            url,
+            headers,
             content,
-        })
+            params,
+            &Constants::get(py)?,
+        )
     }
 
     #[getter]
@@ -69,9 +74,40 @@ impl SyncRequest {
             None => Ok(PyTuple::empty(py).into_any().try_iter()?.into_any()),
         }
     }
+
+    #[getter]
+    fn _json(&self) -> bool {
+        self.head.json()
+    }
 }
 
 impl SyncRequest {
+    pub(crate) fn new<'py>(
+        py: Python<'py>,
+        method: &str,
+        url: &str,
+        headers: Option<Bound<'py, Headers>>,
+        content: Option<Bound<'py, PyAny>>,
+        params: Option<Bound<'py, PyAny>>,
+        constants: &Constants,
+    ) -> PyResult<Self> {
+        let headers = Headers::from_option(py, headers)?;
+        let (content, json) =
+            if let Some(content) = maybe_encode_json_content(py, content.as_ref(), constants)? {
+                (Some(content), true)
+            } else {
+                (content, false)
+            };
+        let content: Option<Content> = match content {
+            Some(content) => Some(content.extract()?),
+            None => None,
+        };
+        Ok(Self {
+            head: RequestHead::new(method, url, headers, params, json)?,
+            content,
+        })
+    }
+
     pub(crate) fn new_reqwest(
         &self,
         py: Python<'_>,

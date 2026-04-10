@@ -197,3 +197,28 @@ def test_request_query_params(
         )
 
     assert request.url == expected
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.asyncio
+async def test_request_json_content(mode: str):
+    if mode == "sync":
+        request = SyncRequest(
+            method="POST", url="https://example.com/api", content={"key": "value"}
+        )
+        content = b"".join(request.content)
+    else:
+        request = Request(
+            method="POST", url="https://example.com/api", content={"key": "value"}
+        )
+        chunks = []
+        async for chunk in request.content:
+            chunks.append(chunk)
+        content = b"".join(chunks)
+
+    assert request.method == "POST"
+    assert request.url == "https://example.com/api"
+    # Request represents input headers, JSON is appended during transport. So here
+    # we don't have it content type.
+    assert request.headers == {}
+    assert content == b'{"key": "value"}'

@@ -154,7 +154,7 @@ impl SyncClient {
         } else {
             None
         };
-        let request = SyncRequest::new(py, method, url, headers, content, params)?;
+        let request = SyncRequest::new(py, method, url, headers, content, params, &self.constants)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),
             Transport::Custom(transport) => {
@@ -192,7 +192,7 @@ impl SyncClient {
         } else {
             None
         };
-        let request = SyncRequest::new(py, method, url, headers, content, params)?;
+        let request = SyncRequest::new(py, method, url, headers, content, params, &self.constants)?;
         let response = match &self.transport {
             Transport::Http(transport) => transport.do_stream(py, &request)?.into_pyobject(py),
             Transport::Custom(transport) => {
