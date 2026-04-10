@@ -51,6 +51,8 @@ pub(crate) struct ConstantsInner {
 
     /// The stdlib function `json.loads`.
     pub json_loads: Py<PyAny>,
+    /// The stdlib function `json.dumps`.
+    pub json_dumps: Py<PyAny>,
 
     // HTTP Versions
     /// HTTPVersion.HTTP1
@@ -495,6 +497,7 @@ impl Constants {
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
 
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
+                json_dumps: py.import("json")?.getattr("dumps")?.unbind(),
 
                 timeout_context_var_get: timeout_context_var.getattr("get")?.unbind(),
                 timeout_context_var_set: timeout_context_var.getattr("set")?.unbind(),

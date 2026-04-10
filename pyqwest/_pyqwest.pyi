@@ -21,6 +21,8 @@ _T = TypeVar("_T")
 _JSON: TypeAlias = (
     Mapping[str, _JSON] | Sequence[_JSON] | str | int | float | bool | None
 )
+_RequestContent: TypeAlias = bytes | AsyncIterator[bytes] | dict[str, _JSON]
+_SyncRequestContent: TypeAlias = bytes | Iterable[bytes] | dict[str, _JSON]
 
 _Buffer: TypeAlias = bytes | memoryview | bytearray
 _QueryParams: TypeAlias = dict[str, str | None] | Iterable[tuple[str, str | None]]
@@ -248,7 +250,7 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
@@ -257,7 +259,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -333,7 +335,7 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
@@ -342,7 +344,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -356,7 +358,7 @@ class Client:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
@@ -365,7 +367,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -380,7 +382,7 @@ class Client:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
@@ -390,7 +392,7 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -405,7 +407,7 @@ class Client:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> Awaitable[Response]:
@@ -415,7 +417,7 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -552,7 +554,7 @@ class Request:
         method: str,
         url: str,
         headers: Headers | None = None,
-        content: bytes | AsyncIterator[bytes] | None = None,
+        content: _RequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> None:
@@ -562,7 +564,7 @@ class Request:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
@@ -581,6 +583,9 @@ class Request:
     @property
     def content(self) -> AsyncIterator[bytes]:
         """Returns an async iterator over the request content."""
+
+    @property
+    def _json(self) -> bool: ...
 
 class Response:
     """An HTTP response."""
@@ -699,7 +704,7 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: _SyncRequestContent | None = None,
         *,
         timeout: float | None = None,
         params: _QueryParams | None = None,
@@ -709,7 +714,7 @@ class SyncClient:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -793,7 +798,7 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: _SyncRequestContent | None = None,
         *,
         timeout: float | None = None,
         params: _QueryParams | None = None,
@@ -803,7 +808,7 @@ class SyncClient:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -818,7 +823,7 @@ class SyncClient:
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: _SyncRequestContent | None = None,
         *,
         timeout: float | None = None,
         params: _QueryParams | None = None,
@@ -828,7 +833,7 @@ class SyncClient:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -844,7 +849,7 @@ class SyncClient:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: _SyncRequestContent | None = None,
         *,
         timeout: float | None = None,
         params: _QueryParams | None = None,
@@ -855,7 +860,7 @@ class SyncClient:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -871,7 +876,7 @@ class SyncClient:
         method: str,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: _SyncRequestContent | None = None,
         *,
         timeout: float | None = None,
         params: _QueryParams | None = None,
@@ -882,7 +887,7 @@ class SyncClient:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -1015,7 +1020,7 @@ class SyncRequest:
         method: str,
         url: str,
         headers: Headers | None = None,
-        content: bytes | Iterable[bytes] | None = None,
+        content: _SyncRequestContent | None = None,
         *,
         params: _QueryParams | None = None,
     ) -> None:
@@ -1025,7 +1030,7 @@ class SyncRequest:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content.
+            content: The request content. A Python dictionary will be converted to JSON.
             params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
@@ -1044,6 +1049,9 @@ class SyncRequest:
     @property
     def content(self) -> Iterator[bytes]:
         """Returns an iterator over the request content."""
+
+    @property
+    def _json(self) -> bool: ...
 
 class SyncResponse:
     """An HTTP response."""

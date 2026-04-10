@@ -151,6 +151,8 @@ class WSGITransport(SyncTransport):
                     environ[name] = value
         if "host" not in request.headers:
             environ["HTTP_HOST"] = parsed_url.netloc
+        if request._json and "content-type" not in request.headers:  # noqa: SLF001
+            environ["CONTENT_TYPE"] = "application/json"
 
         response_queue: Queue[bytes | None | Exception] = Queue()
 

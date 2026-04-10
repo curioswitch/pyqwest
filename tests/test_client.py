@@ -9,7 +9,15 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from pyqwest import Client, Headers, HTTPVersion, ReadError, SyncClient, WriteError
+from pyqwest import (
+    Client,
+    FullResponse,
+    Headers,
+    HTTPVersion,
+    ReadError,
+    SyncClient,
+    WriteError,
+)
 
 from ._util import SyncRequestBody
 
@@ -474,6 +482,78 @@ async def test_content_encoding(
         resp = await client.get(url, {"accept-encoding": encoding})
     assert resp.status == 200
     assert resp.content == b"Hello World!!!!!"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method", ["POST", "PUT", "PATCH", "EXECUTE_POST", "STREAM_POST"]
+)
+async def test_json_content(client: Client | SyncClient, url: str, method: str) -> None:
+    url = f"{url}/echo"
+    content = {"message": "Hello, World!"}
+    if isinstance(client, SyncClient):
+        match method:
+            case "POST":
+                resp = await asyncio.to_thread(client.post, url, content=content)
+            case "PUT":
+                resp = await asyncio.to_thread(client.put, url, content=content)
+            case "PATCH":
+                resp = await asyncio.to_thread(client.patch, url, content=content)
+            case "EXECUTE_POST":
+                resp = await asyncio.to_thread(
+                    client.execute, "POST", url, content=content
+                )
+            case "STREAM_POST":
+
+                def run():
+                    with client.stream("POST", url, content=content) as resp:
+                        resp_content = b"".join(resp.content)
+                    return FullResponse(
+                        resp.status, resp.headers, resp_content, resp.trailers
+                    )
+
+                resp = await asyncio.to_thread(run)
+    else:
+        match method:
+            case "POST":
+                resp = await client.post(url, content=content)
+            case "PUT":
+                resp = await client.put(url, content=content)
+            case "PATCH":
+                resp = await client.patch(url, content=content)
+            case "EXECUTE_POST":
+                resp = await client.execute("POST", url, content=content)
+            case "STREAM_POST":
+                async with client.stream("POST", url, content=content) as resp:
+                    resp_content = b""
+                    async for chunk in resp.content:
+                        resp_content += chunk
+                resp = FullResponse(
+                    resp.status, resp.headers, resp_content, resp.trailers
+                )
+    assert resp.status == 200
+    assert resp.headers["content-type"] == "application/json"
+    assert resp.content == b'{"message": "Hello, World!"}'
+    assert resp.json() == content
+
+
+@pytest.mark.asyncio
+async def test_json_content_existing_content_type(
+    client: Client | SyncClient, url: str
+) -> None:
+    url = f"{url}/echo"
+    content = {"message": "Hello, World!"}
+    if isinstance(client, SyncClient):
+        resp = await asyncio.to_thread(
+            client.post, url, headers={"content-type": "text/plain"}, content=content
+        )
+    else:
+        resp = await client.post(
+            url, headers={"content-type": "text/plain"}, content=content
+        )
+    assert resp.status == 200
+    assert resp.headers["content-type"] == "text/plain"
+    assert resp.content == b'{"message": "Hello, World!"}'
 
 
 @pytest.mark.asyncio
