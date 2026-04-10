@@ -17,7 +17,7 @@
       "groupName": "Python dependencies"
     },
     {
-      "matchManagers": ["rust"],
+      "matchCategories": ["rust"],
       "groupName": "Rust dependencies",
       "rangeStrategy": "bump"
     }
