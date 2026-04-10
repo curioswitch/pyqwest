@@ -159,7 +159,7 @@ fn append_query_param(
 
 pub(crate) fn maybe_encode_json_content<'py>(
     py: Python<'py>,
-    value: &Option<Bound<'py, PyAny>>,
+    value: Option<&Bound<'py, PyAny>>,
     constants: &Constants,
 ) -> PyResult<Option<Bound<'py, PyAny>>> {
     let Some(value) = value else {

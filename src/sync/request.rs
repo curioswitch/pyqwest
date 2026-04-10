@@ -93,7 +93,7 @@ impl SyncRequest {
     ) -> PyResult<Self> {
         let headers = Headers::from_option(py, headers)?;
         let (content, json) =
-            if let Some(content) = maybe_encode_json_content(py, &content, constants)? {
+            if let Some(content) = maybe_encode_json_content(py, content.as_ref(), constants)? {
                 (Some(content), true)
             } else {
                 (content, false)

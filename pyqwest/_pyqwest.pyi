@@ -21,8 +21,8 @@ _T = TypeVar("_T")
 _JSON: TypeAlias = (
     Mapping[str, _JSON] | Sequence[_JSON] | str | int | float | bool | None
 )
-_RequestContent: TypeAlias = bytes | AsyncIterator[bytes] | dict[str, _JSON]
-_SyncRequestContent: TypeAlias = bytes | Iterable[bytes] | dict[str, _JSON]
+_RequestContent: TypeAlias = bytes | AsyncIterator[bytes] | Mapping[str, _JSON]
+_SyncRequestContent: TypeAlias = bytes | Iterable[bytes] | Mapping[str, _JSON]
 
 _Buffer: TypeAlias = bytes | memoryview | bytearray
 _QueryParams: TypeAlias = dict[str, str | None] | Iterable[tuple[str, str | None]]
