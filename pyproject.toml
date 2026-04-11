@@ -1,53 +1,53 @@
 [project]
 name = "pyqwest"
-version = "0.4.1"
+version = "0.5.0"
 requires-python = ">=3.10"
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: MacOS :: MacOS X",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Rust",
-    "Topic :: Internet :: WWW/HTTP",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Rust",
+  "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = ["opentelemetry-api >=1.39.1"]
 
 [dependency-groups]
 dev = [
-    "aiohttp[speedups]",
-    "asgiref",
-    "brotli",
-    "httpx[http2]",
-    "maturin",
-    "niquests[http3]",
-    "opentelemetry-test-utils",
-    "poethepoet",
-    "psutil",
-    "pyright[nodejs]",
-    "pytest",
-    "pytest-asyncio",
-    "pytest-benchmark",
-    "pytest-cov",
-    "pytest-order",
-    "pyvoy",
-    "ruff",
-    "trustme",
-    "uvloop; sys_platform != 'win32'",
-    "winloop; sys_platform == 'win32'",
-    "zstd",
+  "aiohttp[speedups]",
+  "asgiref",
+  "brotli",
+  "httpx[http2]",
+  "maturin",
+  "niquests[http3]",
+  "opentelemetry-test-utils",
+  "poethepoet",
+  "psutil",
+  "pyright[nodejs]",
+  "pytest",
+  "pytest-asyncio",
+  "pytest-benchmark",
+  "pytest-cov",
+  "pytest-order",
+  "pyvoy",
+  "ruff",
+  "trustme",
+  "uvloop; sys_platform != 'win32'",
+  "winloop; sys_platform == 'win32'",
+  "zstd",
 ]
 
-docs = ["zensical", "mkdocstrings-python"]
+docs = ["mkdocstrings-python", "zensical"]
 
 [build-system]
 requires = ["maturin>=1.12,<2.0"]
@@ -63,107 +63,107 @@ docstring-code-format = true
 
 [tool.ruff.lint]
 extend-select = [
-    # Same order as listed on https://docs.astral.sh/ruff/rules/
-    "YTT",
-    "ANN",
-    "ASYNC",
-    "S",
-    "FBT",
-    "B",
-    "A",
-    "COM818", # Other comma rules are handled by formatting
-    "C4",
-    "DTZ",
-    "T10",
-    "EM",
-    "EXE",
-    "FA",
-    "ISC",
-    "ICN",
-    "LOG",
-    "G",
-    "INP",
-    "PIE",
-    "T20",
-    "PYI",
-    "PT",
-    "Q004",   # Other quote rules are handled by formatting
-    "RSE",
-    "RET",
-    # This rule is a bit strict since accessing private members within this package can be
-    # useful to reduce public API exposure. But it is important to not access private members
-    # of dependencies like httpx so we enable it and ignore the locations where we need to.
-    "SLF",
-    "SIM",
-    "SLOT",
-    "TID",
-    # TODO: Update TODOs then enable
-    # "TD",
-    "TC",
-    "ARG",
-    "PTH",
-    "FLY",
-    "I",
-    "N",
-    "PERF",
-    "E",
-    "W",
-    # TODO: Flesh out docs and enable
-    # "DOC"
-    # "D",
-    "F",
-    "PGH",
-    "PLC",
-    "PLE",
-    "PLW",
-    "UP",
-    "FURB",
-    "RUF",
-    "TRY",
+  # Same order as listed on https://docs.astral.sh/ruff/rules/
+  "YTT",
+  "ANN",
+  "ASYNC",
+  "S",
+  "FBT",
+  "B",
+  "A",
+  "COM818",  # Other comma rules are handled by formatting
+  "C4",
+  "DTZ",
+  "T10",
+  "EM",
+  "EXE",
+  "FA",
+  "ISC",
+  "ICN",
+  "LOG",
+  "G",
+  "INP",
+  "PIE",
+  "T20",
+  "PYI",
+  "PT",
+  "Q004",  # Other quote rules are handled by formatting
+  "RSE",
+  "RET",
+  # This rule is a bit strict since accessing private members within this package can be
+  # useful to reduce public API exposure. But it is important to not access private members
+  # of dependencies like httpx so we enable it and ignore the locations where we need to.
+  "SLF",
+  "SIM",
+  "SLOT",
+  "TID",
+  # TODO: Update TODOs then enable
+  # "TD",
+  "TC",
+  "ARG",
+  "PTH",
+  "FLY",
+  "I",
+  "N",
+  "PERF",
+  "E",
+  "W",
+  # TODO: Flesh out docs and enable
+  # "DOC"
+  # "D",
+  "F",
+  "PGH",
+  "PLC",
+  "PLE",
+  "PLW",
+  "UP",
+  "FURB",
+  "RUF",
+  "TRY",
 ]
 
 # Document reasons for ignoring specific linting errors
 extend-ignore = [
-    # Not applicable
-    "AIR",
-    # Dangerous false positives https://github.com/astral-sh/ruff/issues/4845
-    "ERA",
-    # Not Applicable
-    "FAST",
-    # Important to call user callbacks safely
-    "BLE",
-    # stdlib includes a module named code. This is less of an issue since users need to import a module so allow it
-    "A005",
-    # TODO: Consider using copyright headers
-    "CPY",
-    # Not Applicable
-    "DJ",
-    # It's fine to have TODOs
-    "FIX",
-    # Not Applicable
-    "INT",
-    # Even prevents pytest.raises around an iteration which is too strict
-    "PT012",
-    # Triggers for protocol implementations that don't need the arg too
-    "ARG002",
-    # Complexity checks usually reduce readability
-    "C90",
-    # Not Applicable
-    "NPY",
-    # Not Applicable
-    "PD",
-    # We use the Exception suffix instead
-    "N818",
-    # Handled by formatting
-    "E111",
-    "E114",
-    "E117",
-    "E501",
-    "W191",
-    # Low signal-to-noise ratio
-    "PLR",
-    # Code is native only so we need docstrings in the stubs
-    "PYI021",
+  # Not applicable
+  "AIR",
+  # Dangerous false positives https://github.com/astral-sh/ruff/issues/4845
+  "ERA",
+  # Not Applicable
+  "FAST",
+  # Important to call user callbacks safely
+  "BLE",
+  # stdlib includes a module named code. This is less of an issue since users need to import a module so allow it
+  "A005",
+  # TODO: Consider using copyright headers
+  "CPY",
+  # Not Applicable
+  "DJ",
+  # It's fine to have TODOs
+  "FIX",
+  # Not Applicable
+  "INT",
+  # Even prevents pytest.raises around an iteration which is too strict
+  "PT012",
+  # Triggers for protocol implementations that don't need the arg too
+  "ARG002",
+  # Complexity checks usually reduce readability
+  "C90",
+  # Not Applicable
+  "NPY",
+  # Not Applicable
+  "PD",
+  # We use the Exception suffix instead
+  "N818",
+  # Handled by formatting
+  "E111",
+  "E114",
+  "E117",
+  "E501",
+  "W191",
+  # Low signal-to-noise ratio
+  "PLR",
+  # Code is native only so we need docstrings in the stubs
+  "PYI021",
 ]
 
 typing-extensions = false
@@ -171,18 +171,17 @@ typing-extensions = false
 [tool.ruff.lint.per-file-ignores]
 "scripts/**.py" = ["S603", "S607"]
 "**/test_*.py" = [
-    "ANN",
-    "S101",
-    "S603",
-    "S607",
-    "FBT",
-    "EM",
-    "INP",
-    "SLF",
-    "PERF",
-    "D",
+  "ANN",
+  "S101",
+  "S603",
+  "S607",
+  "FBT",
+  "EM",
+  "INP",
+  "SLF",
+  "PERF",
+  "D",
 ]
-
 
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
@@ -191,9 +190,9 @@ split-on-trailing-comma = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = [
-    "--import-mode=importlib",
-    "--benchmark-skip",
-    "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
+  "--import-mode=importlib",
+  "--benchmark-skip",
+  "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
 ]
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"

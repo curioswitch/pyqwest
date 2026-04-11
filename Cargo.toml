@@ -1,12 +1,12 @@
 [package]
 name = "pyqwest"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "pyqwest"
 crate-type = ["cdylib"]
+name = "pyqwest"
 
 [dependencies]
 arc-swap = "1.9.1"
@@ -22,19 +22,19 @@ http-body = "1.0.1"
 http-body-util = "0.1.3"
 mime = "0.3.17"
 pyo3 = { version = "0.28.3", features = ["bytes"] }
-reqwest = { version = "0.13.2", features = [
-    "brotli",
-    "cookies",
-    "gzip",
-    "hickory-dns",
-    "http2",
-    "http3",
-    "stream",
-    "zstd",
-] }
 pyo3-async-runtimes = { version = "0.28.0", features = [
-    "tokio-runtime",
-    "unstable-streams",
+  "tokio-runtime",
+  "unstable-streams",
+] }
+reqwest = { version = "0.13.2", features = [
+  "brotli",
+  "cookies",
+  "gzip",
+  "hickory-dns",
+  "http2",
+  "http3",
+  "stream",
+  "zstd",
 ] }
 tokio = "1.51.1"
 tokio-stream = "0.1.18"
