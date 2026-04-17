@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
+from io import StringIO
 from queue import Empty, Queue
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
@@ -61,6 +62,7 @@ class WSGITransport(SyncTransport):
     _client: tuple[str, int]
     _closed: bool
     _app_exception: Exception | None
+    _error_stream: StringIO
 
     def __init__(
         self,
@@ -83,6 +85,7 @@ class WSGITransport(SyncTransport):
         self._executor = executor or get_default_executor()
         self._closed = False
         self._app_exception = None
+        self._error_stream = StringIO()
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
         timeout = get_sync_timeout()
@@ -134,6 +137,7 @@ class WSGITransport(SyncTransport):
             "wsgi.multiprocess": False,
             "wsgi.run_once": False,
             "wsgi.input": request_input,
+            "wsgi.errors": self._error_stream,
             "wsgi.ext.http.send_trailers": send_trailers,
             # CGI, not WSGI
             "REMOTE_ADDR": self._client[0],
@@ -258,6 +262,15 @@ class WSGITransport(SyncTransport):
         expected to be used with a transport that is used only once, or in a precise order.
         """
         return self._app_exception
+
+    @property
+    def error_stream(self) -> StringIO:
+        """The error stream to which the WSGI application writes.
+
+        This is not reset per request or threadsafe, so it is generally expected to be used
+        with a transport that is used only once, or in a precise order.
+        """
+        return self._error_stream
 
 
 class RequestInput:
