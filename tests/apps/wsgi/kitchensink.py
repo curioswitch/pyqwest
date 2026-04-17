@@ -11,9 +11,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
     if sys.version_info >= (3, 11):
+        from wsgiref.types import ErrorStream as WSGIErrorStream
         from wsgiref.types import InputStream as WSGIInputStream
         from wsgiref.types import StartResponse, WSGIEnvironment
     else:
+        from _typeshed.wsgi import ErrorStream as WSGIErrorStream
         from _typeshed.wsgi import InputStream as WSGIInputStream
         from _typeshed.wsgi import StartResponse, WSGIEnvironment
 
@@ -104,6 +106,15 @@ def _get_cookie(
     return [cookie.encode()]
 
 
+def _error_stream(
+    environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    error_stream: WSGIErrorStream = environ["wsgi.errors"]
+    print("This is an error message", file=error_stream)
+    start_response("200 OK", [])
+    return [b""]
+
+
 def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
     path = cast("str", environ["PATH_INFO"]).encode("latin-1").decode("utf-8")
     match path:
@@ -121,6 +132,8 @@ def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[byt
             return _get_cookie(environ, start_response)
         case "/no_start":
             return []
+        case "/error_stream":
+            return _error_stream(environ, start_response)
         case _:
             start_response("404 Not Found", [("content-type", "text/plain")])
             return [b"Not Found"]
