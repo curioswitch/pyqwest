@@ -80,6 +80,7 @@ class ASGITransport(Transport):
         self._client = client
         self._state = {}
         self._lifespan = None
+        self._app_exception = None
 
     async def execute(self, request: Request) -> Response:
         parsed_url = urlparse(request.url)

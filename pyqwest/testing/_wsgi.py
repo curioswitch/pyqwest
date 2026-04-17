@@ -82,6 +82,7 @@ class WSGITransport(SyncTransport):
         self._client = client
         self._executor = executor or get_default_executor()
         self._closed = False
+        self._app_exception = None
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
         timeout = get_sync_timeout()
