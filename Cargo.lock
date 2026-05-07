@@ -2640,8 +2640,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "reqwest"
-version = "0.13.2"
-source = "git+https://github.com/seanmonstar/reqwest.git?rev=fa74a8b835b2f194253cebdab8d049c0e5d23af3#fa74a8b835b2f194253cebdab8d049c0e5d23af3"
