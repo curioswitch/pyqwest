@@ -53,4 +53,4 @@ too_many_arguments = "allow"
 unused_trait_names = "deny"
 
 [patch.crates-io]
-reqwest = { git = "https://github.com/anuraaga/reqwest.git", rev = "1b0d13e9004d75020345aeb7ee0eeabd8135deb1" }
+reqwest = { git = "https://github.com/lyuzichong/reqwest.git", rev = "c90b0582a1fb6505d451209c44382f1a278b5831" }
