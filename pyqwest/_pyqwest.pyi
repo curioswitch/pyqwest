@@ -581,7 +581,7 @@ class Request:
         """Returns the request headers."""
 
     @property
-    def content(self) -> AsyncIterator[bytes]:
+    def content(self) -> bytes | AsyncIterator[bytes]:
         """Returns an async iterator over the request content."""
 
     @property
@@ -1047,7 +1047,7 @@ class SyncRequest:
         """Returns the request headers."""
 
     @property
-    def content(self) -> Iterator[bytes]:
+    def content(self) -> bytes | Iterator[bytes]:
         """Returns an iterator over the request content."""
 
     @property

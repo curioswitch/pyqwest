@@ -55,18 +55,27 @@ class RetryTransport(Transport):
 
         content: bytes | bytearray | None = None
 
-        async def initial_request_content() -> AsyncIterator[bytes]:
-            nonlocal content
-            async for chunk in request.content:
-                match content:
-                    case None:
-                        content = chunk
-                    case bytes():
-                        content = bytearray(content)
-                        content.extend(chunk)
-                    case bytearray():
-                        content.extend(chunk)
-                yield chunk
+        initial_request_content: bytes | AsyncIterator[bytes]
+        if isinstance(request.content, bytes):
+            content = request.content
+            initial_request_content = request.content
+        else:
+
+            async def initial_request_content_iter() -> AsyncIterator[bytes]:
+                nonlocal content
+                assert not isinstance(request.content, bytes)  # noqa: S101
+                async for chunk in request.content:
+                    match content:
+                        case None:
+                            content = chunk
+                        case bytes():
+                            content = bytearray(content)
+                            content.extend(chunk)
+                        case bytearray():
+                            content.extend(chunk)
+                    yield chunk
+
+            initial_request_content = initial_request_content_iter()
 
         resp: Response | Exception
 
@@ -76,7 +85,7 @@ class RetryTransport(Transport):
                     method=request.method,
                     url=request.url,
                     headers=request.headers,
-                    content=initial_request_content(),
+                    content=initial_request_content,
                 )
             )
         except Exception as e:

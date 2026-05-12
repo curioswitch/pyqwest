@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from pyqwest import Headers, Request, SyncRequest
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import Iterator
 
 
 @pytest.mark.asyncio
@@ -16,10 +17,8 @@ async def test_request_minimal():
     assert request.method == "GET"
     assert request.url == "https://example.com/"
     assert request.headers == Headers()
-    chunks = []
-    async for chunk in request.content:
-        chunks.append(chunk)
-    assert chunks == []
+    assert isinstance(request.content, bytes)
+    assert request.content == b""
 
 
 def test_sync_request_minimal():
@@ -27,8 +26,8 @@ def test_sync_request_minimal():
     assert request.method == "GET"
     assert request.url == "https://example.com/"
     assert request.headers == Headers()
-    chunks = list(request.content)
-    assert chunks == []
+    assert isinstance(request.content, bytes)
+    assert request.content == b""
 
 
 @pytest.mark.asyncio
@@ -43,10 +42,8 @@ async def test_request_content_bytes():
     assert request.method == "DELETE"
     assert request.url == "https://example.com/resource?id=123"
     assert request.headers["authorization"] == "Bearer token"
-    chunks = []
-    async for chunk in request.content:
-        chunks.append(chunk)
-    assert chunks == [b"Sample body"]
+    assert isinstance(request.content, bytes)
+    assert request.content == b"Sample body"
 
 
 def test_sync_request_content_bytes():
@@ -60,8 +57,8 @@ def test_sync_request_content_bytes():
     assert request.method == "DELETE"
     assert request.url == "https://example.com/resource?id=123"
     assert request.headers["authorization"] == "Bearer token"
-    chunks = list(request.content)
-    assert chunks == [b"Sample body"]
+    assert isinstance(request.content, bytes)
+    assert request.content == b"Sample body"
 
 
 @pytest.mark.asyncio
@@ -78,6 +75,7 @@ async def test_request_content_iterator():
     assert request.url == "https://example.com/resource?id=123"
     assert request.headers == {}
     parts = []
+    assert isinstance(request.content, AsyncIterator)
     async for chunk in request.content:
         parts.append(chunk)
     assert parts == [b"Part 1, ", b"Part 2."]
@@ -206,15 +204,14 @@ async def test_request_json_content(mode: str):
         request = SyncRequest(
             method="POST", url="https://example.com/api", content={"key": "value"}
         )
-        content = b"".join(request.content)
+        assert isinstance(request.content, bytes)
+        content = request.content
     else:
         request = Request(
             method="POST", url="https://example.com/api", content={"key": "value"}
         )
-        chunks = []
-        async for chunk in request.content:
-            chunks.append(chunk)
-        content = b"".join(chunks)
+        assert isinstance(request.content, bytes)
+        content = request.content
 
     assert request.method == "POST"
     assert request.url == "https://example.com/api"

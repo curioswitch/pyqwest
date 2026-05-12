@@ -128,6 +128,10 @@ class ASGITransport(Transport):
 
         async def read_request_content() -> None:
             try:
+                if isinstance(request.content, bytes):
+                    await receive_queue.put(request.content)
+                    await receive_queue.put(None)
+                    return
                 async for chunk in request.content:
                     if not isinstance(chunk, bytes):
                         msg = "Request not bytes object"

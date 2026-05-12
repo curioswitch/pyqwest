@@ -2,8 +2,8 @@ use bytes::Bytes;
 use pyo3::{
     pybacked::PyBackedBytes,
     pyclass, pymethods,
-    types::{PyAnyMethods as _, PyIterator, PyString, PyTuple},
-    Borrowed, Bound, FromPyObject, Py, PyAny, PyErr, PyResult, Python,
+    types::{PyAnyMethods as _, PyIterator, PyString},
+    Borrowed, Bound, FromPyObject, IntoPyObjectExt as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::mpsc;
@@ -24,6 +24,7 @@ use crate::{
 pub struct SyncRequest {
     pub(super) head: RequestHead,
     content: Option<Content>,
+    constants: Constants,
 }
 
 #[pymethods]
@@ -67,11 +68,9 @@ impl SyncRequest {
     #[getter]
     fn content<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match &self.content {
-            Some(Content::Bytes(bytes)) => {
-                Ok(PyTuple::new(py, [bytes])?.into_any().try_iter()?.into_any())
-            }
+            Some(Content::Bytes(bytes)) => bytes.into_bound_py_any(py),
             Some(Content::Iter(iter)) => Ok(iter.bind(py).clone().into_any()),
-            None => Ok(PyTuple::empty(py).into_any().try_iter()?.into_any()),
+            None => Ok(self.constants.empty_bytes.bind(py).clone().into_any()),
         }
     }
 
@@ -105,6 +104,7 @@ impl SyncRequest {
         Ok(Self {
             head: RequestHead::new(method, url, headers, params, json)?,
             content,
+            constants: constants.clone(),
         })
     }
 
