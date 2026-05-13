@@ -5,6 +5,9 @@ on:
     tags:
       - "*"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yaml
 
 permissions:
   contents: read
@@ -19,6 +22,9 @@ jobs:
             target: x86_64
           - runner: ubuntu-24.04-arm
             target: aarch64
+        manylinux:
+          - auto
+          - musllinux_1_2
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -34,7 +40,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
           sccache: true
-          manylinux: auto
+          manylinux: ${{ matrix.manylinux }}
 
       - name: Build abi3 wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -42,52 +48,12 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i 3.10 --features pyo3/abi3-py310
           sccache: true
-          manylinux: auto
+          manylinux: ${{ matrix.manylinux }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: wheels-linux-${{ matrix.platform.target }}
-          path: dist
-
-  musllinux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-24.04
-            target: x86_64
-          - runner: ubuntu-24.04-arm
-            target: aarch64
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: 3.x
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - name: Build wheels
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.12 -i 3.13 -i 3.14 -i 3.14t -i pypy3.11
-          sccache: true
-          manylinux: musllinux_1_2
-
-      - name: Build abi3 wheels
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist -i 3.10 --features pyo3/abi3-py310
-          sccache: true
-          manylinux: musllinux_1_2
-
-      - name: Upload wheels
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: wheels-musllinux-${{ matrix.platform.target }}
+          name: wheels-linux-${{ matrix.platform.target }}-${{ matrix.manylinux }}
           path: dist
 
   windows:
@@ -96,46 +62,18 @@ jobs:
       matrix:
         platform:
           - runner: windows-2025
+            target: x86_64
+          - runner: windows-11-arm
+            target: aarch64
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: |
-            3.10
-            3.11
-            3.12
-            3.13
-
-      # On Windows, maturin seems to have trouble automatically detecting Python not in
-      # the tool cache, so we set these up individually and pass the path directly.
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        id: python-314
-        with:
-          python-version: "3.14"
-
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        id: python-314t
-        with:
-          python-version: 3.14t
-
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        id: python-pypy311
-        with:
-          python-version: pypy3.11
-
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - name: Build wheels
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
-        with:
-          args: --release --out dist -i 3.12 -i 3.13 -i ${{ steps.python-314.outputs.python-path }} -i ${{ steps.python-314t.outputs.python-path }} -i ${{ steps.python-pypy311.outputs.python-path }}
-          sccache: true
 
       - name: Build abi3 wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
-          args: --release --out dist -i 3.10 --features pyo3/abi3-py310
+          args: --release --out dist -i 3.10 --features pyo3/abi3-py310 --features pyo3/generate-import-lib
           sccache: true
 
       - name: Upload wheels
@@ -207,11 +145,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-24.04
-    if: ${{ github.event_name != 'pull_request' }}
     environment: ${{ github.event_name == 'push' && 'prod' || 'dev' }}
     needs:
       - linux
-      - musllinux
       - windows
       - macos
       - sdist
@@ -226,6 +162,7 @@ jobs:
           merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           repository-url: ${{ github.event_name != 'push' && 'https://test.pypi.org/legacy/' || null }}
           skip-existing: ${{ github.event_name != 'push' }}
