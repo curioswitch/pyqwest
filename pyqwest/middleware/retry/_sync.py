@@ -55,18 +55,27 @@ class SyncRetryTransport(SyncTransport):
 
         content: bytes | bytearray | None = None
 
-        def initial_request_content() -> Iterator[bytes]:
-            nonlocal content
-            for chunk in request.content:
-                match content:
-                    case None:
-                        content = chunk
-                    case bytes():
-                        content = bytearray(content)
-                        content.extend(chunk)
-                    case bytearray():
-                        content.extend(chunk)
-                yield chunk
+        initial_request_content: bytes | Iterator[bytes]
+        if isinstance(request.content, bytes):
+            content = request.content
+            initial_request_content = request.content
+        else:
+
+            def initial_request_content_iter() -> Iterator[bytes]:
+                nonlocal content
+                assert not isinstance(request.content, bytes)  # noqa: S101
+                for chunk in request.content:
+                    match content:
+                        case None:
+                            content = chunk
+                        case bytes():
+                            content = bytearray(content)
+                            content.extend(chunk)
+                        case bytearray():
+                            content.extend(chunk)
+                    yield chunk
+
+            initial_request_content = initial_request_content_iter()
 
         resp: SyncResponse | Exception
 
@@ -76,7 +85,7 @@ class SyncRetryTransport(SyncTransport):
                     method=request.method,
                     url=request.url,
                     headers=request.headers,
-                    content=initial_request_content(),
+                    content=initial_request_content,
                 )
             )
         except Exception as e:
