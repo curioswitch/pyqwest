@@ -274,7 +274,11 @@ class WSGITransport(SyncTransport):
 
 
 class RequestInput:
-    def __init__(self, content: Iterator[bytes], http_version: HTTPVersion) -> None:
+    def __init__(
+        self, content: bytes | Iterator[bytes], http_version: HTTPVersion
+    ) -> None:
+        if isinstance(content, bytes):
+            content = iter([content])
         self._content = content
         self._http_version = http_version
         self._closed = False

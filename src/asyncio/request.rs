@@ -13,10 +13,7 @@ use pyo3::{
 use tokio_stream::StreamExt as _;
 
 use crate::{
-    asyncio::{
-        awaitable::{EmptyAsyncIterator, ValueAsyncIterator},
-        stream::into_stream,
-    },
+    asyncio::stream::into_stream,
     headers::Headers,
     shared::{
         constants::Constants,
@@ -73,12 +70,9 @@ impl Request {
     #[getter]
     fn content<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match &self.content {
-            Some(Content::Bytes(bytes)) => ValueAsyncIterator {
-                value: Some(bytes.into_py_any(py)?),
-            }
-            .into_bound_py_any(py),
+            Some(Content::Bytes(bytes)) => bytes.into_bound_py_any(py),
             Some(Content::AsyncIter(iter)) => Ok(iter.bind(py).clone().into_any()),
-            None => EmptyAsyncIterator.into_bound_py_any(py),
+            None => Ok(self.constants.empty_bytes.bind(py).clone().into_any()),
         }
     }
 
