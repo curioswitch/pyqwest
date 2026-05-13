@@ -24,7 +24,6 @@ jobs:
           - macos-15
           - ubuntu-24.04
           - windows-2025
-          - windows-11-arm
         python:
           - "3.10"
           - "3.14"
@@ -43,6 +42,9 @@ jobs:
           - os: ubuntu-24.04
             python: "3.14"
             coverage: "cov"
+          # Windows arm64 runner only supports Python 3.14
+          - os: windows-11-arm
+            python: "3.14"
 
     env:
       # Avoid multiple compile e.g. in lint and test by setting as a job env var
