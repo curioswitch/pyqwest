@@ -1,7 +1,10 @@
 [project]
 name = "pyqwest"
 version = "0.6.0"
+description = "A modern, high-performance HTTP client for Python and Rust."
+readme = "README.md"
 requires-python = ">=3.10"
+license-files = ["LICENSE"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -21,6 +24,12 @@ classifiers = [
   "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = ["opentelemetry-api >=1.39.1"]
+
+[project.urls]
+Changelog = "https://github.com/curioswitch/pyqwest/releases"
+Homepage = "https://github.com/curioswitch/pyqwest"
+Issues = "https://github.com/curioswitch/pyqwest/issues"
+Repository = "https://github.com/curioswitch/pyqwest.git"
 
 [dependency-groups]
 dev = [
@@ -56,6 +65,16 @@ build-backend = "maturin"
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "pyqwest._pyqwest"
+
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+  "--benchmark-skip",
+  "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
+]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true
@@ -123,7 +142,7 @@ extend-select = [
 ]
 
 # Document reasons for ignoring specific linting errors
-extend-ignore = [
+ignore = [
   # Not applicable
   "AIR",
   # Dangerous false positives https://github.com/astral-sh/ruff/issues/4845
@@ -186,13 +205,3 @@ typing-extensions = false
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
 split-on-trailing-comma = false
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = [
-  "--import-mode=importlib",
-  "--benchmark-skip",
-  "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
-]
-asyncio_default_fixture_loop_scope = "session"
-asyncio_default_test_loop_scope = "session"
