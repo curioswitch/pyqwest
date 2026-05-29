@@ -61,7 +61,7 @@ pub(crate) fn register(py: Python<'_>) -> PyResult<()> {
 /// Park the current thread until the process exits.
 fn park_forever() -> ! {
     loop {
-        std::thread::park_timeout(Duration::from_secs(86400));
+        std::thread::park();
     }
 }
 
