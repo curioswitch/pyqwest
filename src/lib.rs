@@ -74,6 +74,7 @@ mod pyqwest {
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
         add_protocols(m.py(), m)?;
+        shared::shutdown::register(m.py())?;
 
         Ok(())
     }

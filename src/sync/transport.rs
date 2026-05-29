@@ -5,12 +5,12 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::sync::PyOnceLock;
 use pyo3::{prelude::*, IntoPyObjectExt as _};
 use pyo3_async_runtimes::tokio::get_runtime;
-use tokio::sync::oneshot;
 
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
+use crate::shared::shutdown;
 use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
@@ -177,7 +177,7 @@ impl SyncHttpTransport {
         };
         let (mut request_rs, request_iter) = request.new_reqwest(py, self.http3)?;
         let request_iter: RequestIterHandle = Arc::new(Mutex::new(request_iter));
-        let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
+        let (tx, rx) = std::sync::mpsc::channel::<PyResult<SyncResponse>>();
         let mut response = SyncResponse::pending(py, request_iter.clone(), self.constants.clone())?;
         operation.inject(py, &mut request_rs)?;
         let client = client.clone();
@@ -194,12 +194,10 @@ impl SyncHttpTransport {
                 }
             }
         });
-        py.detach(|| {
-            rx.blocking_recv()
-                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
-                .flatten()
-        })
-        .inspect_err(|_| close_request_iter(py, &request_iter, &self.constants))
+        shutdown::wait_for(py, rx)
+            .map_err(|()| PyRuntimeError::new_err("Error receiving response"))
+            .flatten()
+            .inspect_err(|_| close_request_iter(py, &request_iter, &self.constants))
     }
 
     pub(super) fn py_default(py: Python<'_>) -> PyResult<Self> {

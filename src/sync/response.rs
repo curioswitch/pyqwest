@@ -9,7 +9,6 @@ use pyo3::{
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
-use tokio::sync::oneshot;
 
 use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
@@ -18,6 +17,7 @@ use crate::{
         buffer::BytesMemoryView,
         constants::Constants,
         response::{ResponseBody, ResponseHead},
+        shutdown,
     },
 };
 
@@ -217,11 +217,12 @@ impl SyncResponse {
                 let body = content.get().body.load();
                 if let Some(body) = body.as_ref() {
                     let body = body.clone();
-                    let (tx, rx) = oneshot::channel::<PyResult<Bytes>>();
-                    get_runtime().spawn(async move { tx.send(body.read_full().await) });
-                    let res = py
-                        .detach(|| rx.blocking_recv())
-                        .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
+                    let (tx, rx) = std::sync::mpsc::channel::<PyResult<Bytes>>();
+                    get_runtime().spawn(async move {
+                        let _ = tx.send(body.read_full().await);
+                    });
+                    let res = shutdown::wait_for(py, rx)
+                        .map_err(|()| PyRuntimeError::new_err("Failed to receive full response"))
                         .flatten();
                     close_request_iter(py, &self.request_iter, &self.constants);
                     let body = res?;
@@ -267,16 +268,13 @@ impl SyncContentGenerator {
             return Ok(None);
         };
         let body = body.clone();
-        let res = py
-            .detach(|| {
-                let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
-                get_runtime().spawn(async move {
-                    let chunk = body.chunk().await;
-                    tx.send(chunk).unwrap();
-                });
-                rx.blocking_recv()
-                    .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
-            })
+        let (tx, rx) = std::sync::mpsc::channel::<PyResult<Option<Bytes>>>();
+        get_runtime().spawn(async move {
+            let chunk = body.chunk().await;
+            let _ = tx.send(chunk);
+        });
+        let res = shutdown::wait_for(py, rx)
+            .map_err(|()| PyRuntimeError::new_err("Error receiving chunk"))
             .flatten()
             .inspect_err(|_| close_request_iter(py, &self.request_iter, &self.constants))?;
         if res.is_none() {
@@ -292,13 +290,11 @@ impl SyncContentGenerator {
         if body.try_close() {
             return;
         }
-        let (tx, rx) = oneshot::channel::<()>();
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
         get_runtime().spawn(async move {
             body.close().await;
-            tx.send(()).unwrap();
+            let _ = tx.send(());
         });
-        py.detach(|| {
-            let _ = rx.blocking_recv();
-        });
+        let _ = shutdown::wait_for(py, rx);
     }
 }

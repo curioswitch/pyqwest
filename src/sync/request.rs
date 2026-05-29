@@ -16,6 +16,7 @@ use crate::{
         request::{
             maybe_encode_json_content, RequestHead, RequestStreamError, RequestStreamResult,
         },
+        shutdown,
     },
     sync::timeout::get_timeout,
 };
@@ -135,6 +136,11 @@ impl SyncRequest {
                 let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
                 let read_iter = iter.clone_ref(py);
                 get_runtime().spawn_blocking(move || {
+                    // Do not attach to a finalizing interpreter: it crashes the
+                    // process during shutdown (see `shutdown::detach_tracked`).
+                    if shutdown::is_finalizing() {
+                        return;
+                    }
                     Python::attach(|py| {
                         let mut read_iter = read_iter.into_bound(py);
                         loop {
@@ -149,7 +155,9 @@ impl SyncRequest {
                                 None => break,
                             };
                             let errored = res.is_err();
-                            if py.detach(|| tx.blocking_send(res)).is_err() || errored {
+                            if shutdown::detach_tracked(py, || tx.blocking_send(res)).is_err()
+                                || errored
+                            {
                                 break;
                             }
                         }
