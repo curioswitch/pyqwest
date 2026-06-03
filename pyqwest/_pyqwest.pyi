@@ -1,4 +1,5 @@
 import datetime
+from asyncio import Task
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -661,6 +662,8 @@ class Response:
         Note that if your code is guaranteed to fully consume the response content,
         it is not necessary to explicitly close the response.
         """
+
+    def _set_request_iter_task(self, task: Task[object]) -> None: ...
 
 class SyncClient:
     """A synchronous HTTP client.

@@ -211,6 +211,10 @@ impl Response {
             }
         }
     }
+
+    fn _set_request_iter_task(&self, task: Py<PyAny>) {
+        self.request_iter_task.store(Some(Arc::from(task)));
+    }
 }
 
 #[pyclass(module = "_pyqwest.async", frozen)]
