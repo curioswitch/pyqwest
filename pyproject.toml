@@ -42,7 +42,7 @@ dev = [
   "opentelemetry-test-utils",
   "poethepoet",
   "psutil",
-  "pyright",
+  "pyright[nodejs]",
   "pytest",
   "pytest-asyncio",
   "pytest-benchmark",
