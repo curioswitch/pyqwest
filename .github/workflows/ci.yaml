@@ -94,5 +94,5 @@ jobs:
           $(rustc --print=target-libdir)/../bin/llvm-profdata merge -sparse default_*.profraw -o tests.profdata
           $(rustc --print=target-libdir)/../bin/llvm-cov export -format=lcov --ignore-filename-regex='/.cargo/registry' --ignore-filename-regex='.cargo/git/checkouts' --ignore-filename-regex='.rustup/toolchains' -instr-profile tests.profdata pyqwest/_pyqwest.*.so > tests.lcov
 
-      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: ${{ matrix.coverage == 'cov' }}
