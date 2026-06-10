@@ -1,6 +1,6 @@
 [package]
 name = "pyqwest"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,20 +22,26 @@ http-body = "1.0.1"
 http-body-util = "0.1.3"
 mime = "0.3.17"
 pyo3 = { version = "0.28.3", features = ["bytes"] }
-pyo3-async-runtimes = { version = "0.28.0", features = [
-  "tokio-runtime",
-  "unstable-streams",
-] }
-reqwest = { version = "0.13.2", features = [
-  "brotli",
-  "cookies",
-  "gzip",
-  "hickory-dns",
-  "http2",
-  "http3",
-  "stream",
-  "zstd",
-] }
+pyo3-async-runtimes = {
+  version = "0.28.0",
+  features = [
+    "tokio-runtime",
+    "unstable-streams",
+  ]
+}
+reqwest = {
+  version = "0.13.2",
+  features = [
+    "brotli",
+    "cookies",
+    "gzip",
+    "hickory-dns",
+    "http2",
+    "http3",
+    "stream",
+    "zstd",
+  ]
+}
 tokio = "1.52.1"
 tokio-stream = "0.1.18"
 url = "2.5.8"
@@ -53,7 +59,19 @@ too_many_arguments = "allow"
 unused_trait_names = "deny"
 
 [patch.crates-io]
-reqwest = { git = "https://github.com/seanmonstar/reqwest.git", rev = "fa74a8b835b2f194253cebdab8d049c0e5d23af3" }
-pyo3 = { path = "../pyo3" }
-pyo3-ffi = { path = "../pyo3/pyo3-ffi" }
-pyo3-build-config = { path = "../pyo3/pyo3-build-config" }
+pyo3 = {
+  git = "https://github.com/anuraaga/pyo3.git",
+  rev = "c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+}
+pyo3-build-config = {
+  git = "https://github.com/anuraaga/pyo3.git",
+  rev = "c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+}
+pyo3-ffi = {
+  git = "https://github.com/anuraaga/pyo3.git",
+  rev = "c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+}
+reqwest = {
+  git = "https://github.com/seanmonstar/reqwest.git",
+  rev = "fa74a8b835b2f194253cebdab8d049c0e5d23af3"
+}

@@ -1204,6 +1204,10 @@ dependencies = [
 [[package]]
 name = "pyo3"
 version = "0.28.3"
+<<<<<<< HEAD
+=======
+source = "git+https://github.com/anuraaga/pyo3.git?rev=c8f59dc1948baadae0aa5ec84c04c51604e8e093#c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+>>>>>>> b51cc7da39ffd1c887b17c55f41c0b8fb0634912
 dependencies = [
  "bytes",
  "libc",
@@ -1232,6 +1236,10 @@ dependencies = [
 [[package]]
 name = "pyo3-build-config"
 version = "0.28.3"
+<<<<<<< HEAD
+=======
+source = "git+https://github.com/anuraaga/pyo3.git?rev=c8f59dc1948baadae0aa5ec84c04c51604e8e093#c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+>>>>>>> b51cc7da39ffd1c887b17c55f41c0b8fb0634912
 dependencies = [
  "target-lexicon",
 ]
@@ -1239,6 +1247,10 @@ dependencies = [
 [[package]]
 name = "pyo3-ffi"
 version = "0.28.3"
+<<<<<<< HEAD
+=======
+source = "git+https://github.com/anuraaga/pyo3.git?rev=c8f59dc1948baadae0aa5ec84c04c51604e8e093#c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+>>>>>>> b51cc7da39ffd1c887b17c55f41c0b8fb0634912
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -1247,6 +1259,10 @@ dependencies = [
 [[package]]
 name = "pyo3-macros"
 version = "0.28.3"
+<<<<<<< HEAD
+=======
+source = "git+https://github.com/anuraaga/pyo3.git?rev=c8f59dc1948baadae0aa5ec84c04c51604e8e093#c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+>>>>>>> b51cc7da39ffd1c887b17c55f41c0b8fb0634912
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -1257,6 +1273,10 @@ dependencies = [
 [[package]]
 name = "pyo3-macros-backend"
 version = "0.28.3"
+<<<<<<< HEAD
+=======
+source = "git+https://github.com/anuraaga/pyo3.git?rev=c8f59dc1948baadae0aa5ec84c04c51604e8e093#c8f59dc1948baadae0aa5ec84c04c51604e8e093"
+>>>>>>> b51cc7da39ffd1c887b17c55f41c0b8fb0634912
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1266,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "pyqwest"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "arc-swap",
  "backoff",
