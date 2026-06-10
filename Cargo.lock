@@ -1260,7 +1260,6 @@ version = "0.28.3"
 dependencies = [
  "heck",
  "proc-macro2",
- "pyo3-build-config",
  "quote",
  "syn",
 ]
