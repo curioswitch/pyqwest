@@ -11,26 +11,26 @@ name = "pyqwest"
 [dependencies]
 arc-swap = "1.9.1"
 backoff = "0.4.0"
-brotli = "8.0.2"
+brotli = "8.0.4"
 bytes = "1.11.1"
 errors = "0.1.0"
 futures-core = "0.3.32"
-h2 = "0.4.13"
+h2 = "0.4.14"
 h3 = "0.0.8"
-http = "1.4.0"
+http = "1.4.2"
 http-body = "1.0.1"
 http-body-util = "0.1.3"
 mime = "0.3.17"
-pyo3 = { version = "0.28.3", features = ["bytes"] }
+pyo3 = { version = "0.29.0", features = ["bytes"] }
 pyo3-async-runtimes = {
-  version = "0.28.0",
+  version = "0.29.0",
   features = [
     "tokio-runtime",
     "unstable-streams",
   ]
 }
 reqwest = {
-  version = "0.13.2",
+  version = "0.13.4",
   features = [
     "brotli",
     "cookies",
@@ -42,13 +42,13 @@ reqwest = {
     "zstd",
   ]
 }
-tokio = "1.52.1"
+tokio = "1.52.3"
 tokio-stream = "0.1.18"
 url = "2.5.8"
 zstd = "0.13.3"
 
 [build-dependencies]
-pyo3-build-config = { version = "0.28.3", features = ["resolve-config"] }
+pyo3-build-config = { version = "0.29.0", features = ["resolve-config"] }
 
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }
@@ -57,21 +57,3 @@ fn_params_excessive_bools = "allow"
 struct_excessive_bools = "allow"
 too_many_arguments = "allow"
 unused_trait_names = "deny"
-
-[patch.crates-io]
-pyo3 = {
-  git = "https://github.com/anuraaga/pyo3.git",
-  rev = "c8f59dc1948baadae0aa5ec84c04c51604e8e093"
-}
-pyo3-build-config = {
-  git = "https://github.com/anuraaga/pyo3.git",
-  rev = "c8f59dc1948baadae0aa5ec84c04c51604e8e093"
-}
-pyo3-ffi = {
-  git = "https://github.com/anuraaga/pyo3.git",
-  rev = "c8f59dc1948baadae0aa5ec84c04c51604e8e093"
-}
-reqwest = {
-  git = "https://github.com/seanmonstar/reqwest.git",
-  rev = "fa74a8b835b2f194253cebdab8d049c0e5d23af3"
-}
