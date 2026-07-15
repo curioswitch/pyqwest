@@ -13,6 +13,7 @@ static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();
 
 pub(crate) struct ClientParams<'a> {
     pub(crate) tls_ca_cert: Option<&'a [u8]>,
+    pub(crate) tls_include_system_certs: bool,
     pub(crate) tls_key: Option<&'a [u8]>,
     pub(crate) tls_cert: Option<&'a [u8]>,
     pub(crate) http_version: Option<Bound<'a, HTTPVersion>>,
@@ -50,7 +51,13 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     if let Some(ca_cert) = params.tls_ca_cert {
         let cert = reqwest::Certificate::from_pem(ca_cert)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse CA certificate: {e}")))?;
-        builder = builder.tls_certs_only([cert]);
+        if params.tls_include_system_certs {
+            builder = builder.tls_certs_merge([cert]);
+        } else {
+            builder = builder.tls_certs_only([cert]);
+        }
+    } else if !params.tls_include_system_certs {
+        builder = builder.tls_certs_only([]);
     }
     if let (Some(cert), Some(key)) = (params.tls_cert, params.tls_key) {
         let pem = [cert, key].concat();
@@ -109,6 +116,7 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 tls_ca_cert: None,
                 tls_key: None,
                 tls_cert: None,
+                tls_include_system_certs: true,
                 http_version: None,
                 timeout: None,
                 connect_timeout: Some(30.0),
