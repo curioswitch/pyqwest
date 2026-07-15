@@ -74,8 +74,8 @@ is closed.
 
 The default transport will use standard root certificates that can access sites served via
 https in the same way as a browser would. For internal use cases, you may use certificates
-issued by a custom certificate authority. You can initialize an [`HTTPTransport`](http://localhost:8000/pyqwest/api/#pyqwest.HTTPTransport)
-or [`SyncHTTPTransport`](http://localhost:8000/pyqwest/api/#pyqwest.SyncHTTPTransport) with a CA certificate for this case.
+issued by a custom certificate authority. You can initialize an [`HTTPTransport`](/api/#pyqwest.HTTPTransport)
+or [`SyncHTTPTransport`](/api/#pyqwest.SyncHTTPTransport) with a CA certificate for this case.
 
 === "async"
 
