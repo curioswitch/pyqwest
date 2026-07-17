@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Instant;
 
 use http::HeaderValue;
 use pyo3::sync::MutexExt as _;
@@ -20,6 +21,8 @@ pub(crate) struct RequestHead {
     headers: Py<Headers>,
     /// Whether to append JSON content type header automatically.
     json: bool,
+    /// Deadline for the request, if a per-request timeout was set.
+    deadline: Option<Instant>,
 }
 
 impl RequestHead {
@@ -29,6 +32,7 @@ impl RequestHead {
         headers: Py<Headers>,
         params: Option<Bound<'_, PyAny>>,
         json: bool,
+        deadline: Option<Instant>,
     ) -> PyResult<Self> {
         let method = http::Method::try_from(method)
             .map_err(|e| PyValueError::new_err(format!("Invalid HTTP method: {e}")))?;
@@ -54,6 +58,7 @@ impl RequestHead {
             url,
             headers,
             json,
+            deadline,
         })
     }
 
@@ -70,7 +75,9 @@ impl RequestHead {
             req.headers_mut()
                 .insert(http::header::CONTENT_TYPE, CONTENT_TYPE_JSON);
         }
-        if let Some(timeout) = get_timeout(py)? {
+        if let Some(deadline) = self.deadline {
+            *req.timeout_mut() = Some(deadline.saturating_duration_since(Instant::now()));
+        } else if let Some(timeout) = get_timeout(py)? {
             *req.timeout_mut() = Some(timeout);
         }
         Ok(req)
@@ -106,6 +113,10 @@ impl RequestHead {
 
     pub(crate) fn json(&self) -> bool {
         self.json
+    }
+
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.deadline
     }
 }
 

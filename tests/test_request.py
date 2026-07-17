@@ -31,6 +31,23 @@ def test_sync_request_minimal():
 
 
 @pytest.mark.asyncio
+async def test_request_timeout():
+    request = Request(method="GET", url="https://example.com/")
+    assert request.timeout is None
+
+    request = Request(method="GET", url="https://example.com/", timeout=5.0)
+    timeout = request.timeout
+    assert timeout is not None
+    assert 4.0 < timeout <= 5.0
+
+
+@pytest.mark.asyncio
+async def test_request_timeout_invalid():
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        Request(method="GET", url="https://example.com/", timeout=-1.0)
+
+
+@pytest.mark.asyncio
 async def test_request_content_bytes():
     request = Request(
         method="DELETE",

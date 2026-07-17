@@ -102,7 +102,7 @@ impl SyncRequest {
             None => None,
         };
         Ok(Self {
-            head: RequestHead::new(method, url, headers, params, json)?,
+            head: RequestHead::new(method, url, headers, params, json, None)?,
             content,
             constants: constants.clone(),
         })

@@ -21,10 +21,6 @@ class Client:
 
     A client is a lightweight wrapper around a Transport, providing convenience methods
     for common HTTP operations with buffering.
-
-    The asynchronous client does not expose per-request timeouts on its methods.
-    Use `asyncio.wait_for` or similar to enforce timeouts per-requests or initialize
-    `HTTPTransport` with a default timeout.
     """
 
     _client: NativeClient
@@ -43,6 +39,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a GET HTTP request.
@@ -50,6 +47,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -58,7 +56,9 @@ class Client:
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
-        return await self._client.get(url, headers=headers, params=params)
+        return await self._client.get(
+            url, headers=headers, timeout=timeout, params=params
+        )
 
     async def post(
         self,
@@ -66,6 +66,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a POST HTTP request.
@@ -74,6 +75,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -83,7 +85,7 @@ class Client:
             WriteError: If an error occurs writing the request.
         """
         return await self._client.post(
-            url, headers=headers, content=content, params=params
+            url, headers=headers, content=content, timeout=timeout, params=params
         )
 
     async def delete(
@@ -91,6 +93,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a DELETE HTTP request.
@@ -98,6 +101,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -106,13 +110,16 @@ class Client:
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
-        return await self._client.delete(url, headers=headers, params=params)
+        return await self._client.delete(
+            url, headers=headers, timeout=timeout, params=params
+        )
 
     async def head(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a HEAD HTTP request.
@@ -120,6 +127,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -128,13 +136,16 @@ class Client:
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
-        return await self._client.head(url, headers=headers, params=params)
+        return await self._client.head(
+            url, headers=headers, timeout=timeout, params=params
+        )
 
     async def options(
         self,
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a OPTIONS HTTP request.
@@ -142,6 +153,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -150,7 +162,9 @@ class Client:
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
-        return await self._client.options(url, headers=headers, params=params)
+        return await self._client.options(
+            url, headers=headers, timeout=timeout, params=params
+        )
 
     async def patch(
         self,
@@ -158,6 +172,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a PATCH HTTP request.
@@ -166,6 +181,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -175,7 +191,7 @@ class Client:
             WriteError: If an error occurs writing the request.
         """
         return await self._client.patch(
-            url, headers=headers, content=content, params=params
+            url, headers=headers, content=content, timeout=timeout, params=params
         )
 
     async def put(
@@ -184,6 +200,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes a PUT HTTP request.
@@ -192,6 +209,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -201,7 +219,7 @@ class Client:
             WriteError: If an error occurs writing the request.
         """
         return await self._client.put(
-            url, headers=headers, content=content, params=params
+            url, headers=headers, content=content, timeout=timeout, params=params
         )
 
     async def execute(
@@ -211,6 +229,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> FullResponse:
         """Executes an HTTP request, returning the full buffered response.
@@ -220,6 +239,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -229,7 +249,12 @@ class Client:
             WriteError: If an error occurs writing the request.
         """
         return await self._client.execute(
-            method, url, headers=headers, content=content, params=params
+            method,
+            url,
+            headers=headers,
+            content=content,
+            timeout=timeout,
+            params=params,
         )
 
     @asynccontextmanager
@@ -240,6 +265,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> AsyncIterator[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
@@ -249,6 +275,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -258,7 +285,12 @@ class Client:
             WriteError: If an error occurs writing the request.
         """
         response = await self._client.stream(
-            method, url, headers=headers, content=content, params=params
+            method,
+            url,
+            headers=headers,
+            content=content,
+            timeout=timeout,
+            params=params,
         )
         async with response:
             yield response

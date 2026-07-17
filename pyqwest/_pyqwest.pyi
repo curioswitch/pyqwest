@@ -217,9 +217,6 @@ class Client:
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
 
-        The asynchronous client does not expose per-request timeouts on its methods.
-        Use `asyncio.wait_for` or similar to enforce timeouts on requests.
-
         Args:
             transport: The transport to use for requests. If None, the shared default
                        transport will be used.
@@ -230,6 +227,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a GET HTTP request.
@@ -237,6 +235,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -252,6 +251,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a POST HTTP request.
@@ -260,6 +260,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -274,6 +275,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a DELETE HTTP request.
@@ -281,6 +283,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
         Raises:
             ConnectionError: If the connection fails.
@@ -294,6 +297,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a HEAD HTTP request.
@@ -301,6 +305,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -315,6 +320,7 @@ class Client:
         url: str,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a OPTIONS HTTP request.
@@ -322,6 +328,7 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -337,6 +344,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PATCH HTTP request.
@@ -345,6 +353,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -360,6 +369,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes a PUT HTTP request.
@@ -368,6 +378,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -384,6 +395,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[FullResponse]:
         """Executes an HTTP request, returning the full buffered response.
@@ -393,6 +405,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -409,6 +422,7 @@ class Client:
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> Awaitable[Response]:
         """Executes an HTTP request, allowing the response content to be streamed.
@@ -418,6 +432,7 @@ class Client:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -559,6 +574,7 @@ class Request:
         headers: Headers | None = None,
         content: _RequestContent | None = None,
         *,
+        timeout: float | None = None,
         params: _QueryParams | None = None,
     ) -> None:
         """Creates a new Request object.
@@ -568,6 +584,9 @@ class Request:
             url: The unencoded request URL.
             headers: The request headers.
             content: The request content. A Python dictionary will be converted to JSON.
+            timeout: The timeout for the request in seconds. The deadline is computed
+                     when the request is created, so time spent before executing the
+                     request counts against the timeout.
             params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
@@ -586,6 +605,12 @@ class Request:
     @property
     def content(self) -> bytes | AsyncIterator[bytes]:
         """Returns an async iterator over the request content."""
+
+    @property
+    def timeout(self) -> float | None:
+        """Returns the time remaining until the request's deadline in seconds,
+        or None if no timeout was set.
+        """
 
     @property
     def _json(self) -> bool: ...

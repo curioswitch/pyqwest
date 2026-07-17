@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import socket
-import sys
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -39,9 +38,6 @@ def sync_request_body(queue: Queue) -> Iterator[bytes]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    sys.version_info < (3, 11), reason="asyncio.timeout requires Python 3.11+"
-)
 async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
@@ -50,7 +46,7 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
     # so we just allow it to fail within response handling some times, and
     # try to increase the chance of that by running this test a few times.
     for _ in range(10):
-        with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+        with pytest.raises(TimeoutError):
             if isinstance(client, SyncClient):
 
                 def run():
@@ -63,23 +59,19 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
                 await asyncio.to_thread(run)
             else:
                 queue = asyncio.Queue()
-                async with asyncio.timeout(0):
-                    async with client.stream(
-                        method, url, content=request_body(queue)
-                    ) as resp:
-                        await anext(resp.content)
+                async with client.stream(
+                    method, url, content=request_body(queue), timeout=0
+                ) as resp:
+                    await anext(resp.content)
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    sys.version_info < (3, 11), reason="asyncio.timeout requires Python 3.11+"
-)
 async def test_response_content_timeout(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
     # Anecdotally, the above test will have one of its runs timeout on the response body
     # in many cases, but check explicitly for good measure.
-    with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+    with pytest.raises(TimeoutError):
         if isinstance(client, SyncClient):
 
             def run():
@@ -93,12 +85,11 @@ async def test_response_content_timeout(client: Client | SyncClient, url: str) -
             await asyncio.to_thread(run)
         else:
             queue = asyncio.Queue()
-            async with asyncio.timeout(0.03):
-                async with client.stream(
-                    method, url, content=request_body(queue)
-                ) as resp:
-                    assert resp.status == 200
-                    await anext(resp.content)
+            async with client.stream(
+                method, url, content=request_body(queue), timeout=0.03
+            ) as resp:
+                assert resp.status == 200
+                await anext(resp.content)
 
 
 @pytest.mark.asyncio

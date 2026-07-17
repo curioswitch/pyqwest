@@ -24,6 +24,8 @@ from ._util import SyncRequestBody
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
+    from pyqwest import HTTPTransport
+
 
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http", "https"], indirect=True),
@@ -793,3 +795,27 @@ async def test_nan_timeout(sync_client: SyncClient, url: str) -> None:
     url = f"{url}/echo"
     with pytest.raises(ValueError, match="Timeout must be non-negative"):
         await asyncio.to_thread(sync_client.get, url, timeout=float("nan"))
+
+
+@pytest.mark.asyncio
+async def test_negative_timeout_async(async_transport: HTTPTransport, url: str) -> None:
+    client = Client(async_transport)
+    url = f"{url}/echo"
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        await client.get(url, timeout=-5.0)
+
+
+@pytest.mark.asyncio
+async def test_infinite_timeout_async(async_transport: HTTPTransport, url: str) -> None:
+    client = Client(async_transport)
+    url = f"{url}/echo"
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        await client.get(url, timeout=float("inf"))
+
+
+@pytest.mark.asyncio
+async def test_nan_timeout_async(async_transport: HTTPTransport, url: str) -> None:
+    client = Client(async_transport)
+    url = f"{url}/echo"
+    with pytest.raises(ValueError, match="Timeout must be non-negative"):
+        await client.get(url, timeout=float("nan"))

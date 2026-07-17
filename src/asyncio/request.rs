@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwapOption;
 use bytes::Bytes;
@@ -18,6 +19,7 @@ use crate::{
     shared::{
         constants::Constants,
         request::{maybe_encode_json_content, RequestHead, RequestStreamResult},
+        validation::validate_timeout,
     },
 };
 
@@ -32,13 +34,14 @@ pub struct Request {
 #[pymethods]
 impl Request {
     #[new]
-    #[pyo3(signature = (method, url, headers=None, content=None, *, params=None))]
+    #[pyo3(signature = (method, url, headers=None, content=None, *, timeout=None, params=None))]
     pub(crate) fn py_new<'py>(
         py: Python<'py>,
         method: &str,
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
         params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
         Request::new(
@@ -47,6 +50,7 @@ impl Request {
             url,
             headers,
             content,
+            timeout,
             params,
             Constants::get(py)?,
         )
@@ -77,6 +81,13 @@ impl Request {
     }
 
     #[getter]
+    fn timeout(&self) -> Option<f64> {
+        self.head
+            .deadline()
+            .map(|d| d.saturating_duration_since(Instant::now()).as_secs_f64())
+    }
+
+    #[getter]
     fn _json(&self) -> bool {
         self.head.json()
     }
@@ -89,6 +100,7 @@ impl Request {
         url: &str,
         headers: Option<Bound<'py, Headers>>,
         content: Option<Bound<'py, PyAny>>,
+        timeout: Option<f64>,
         params: Option<Bound<'py, PyAny>>,
         constants: Constants,
     ) -> PyResult<Self> {
@@ -103,8 +115,10 @@ impl Request {
             Some(content) => Some(Content::from_py(&content, &constants)?),
             None => None,
         };
+        let deadline = validate_timeout(timeout)?
+            .map(|timeout| Instant::now() + Duration::from_secs_f64(timeout));
         Ok(Self {
-            head: RequestHead::new(method, url, headers, params, json)?,
+            head: RequestHead::new(method, url, headers, params, json, deadline)?,
             content,
             constants,
         })

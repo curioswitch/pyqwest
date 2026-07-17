@@ -86,6 +86,7 @@ class RetryTransport(Transport):
                     url=request.url,
                     headers=request.headers,
                     content=initial_request_content,
+                    timeout=request.timeout,
                 )
             )
         except Exception as e:
@@ -127,6 +128,7 @@ class RetryTransport(Transport):
                         url=request.url,
                         headers=request.headers,
                         content=content,
+                        timeout=request.timeout,
                     )
                 )
             except Exception as e:

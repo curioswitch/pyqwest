@@ -25,7 +25,7 @@ pub(crate) fn get_timeout(py: Python<'_>) -> PyResult<Option<Duration>> {
         .call1(py, (py.None(),))?
         .extract(py)?;
 
-    Ok(deadline.map(|d| d.get().0 - Instant::now()))
+    Ok(deadline.map(|d| d.get().0.saturating_duration_since(Instant::now())))
 }
 
 #[pyclass(module = "_pyqwest", frozen)]

@@ -83,6 +83,11 @@ class ASGITransport(Transport):
         self._app_exception = None
 
     async def execute(self, request: Request) -> Response:
+        timeout = request.timeout
+        deadline = None
+        if timeout is not None:
+            deadline = asyncio.get_running_loop().time() + timeout
+
         parsed_url = urlparse(request.url)
         raw_path = parsed_url.path or "/"
         path = unquote(raw_path)
@@ -182,7 +187,21 @@ class ASGITransport(Transport):
                 send_queue.put_nowait(e)
 
         app_task = asyncio.create_task(run_app())
-        message = await send_queue.get()
+        if deadline is not None:
+            time_left = deadline - asyncio.get_running_loop().time()
+            try:
+                message = await asyncio.wait_for(send_queue.get(), max(time_left, 0))
+            except (TimeoutError, asyncio.TimeoutError) as e:
+                request_task.cancel()
+                app_task.cancel()
+                with contextlib.suppress(BaseException):
+                    await app_task
+                with contextlib.suppress(BaseException):
+                    await request_task
+                msg = "Application did not start response before timeout"
+                raise TimeoutError(msg) from e
+        else:
+            message = await send_queue.get()
         if isinstance(message, Exception):
             request_task.cancel()
             with contextlib.suppress(BaseException):
@@ -218,6 +237,7 @@ class ASGITransport(Transport):
             request_task,
             trailers,
             app_task,
+            deadline,
             decompressor,
             read_trailers=message.get("trailers", False),
         )
@@ -320,6 +340,7 @@ class ResponseContent(AsyncIterator[bytes]):
         request_task: asyncio.Task[None],
         trailers: Headers | None,
         task: asyncio.Task[None],
+        deadline: float | None,
         decompressor: Decompressor,
         *,
         read_trailers: bool,
@@ -328,6 +349,7 @@ class ResponseContent(AsyncIterator[bytes]):
         self._request_task = request_task
         self._trailers = trailers
         self._task = task
+        self._deadline = deadline
         self._decompressor = decompressor
         self._read_trailers = read_trailers
 
@@ -345,7 +367,17 @@ class ResponseContent(AsyncIterator[bytes]):
         while True:
             self._read_pending = True
             try:
-                message = await self._send_queue.get()
+                if self._deadline is not None:
+                    time_left = self._deadline - asyncio.get_running_loop().time()
+                    try:
+                        message = await asyncio.wait_for(
+                            self._send_queue.get(), max(time_left, 0)
+                        )
+                    except (TimeoutError, asyncio.TimeoutError):
+                        msg = "Response read timed out"
+                        message = TimeoutError(msg)
+                else:
+                    message = await self._send_queue.get()
             finally:
                 self._read_pending = False
             if isinstance(message, Exception):
