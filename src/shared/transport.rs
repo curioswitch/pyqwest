@@ -17,6 +17,7 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) tls_key: Option<&'a [u8]>,
     pub(crate) tls_cert: Option<&'a [u8]>,
     pub(crate) http_version: Option<Bound<'a, HTTPVersion>>,
+    pub(crate) proxy: Option<&'a str>,
     pub(crate) timeout: Option<f64>,
     pub(crate) connect_timeout: Option<f64>,
     pub(crate) read_timeout: Option<f64>,
@@ -69,6 +70,12 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
             "Both tls_key and tls_cert must be provided",
         ));
     }
+    if let Some(proxy) = params.proxy {
+        let proxy = reqwest::Proxy::all(proxy).map_err(|e| {
+            PyValueError::new_err(format!("Failed to parse proxy URL: {:+}", errors::fmt(&e)))
+        })?;
+        builder = builder.proxy(proxy);
+    }
 
     if let Some(timeout) = validate_timeout(params.timeout)? {
         builder = builder.timeout(Duration::from_secs_f64(timeout));
@@ -118,6 +125,7 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 tls_cert: None,
                 tls_include_system_certs: true,
                 http_version: None,
+                proxy: None,
                 timeout: None,
                 connect_timeout: Some(30.0),
                 read_timeout: None,

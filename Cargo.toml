@@ -38,6 +38,7 @@ reqwest = {
     "hickory-dns",
     "http2",
     "http3",
+    "socks",
     "stream",
     "zstd",
   ]
