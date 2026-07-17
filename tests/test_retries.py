@@ -102,8 +102,10 @@ async def test_async_streaming_request_not_retried() -> None:
             await transport.execute(
                 Request("POST", f"http://127.0.0.1:{port}/", content=content())
             )
-        # Retrying 5 times would back off for a total of 7.5s.
-        assert time.monotonic() - start < 2
+        # Retrying 5 times would back off for a total of 7.5s. A single
+        # refused connect can itself take ~2s on Windows, which retransmits
+        # before reporting the failure, so leave headroom below that.
+        assert time.monotonic() - start < 5
 
 
 @pytest.mark.asyncio
