@@ -123,6 +123,28 @@ If using mTLS with client certificates, just add `tls_cert` and `tls_key` simila
         application = MyApplication(client)
     ```
 
+### Proxies
+
+The transport can be configured to send all requests through a proxy by passing its URL.
+The URL scheme may be `http`, `https`, `socks5`, or `socks5h`. Credentials in the URL
+will be used for proxy authentication.
+
+=== "async"
+
+    ```python
+    async with HTTPTransport(proxy="http://user:pass@localhost:8030") as transport:
+        client = Client(transport)
+        application = MyApplication(client)
+    ```
+
+=== "sync"
+
+    ```python
+    with SyncHTTPTransport(proxy="http://user:pass@localhost:8030") as transport:
+        client = SyncClient(transport)
+        application = MyApplication(client)
+    ```
+
 ### Timeouts
 
 The transport can be configured with timeouts for overall operations, connect, and reads.

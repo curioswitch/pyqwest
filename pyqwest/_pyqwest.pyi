@@ -452,6 +452,7 @@ class HTTPTransport:
         tls_key: bytes | None = None,
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
+        proxy: str | None = None,
         timeout: float | None = None,
         connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
@@ -483,6 +484,11 @@ class HTTPTransport:
             http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
                           plaintext and ALPN negotiates the version for TLS connections
                           which typically means HTTP/2 if the server supports it.
+            proxy: The URL of a proxy to send all requests through, for example
+                   "http://localhost:8030". The URL scheme may be http, https, socks5,
+                   or socks5h. Credentials in the URL, for example
+                   "http://user:pass@localhost:8030", will be used for proxy
+                   authentication.
             timeout: Default timeout for requests in seconds. This is the timeout from
                      the start of the request to the end of the response.
             connect_timeout: Timeout for connection establishment in seconds.
@@ -926,6 +932,7 @@ class SyncHTTPTransport:
         tls_key: bytes | None = None,
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
+        proxy: str | None = None,
         timeout: float | None = None,
         connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
@@ -957,6 +964,11 @@ class SyncHTTPTransport:
             http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
                           plaintext and ALPN negotiates the version for TLS connections
                           which typically means HTTP/2 if the server supports it.
+            proxy: The URL of a proxy to send all requests through, for example
+                   "http://localhost:8030". The URL scheme may be http, https, socks5,
+                   or socks5h. Credentials in the URL, for example
+                   "http://user:pass@localhost:8030", will be used for proxy
+                   authentication.
             timeout: Default timeout for requests in seconds. This is the timeout from
                      the start of the request to the end of the response.
             connect_timeout: Timeout for connection establishment in seconds.
