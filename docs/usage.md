@@ -157,3 +157,32 @@ setting. Connect and read timeout cannot be configured per-call.
     ```python
     response = client.get("https://pyqwest.dev", timeout=2.0)
     ```
+
+### Retries
+
+The transport can be configured to retry requests that fail to connect, for example because
+the server is temporarily unavailable or a connection could not be established within the
+connect timeout. Because a connection failure happens before any data is sent, it is safe to
+retry requests with any HTTP method. The first retry is immediate, and subsequent retries
+back off exponentially, starting at 0.5s. Requests with a streaming body are not retried.
+
+=== "async"
+
+    ```python
+    async with HTTPTransport(retries=3) as transport:
+        client = Client(transport)
+        application = MyApplication(client)
+    ```
+
+=== "sync"
+
+    ```python
+    with SyncHTTPTransport(retries=3) as transport:
+        client = SyncClient(transport)
+        application = MyApplication(client)
+    ```
+
+Errors that occur after connecting, such as error status codes or broken response streams,
+are not retried by the transport. Application-level retries can be configured using
+`pyqwest.middleware.retry.RetryTransport` and `pyqwest.middleware.retry.SyncRetryTransport`,
+which wrap any transport and also retry requests based on response status codes.

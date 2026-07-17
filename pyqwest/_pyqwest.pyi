@@ -458,6 +458,7 @@ class HTTPTransport:
         pool_idle_timeout: float | None = 90.0,
         pool_max_idle_per_host: int | None = None,
         tcp_keepalive_interval: float | None = 30.0,
+        retries: int = 0,
         enable_gzip: bool = True,
         enable_brotli: bool = True,
         enable_zstd: bool = True,
@@ -491,6 +492,10 @@ class HTTPTransport:
             pool_max_idle_per_host: Maximum number of idle connections to keep in the pool per host.
                                     Defaults to 2.
             tcp_keepalive_interval: Interval for TCP keepalive probes in seconds.
+            retries: Maximum number of times to retry a request that failed to connect
+                     before giving up. Only errors establishing a connection, before any
+                     data is sent to the server, are retried, with an exponential backoff
+                     between attempts. Requests with a streaming body are not retried.
             enable_gzip: Whether to enable gzip decompression for responses.
             enable_brotli: Whether to enable brotli decompression for responses.
             enable_zstd: Whether to enable zstd decompression for responses.
@@ -932,6 +937,7 @@ class SyncHTTPTransport:
         pool_idle_timeout: float | None = 90.0,
         pool_max_idle_per_host: int | None = None,
         tcp_keepalive_interval: float | None = 30.0,
+        retries: int = 0,
         enable_gzip: bool = True,
         enable_brotli: bool = True,
         enable_zstd: bool = True,
@@ -965,6 +971,10 @@ class SyncHTTPTransport:
             pool_max_idle_per_host: Maximum number of idle connections to keep in the pool per host.
                                     Defaults to 2.
             tcp_keepalive_interval: Interval for TCP keepalive probes in seconds.
+            retries: Maximum number of times to retry a request that failed to connect
+                     before giving up. Only errors establishing a connection, before any
+                     data is sent to the server, are retried, with an exponential backoff
+                     between attempts. Requests with a streaming body are not retried.
             enable_gzip: Whether to enable gzip decompression for responses.
             enable_brotli: Whether to enable brotli decompression for responses.
             enable_zstd: Whether to enable zstd decompression for responses.

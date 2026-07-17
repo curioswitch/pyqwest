@@ -11,7 +11,9 @@ use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
-use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
+use crate::shared::transport::{
+    execute_with_retries, get_default_reqwest_client, new_reqwest_client, ClientParams,
+};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
 
@@ -26,6 +28,7 @@ pub struct SyncHttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
     close: bool,
+    retries: u32,
 
     instrumentation: Instrumentation,
     constants: Constants,
@@ -47,6 +50,7 @@ impl SyncHttpTransport {
         pool_idle_timeout = 90.0,
         pool_max_idle_per_host = None,
         tcp_keepalive_interval = 30.0,
+        retries = 0,
         enable_gzip = true,
         enable_brotli = true,
         enable_zstd = true,
@@ -69,6 +73,7 @@ impl SyncHttpTransport {
         pool_idle_timeout: Option<f64>,
         pool_max_idle_per_host: Option<usize>,
         tcp_keepalive_interval: Option<f64>,
+        retries: u32,
         enable_gzip: bool,
         enable_brotli: bool,
         enable_zstd: bool,
@@ -101,6 +106,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
             close: true,
+            retries,
             instrumentation: Instrumentation::new(
                 py,
                 enable_otel,
@@ -185,8 +191,9 @@ impl SyncHttpTransport {
         operation.inject(py, &mut request_rs)?;
         let client = client.clone();
         let operation = operation.clone();
+        let retries = self.retries;
         get_runtime().spawn(async move {
-            match client.execute(request_rs).await {
+            match execute_with_retries(&client, request_rs, retries).await {
                 Ok(res) => {
                     operation.fill_response(&res);
                     response.fill(res).await;
@@ -211,6 +218,7 @@ impl SyncHttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
             http3: false,
             close: false,
+            retries: 0,
             instrumentation: Instrumentation::new(py, true, None, None, &constants)?,
             constants,
         })

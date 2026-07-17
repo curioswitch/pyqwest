@@ -109,6 +109,45 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     Ok((client, http3))
 }
 
+// The same backoff schedule as HTTPX - the first retry is immediate and
+// subsequent retries back off exponentially starting from this factor,
+// i.e. 0s, 0.5s, 1s, 2s, ...
+const RETRY_BACKOFF_FACTOR: f64 = 0.5;
+
+pub(crate) async fn execute_with_retries(
+    client: &reqwest::Client,
+    mut request: reqwest::Request,
+    retries: u32,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let mut attempt = 0u32;
+    loop {
+        // execute consumes the request, so clone before it if we may still retry.
+        // Requests with a streaming body cannot be cloned and are not retried.
+        let retry_request = if attempt < retries {
+            request.try_clone()
+        } else {
+            None
+        };
+        let err = match client.execute(request).await {
+            Ok(res) => return Ok(res),
+            Err(err) => err,
+        };
+        let Some(retry) = retry_request else {
+            return Err(err);
+        };
+        if !err.is_connect() {
+            return Err(err);
+        }
+        if attempt > 0 {
+            let exp = i32::try_from(attempt - 1).unwrap_or(i32::MAX);
+            let backoff = RETRY_BACKOFF_FACTOR * 2f64.powi(exp);
+            tokio::time::sleep(Duration::from_secs_f64(backoff)).await;
+        }
+        attempt += 1;
+        request = retry;
+    }
+}
+
 pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
     DEFAULT_REQWEST_CLIENT
         .get_or_init(py, || {

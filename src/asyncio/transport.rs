@@ -13,7 +13,9 @@ use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
-use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
+use crate::shared::transport::{
+    execute_with_retries, get_default_reqwest_client, new_reqwest_client, ClientParams,
+};
 
 #[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen, from_py_object)]
 #[derive(Clone)]
@@ -21,6 +23,7 @@ pub struct HttpTransport {
     client: Arc<ArcSwapOption<reqwest::Client>>,
     http3: bool,
     close: bool,
+    retries: u32,
 
     instrumentation: Instrumentation,
     constants: Constants,
@@ -42,6 +45,7 @@ impl HttpTransport {
         pool_idle_timeout = 90.0,
         pool_max_idle_per_host = None,
         tcp_keepalive_interval = 30.0,
+        retries = 0,
         enable_gzip = true,
         enable_brotli = true,
         enable_zstd = true,
@@ -64,6 +68,7 @@ impl HttpTransport {
         pool_idle_timeout: Option<f64>,
         pool_max_idle_per_host: Option<usize>,
         tcp_keepalive_interval: Option<f64>,
+        retries: u32,
         enable_gzip: bool,
         enable_brotli: bool,
         enable_zstd: bool,
@@ -96,6 +101,7 @@ impl HttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(client)),
             http3,
             close: true,
+            retries,
             instrumentation: Instrumentation::new(
                 py,
                 enable_otel,
@@ -160,9 +166,9 @@ impl HttpTransport {
             let client = client.clone();
             let operation = operation.clone();
             let request_iter_task = request_iter_task.clone();
+            let retries = self.retries;
             async move {
-                let res = client
-                    .execute(request_rs)
+                let res = execute_with_retries(&client, request_rs, retries)
                     .await
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);
@@ -201,9 +207,9 @@ impl HttpTransport {
         let fut = future_into_py(py, {
             let client = client.clone();
             let operation = operation.clone();
+            let retries = self.retries;
             async move {
-                let res = client
-                    .execute(request_rs)
+                let res = execute_with_retries(&client, request_rs, retries)
                     .await
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);
@@ -230,6 +236,7 @@ impl HttpTransport {
             client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
             http3: false,
             close: false,
+            retries: 0,
             instrumentation: Instrumentation::new(py, true, None, None, &constants)?,
             constants,
         })
