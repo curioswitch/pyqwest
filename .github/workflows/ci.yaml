@@ -22,7 +22,6 @@ jobs:
       matrix:
         os:
           - macos-15
-          - macos-15-intel
           - ubuntu-24.04
           - windows-2025
         python:
@@ -97,3 +96,21 @@ jobs:
 
       - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: ${{ matrix.coverage == 'cov' }}
+
+  # pyvoy, which serves the test suite, has no macOS Intel wheels (Envoy dropped
+  # x86_64 macOS support), so we can't run tests on Intel runners. Just verify
+  # the wheel builds like in the release workflow.
+  build-macos-intel:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14"
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          args: --release --out dist -i 3.14
+          sccache: true
