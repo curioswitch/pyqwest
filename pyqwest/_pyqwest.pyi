@@ -93,7 +93,7 @@ class Headers:
             other: The object to compare against.
         """
 
-    def get(self, key: str | HTTPHeaderName, default: _T = None) -> str | _T:
+    def get(self, key: str | HTTPHeaderName, default: _T | None = None) -> str | _T:
         """Returns the header value for the key, or default if not present.
 
         Args:
@@ -470,8 +470,8 @@ class HTTPTransport:
     ) -> None:
         """Creates a new HTTPTransport object.
 
-        Without any arguments, the transport behaves like the default transport. When creating
-        a transport, take care to set options to meet your needs.
+        Without any arguments, the transport behaves like the default transport without trusted TLS certificates.
+        When creating a transport, take care to set options to meet your needs.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
@@ -950,8 +950,8 @@ class SyncHTTPTransport:
     ) -> None:
         """Creates a new SyncHTTPTransport object.
 
-        Without any arguments, the transport behaves like the default transport. When creating
-        a transport, take care to set options to meet your needs.
+        Without any arguments, the transport behaves like the default transport without trusted TLS certificates.
+        When creating a transport, take care to set options to meet your needs.
 
         Args:
             tls_ca_cert: The CA certificate to use to verify the server for TLS connections.

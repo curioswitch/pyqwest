@@ -112,10 +112,10 @@ async def test_override_response(url: str, transport: SyncTransport | Transport)
                     trailers=Headers({"final-trailer": "bye"}),
                 )
 
-        client = SyncClient(SyncOverride())
+        sync_client = SyncClient(SyncOverride())
 
         def run():
-            with client.stream(method, url, headers, req_content) as resp:
+            with sync_client.stream(method, url, headers, req_content) as resp:
                 content = b"".join(resp.content)
             return resp, content
 
@@ -238,10 +238,10 @@ async def test_override_response_content(
                     trailers=response.trailers,
                 )
 
-        client = SyncClient(SyncOverride())
+        sync_client = SyncClient(SyncOverride())
 
         def run():
-            with client.stream(method, url, headers, req_content) as resp:
+            with sync_client.stream(method, url, headers, req_content) as resp:
                 content = b"".join(resp.content)
             return resp, content
 
@@ -298,10 +298,10 @@ async def test_override_response_trailers(
                     trailers=Headers({"final-trailer": "bye"}),
                 )
 
-        client = SyncClient(SyncOverride())
+        sync_client = SyncClient(SyncOverride())
 
         def run():
-            with client.stream(method, url, headers, req_content) as resp:
+            with sync_client.stream(method, url, headers, req_content) as resp:
                 content = b"".join(resp.content)
             return resp, content
 

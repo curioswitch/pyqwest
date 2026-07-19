@@ -42,7 +42,6 @@ dev = [
   "opentelemetry-test-utils",
   "poethepoet",
   "psutil",
-  "pyright[nodejs]",
   "pytest",
   "pytest-asyncio",
   "pytest-benchmark",
@@ -51,6 +50,7 @@ dev = [
   "pyvoy",
   "ruff",
   "trustme",
+  "ty",
   "uvloop; sys_platform != 'win32'",
   "winloop; sys_platform == 'win32'",
   "zstd",
@@ -205,3 +205,6 @@ typing-extensions = false
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
 split-on-trailing-comma = false
+
+[tool.ty.src]
+exclude = ["tests/test_benchmark.py"]

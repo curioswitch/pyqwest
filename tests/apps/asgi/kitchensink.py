@@ -4,7 +4,7 @@ import gzip
 from typing import TYPE_CHECKING, cast
 
 import brotli
-import zstd
+import zstd  # ty: ignore[unresolved-import] # ty misses this for some reason
 
 if TYPE_CHECKING:
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, HTTPScope, Scope

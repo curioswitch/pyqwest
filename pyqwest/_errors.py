@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import IntEnum
+from typing import Any
 
 
 class StreamErrorCode(IntEnum):
@@ -22,7 +23,7 @@ class StreamErrorCode(IntEnum):
     HTTP_1_1_REQUIRED = 13
 
     @classmethod
-    def _missing_(cls, _value: int) -> StreamErrorCode:
+    def _missing_(cls, value: object) -> Any:  # noqa: ANN401, ARG003
         return cls.INTERNAL_ERROR
 
 

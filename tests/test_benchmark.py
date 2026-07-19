@@ -3,13 +3,18 @@ from __future__ import annotations
 import asyncio
 import ssl
 import sys
+
+import pytest
+
+if sys.version_info < (3, 11):
+    pytest.skip("asyncio.Runner requires Python 3.11+", allow_module_level=True)
+
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import aiohttp
 import httpx
 import niquests
-import pytest
 import pytest_asyncio
 
 from pyqwest import Client, HTTPTransport, HTTPVersion, SyncClient, SyncHTTPTransport

@@ -48,11 +48,7 @@ async def proxy() -> AsyncIterator[RecordingProxy]:
     ) -> None:
         recorded.append(await reader.readuntil(b"\r\n\r\n"))
         writer.write(
-            b"HTTP/1.1 200 OK\r\n"
-            b"content-length: 5\r\n"
-            b"connection: close\r\n"
-            b"\r\n"
-            b"proxy"
+            b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nproxy"
         )
         await writer.drain()
         writer.close()
