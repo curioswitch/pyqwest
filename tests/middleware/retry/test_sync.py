@@ -29,6 +29,7 @@ class App:
         self.read_content = b""
         self.count = 0
         self.timeouts = 0
+        self.connection_errors = 0
 
     def __call__(
         self, environ: WSGIEnvironment, start_response: StartResponse
@@ -39,6 +40,13 @@ class App:
             try:
                 raise TimeoutError  # noqa: TRY301
             except TimeoutError:
+                start_response("500 Internal Server Error", [], sys.exc_info())
+            return []
+        if self.connection_errors > 0:
+            self.connection_errors -= 1
+            try:
+                raise ConnectionError  # noqa: TRY301
+            except ConnectionError:
                 start_response("500 Internal Server Error", [], sys.exc_info())
             return []
         request_body = cast("WSGIInputStream", environ["wsgi.input"])
@@ -166,7 +174,7 @@ def test_retry_content_iterator(app: App, client: SyncClient) -> None:
     assert app.read_content == b"Hello world!"
 
 
-def test_retry_exception(app: App, client: SyncClient) -> None:
+def test_retry_timeout(app: App, client: SyncClient) -> None:
     app.status = [200, 200]
     app.timeouts = 1
     res = client.get("http://localhost")
@@ -175,12 +183,49 @@ def test_retry_exception(app: App, client: SyncClient) -> None:
     assert app.read_content == b""
 
 
-def test_retries_exceeded_exception(app: App, client: SyncClient) -> None:
+def test_retries_exceeded_timeout(app: App, client: SyncClient) -> None:
     app.status = [200, 200, 200, 200, 200, 200]
     app.timeouts = 5
     with pytest.raises(ReadError, match="Maximum retry attempts exceeded: 4"):
         client.get("http://localhost")
     assert app.count == 5
+
+
+def test_no_retry_timeout_not_idempotent(app: App, client: SyncClient) -> None:
+    app.status = [200, 200]
+    app.timeouts = 1
+    with pytest.raises(TimeoutError):
+        client.post("http://localhost")
+
+
+def test_retry_connection_error(app: App, client: SyncClient) -> None:
+    app.status = [200, 200]
+    app.connection_errors = 1
+    res = client.post("http://localhost")
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b""
+
+
+def test_retries_exceeded_connection_error(app: App, client: SyncClient) -> None:
+    app.status = [200, 200, 200, 200, 200, 200]
+    app.connection_errors = 5
+    with pytest.raises(ConnectionError):
+        client.get("http://localhost")
+    assert app.count == 5
+
+
+def test_retry_connection_error_content_iterator(app: App, client: SyncClient) -> None:
+    def content():
+        yield b"Hello "
+        yield b"world!"
+
+    app.status = [200, 200]
+    app.connection_errors = 1
+    res = client.post("http://localhost", content=content())
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b"Hello world!"
 
 
 def test_no_retry_exception(app: App) -> None:

@@ -188,7 +188,7 @@ class ASGITransport(Transport):
             with contextlib.suppress(BaseException):
                 await app_task
                 await request_task
-            if isinstance(message, TimeoutError):
+            if isinstance(message, (ConnectionError, TimeoutError)):
                 raise message
             return Response(
                 status=500,
