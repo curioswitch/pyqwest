@@ -10,14 +10,14 @@ from h2.events import StreamReset
 
 from pyqwest import (
     Headers,
-    HTTPTransport,
     Request,
     Response,
     StreamError,
     StreamErrorCode,
-    SyncHTTPTransport,
     SyncRequest,
     SyncResponse,
+    SyncTransport,
+    Transport,
 )
 from pyqwest._pyqwest import set_sync_timeout
 
@@ -32,13 +32,13 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
     use of bidirectional streaming and response trailers.
     """
 
-    _transport: HTTPTransport
+    _transport: Transport
 
-    def __init__(self, transport: HTTPTransport) -> None:
+    def __init__(self, transport: Transport) -> None:
         """Creates a new AsyncPyQwestTransport.
 
         Args:
-            transport: The pyqwest HTTPTransport to delegate requests to.
+            transport: The pyqwest transport to delegate requests to.
         """
         self._transport = transport
 
@@ -46,6 +46,9 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
         request_headers = convert_headers(request.headers)
         request_content = async_request_content(request.stream)
         timeout = convert_timeout(request.extensions)
+        deadline = None
+        if timeout is not None:
+            deadline = asyncio.get_running_loop().time() + timeout
 
         try:
             response = await asyncio.wait_for(
@@ -57,7 +60,7 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
                         content=request_content,
                     )
                 ),
-                timeout,
+                remaining_time(deadline),
             )
         except StreamError as e:
             raise map_stream_error(e) from e
@@ -68,7 +71,7 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
         return httpx.Response(
             status_code=response.status,
             headers=httpx.Headers(tuple(response.headers.items())),
-            stream=AsyncIteratorByteStream(response),
+            stream=AsyncIteratorByteStream(response, deadline),
             extensions={"get_trailers": get_trailers},
         )
 
@@ -103,8 +106,9 @@ async def async_request_content_iter(
 
 
 class AsyncIteratorByteStream(httpx.AsyncByteStream):
-    def __init__(self, response: Response) -> None:
+    def __init__(self, response: Response, deadline: float | None = None) -> None:
         self._response = response
+        self._deadline = deadline
         self._is_stream_consumed = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
@@ -112,8 +116,21 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
             raise httpx.StreamConsumed
         self._is_stream_consumed = True
         try:
-            async for chunk in self._response.content:
-                yield bytes(chunk)
+            if self._deadline is None:
+                async for chunk in self._response.content:
+                    yield bytes(chunk)
+            else:
+                # Content is read after handle_async_request returns, so the
+                # request timeout can only be applied here, not there.
+                content = self._response.content
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(
+                            anext(content), remaining_time(self._deadline)
+                        )
+                    except StopAsyncIteration:
+                        break
+                    yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
 
@@ -128,13 +145,13 @@ class PyqwestTransport(httpx.BaseTransport):
     use of bidirectional streaming and response trailers.
     """
 
-    _transport: SyncHTTPTransport
+    _transport: SyncTransport
 
-    def __init__(self, transport: SyncHTTPTransport) -> None:
+    def __init__(self, transport: SyncTransport) -> None:
         """Creates a new PyQwestTransport.
 
         Args:
-            transport: The pyqwest HTTPTransport to delegate requests to.
+            transport: The pyqwest transport to delegate requests to.
         """
         self._transport = transport
 
@@ -251,6 +268,12 @@ def convert_timeout(extensions: dict) -> float | None:
     if operation_timeout != -1:
         return operation_timeout
     return httpx_timeout.get("connect")
+
+
+def remaining_time(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    return max(deadline - asyncio.get_running_loop().time(), 0.0)
 
 
 def map_stream_error(e: StreamError) -> httpx.RemoteProtocolError:
