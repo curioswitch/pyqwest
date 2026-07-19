@@ -218,12 +218,14 @@ The transport can be configured with timeouts for overall operations, connect, a
     ```
 
 The overall operation timeout can also be configured per-call to override the transport's
-setting. Connect and read timeout cannot be configured per-call.
+setting by passing `timeout` for sync clients or using `asyncio.wait_for` or
+`asyncio.timeout` for async. Connect and read timeout cannot be configured per-call.
 
 === "async"
 
     ```python
-    response = await client.get("https://pyqwest.dev", timeout=2.0)
+    import asyncio
+    response = await asyncio.wait_for(client.get("https://pyqwest.dev"), timeout=2.0)
     ```
 
 === "sync"
