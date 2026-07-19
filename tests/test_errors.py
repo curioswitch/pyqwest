@@ -39,10 +39,10 @@ def sync_request_body(queue: Queue) -> Iterator[bytes]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    sys.version_info < (3, 11), reason="asyncio.timeout requires Python 3.11+"
-)
 async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
+    if sys.version_info < (3, 11):
+        pytest.skip("asyncio.timeout requires Python 3.11+")
+        return
     method = "POST"
     url = f"{url}/echo"
     # Even with a timeout of zero, headers may still return before timeout,
@@ -71,10 +71,10 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    sys.version_info < (3, 11), reason="asyncio.timeout requires Python 3.11+"
-)
 async def test_response_content_timeout(client: Client | SyncClient, url: str) -> None:
+    if sys.version_info < (3, 11):
+        pytest.skip("asyncio.timeout requires Python 3.11+")
+        return
     method = "POST"
     url = f"{url}/echo"
     # Anecdotally, the above test will have one of its runs timeout on the response body

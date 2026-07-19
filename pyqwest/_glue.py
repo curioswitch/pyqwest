@@ -22,7 +22,7 @@ async def wrap_body_gen(
             yield wrap_fn(item)
     finally:
         try:
-            aclose = gen.aclose  # type: ignore[attr-defined]
+            aclose = gen.aclose  # ty: ignore[unresolved-attribute]
         except AttributeError:
             pass
         else:
@@ -41,7 +41,7 @@ async def new_full_response(
             buf.extend(chunk)
     finally:
         try:
-            aclose = content.aclose  # type: ignore[attr-defined]
+            aclose = content.aclose  # ty: ignore[unresolved-attribute]
         except AttributeError:
             pass
         else:
@@ -63,7 +63,7 @@ def read_content_sync(content: Iterator[bytes | memoryview]) -> bytes:
             buf.extend(chunk)
     finally:
         try:
-            close = content.close  # type: ignore[attr-defined]
+            close = content.close  # ty: ignore[unresolved-attribute]
         except AttributeError:
             pass
         else:
@@ -81,7 +81,7 @@ def close_request_iterator(itr: Iterator[bytes]) -> None:
         return
 
     try:
-        close = itr.close  # pyright: ignore[reportAttributeAccessIssue]
+        close = itr.close  # ty: ignore[unresolved-attribute]
     except AttributeError:
         pass
     else:

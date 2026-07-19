@@ -30,7 +30,7 @@ def test_headers_no_duplicates() -> None:
     with pytest.raises(KeyError):
         del h["missing"]
     assert h.get("missing") is None
-    assert h.get(10) is None  # pyright: ignore[reportArgumentType]
+    assert h.get(10) is None  # ty: ignore[invalid-argument-type]
     assert h.get("missing", "default") == "default"
     assert h.getall("missing") == []
     assert repr(h) == "Headers()"
@@ -54,7 +54,7 @@ def test_headers_no_duplicates() -> None:
     assert ("x-test", "foo") in items
     assert (10, "foo") not in items
     assert ("x-test", 10) not in items
-    assert ("x-test",) not in items  # pyright: ignore[reportOperatorIssue]
+    assert ("x-test",) not in items  # ty: ignore[unsupported-operator]
     assert "foo" in values
     assert "bar" not in values
     assert 10 not in values
@@ -153,7 +153,7 @@ def test_headers_duplicates() -> None:
     with pytest.raises(KeyError):
         h.pop("x-test")
     with pytest.raises(TypeError):
-        h.pop("x-test", None, "foo")  # pyright: ignore[reportCallIssue]
+        h.pop("x-test", None, "foo")  # ty: ignore[no-matching-overload]
     assert list(items) == [("authorization", "cookie")]
     h.add("x-animal", "bear")
     h.add("x-animal", "cat")
@@ -305,7 +305,7 @@ def test_headers_http_header_name() -> None:
     with pytest.raises(KeyError):
         del h[HTTPHeaderName("missing")]
     assert h.get(HTTPHeaderName("missing")) is None
-    assert h.get(10) is None  # pyright: ignore[reportArgumentType]
+    assert h.get(10) is None  # ty: ignore[invalid-argument-type]
     assert h.get(HTTPHeaderName("missing"), "default") == "default"
     assert h.getall(HTTPHeaderName("missing")) == []
     assert repr(h) == "Headers()"
@@ -329,7 +329,7 @@ def test_headers_http_header_name() -> None:
     assert (HTTPHeaderName("x-test"), "foo") in items
     assert (10, "foo") not in items
     assert (HTTPHeaderName("x-test"), 10) not in items
-    assert (HTTPHeaderName("x-test"),) not in items  # pyright: ignore[reportOperatorIssue]
+    assert (HTTPHeaderName("x-test"),) not in items  # ty: ignore[unsupported-operator]
     assert "foo" in values
     assert "bar" not in values
     assert 10 not in values

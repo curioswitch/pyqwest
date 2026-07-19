@@ -42,19 +42,17 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
         """
         self._transport = transport
 
-    async def handle_async_request(
-        self, httpx_request: httpx.Request
-    ) -> httpx.Response:
-        request_headers = convert_headers(httpx_request.headers)
-        request_content = async_request_content(httpx_request.stream)
-        timeout = convert_timeout(httpx_request.extensions)
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        request_headers = convert_headers(request.headers)
+        request_content = async_request_content(request.stream)
+        timeout = convert_timeout(request.extensions)
 
         try:
             response = await asyncio.wait_for(
                 self._transport.execute(
                     Request(
-                        httpx_request.method,
-                        str(httpx_request.url),
+                        request.method,
+                        str(request.url),
                         headers=request_headers,
                         content=request_content,
                     )
@@ -101,7 +99,7 @@ async def async_request_content_iter(
                     chunk = await asyncio.to_thread(next, stream_iter, None)
                     if chunk is None:
                         break
-                    yield chunk
+                    yield chunk  # ty: ignore[invalid-yield] # seems to be narrowing bug
 
 
 class AsyncIteratorByteStream(httpx.AsyncByteStream):
@@ -140,10 +138,10 @@ class PyqwestTransport(httpx.BaseTransport):
         """
         self._transport = transport
 
-    def handle_request(self, httpx_request: httpx.Request) -> httpx.Response:
-        request_headers = convert_headers(httpx_request.headers)
-        request_content = sync_request_content(httpx_request.stream)
-        timeout = convert_timeout(httpx_request.extensions)
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        request_headers = convert_headers(request.headers)
+        request_content = sync_request_content(request.stream)
+        timeout = convert_timeout(request.extensions)
         timeout_manager = None
         if timeout is not None:
             timeout_manager = set_sync_timeout(timeout)
@@ -152,8 +150,8 @@ class PyqwestTransport(httpx.BaseTransport):
         try:
             response = self._transport.execute_sync(
                 SyncRequest(
-                    httpx_request.method,
-                    str(httpx_request.url),
+                    request.method,
+                    str(request.url),
                     headers=request_headers,
                     content=request_content,
                 )

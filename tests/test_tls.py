@@ -45,10 +45,10 @@ async def test_mtls(
             tls_cert=client_cert.cert_chain_pems[0].bytes(),
             http_version=http_version,
         ) as transport:
-            client = SyncClient(transport)
+            sync_client = SyncClient(transport)
 
             def run():
-                with client.stream(method, url, headers, req_content) as resp:
+                with sync_client.stream(method, url, headers, req_content) as resp:
                     content = b"".join(resp.content)
                 return resp, content
 
