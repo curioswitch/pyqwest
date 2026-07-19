@@ -28,11 +28,22 @@ def parse_retry_after(header: str | None) -> float | None:
     return delta
 
 
-def default_should_retry_request(method: str) -> bool:
-    return method in ("GET", "HEAD", "PUT", "DELETE")
+def default_should_retry_request(_method: str) -> bool:
+    # By default, allow retries for any methods for connection errors.
+    # The default response hook checks idempotency for other errors.
+    return True
 
 
-def default_should_retry_response(status: int) -> bool:
+_IDEMPOTENT_METHODS = ("GET", "HEAD", "PUT", "DELETE")
+
+
+def default_should_retry_response(method: str, status: int | Exception) -> bool:
+    if isinstance(status, ConnectionError):
+        return True
+    if method not in _IDEMPOTENT_METHODS:
+        return False
+    if isinstance(status, Exception):
+        return True
     if status == HTTPStatus.TOO_MANY_REQUESTS:
         return True
     return status >= 500 and status != HTTPStatus.NOT_IMPLEMENTED

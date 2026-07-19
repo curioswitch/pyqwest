@@ -22,6 +22,7 @@ class App:
         self.read_content = b""
         self.count = 0
         self.timeouts = 0
+        self.connection_errors = 0
 
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -32,6 +33,9 @@ class App:
         if self.timeouts > 0:
             self.timeouts -= 1
             raise TimeoutError
+        if self.connection_errors > 0:
+            self.connection_errors -= 1
+            raise ConnectionError
         content = b""
         while True:
             message = await receive()
@@ -181,7 +185,7 @@ async def test_retry_content_iterator(app: App, client: Client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_exception(app: App, client: Client) -> None:
+async def test_retry_timeout(app: App, client: Client) -> None:
     app.status = [200, 200]
     app.timeouts = 1
     res = await client.get("http://localhost")
@@ -191,12 +195,55 @@ async def test_retry_exception(app: App, client: Client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retries_exceeded_exception(app: App, client: Client) -> None:
+async def test_retries_exceeded_timeout(app: App, client: Client) -> None:
     app.status = [200, 200, 200, 200, 200, 200]
     app.timeouts = 5
     with pytest.raises(ReadError, match="Maximum retry attempts exceeded: 4"):
         await client.get("http://localhost")
     assert app.count == 5
+
+
+@pytest.mark.asyncio
+async def test_no_retry_timeout_not_idempotent(app: App, client: Client) -> None:
+    app.status = [200, 200]
+    app.timeouts = 1
+    with pytest.raises(TimeoutError):
+        await client.post("http://localhost")
+
+
+@pytest.mark.asyncio
+async def test_retry_connection_error(app: App, client: Client) -> None:
+    app.status = [200, 200]
+    app.connection_errors = 1
+    res = await client.post("http://localhost")
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b""
+
+
+@pytest.mark.asyncio
+async def test_retries_exceeded_connection_error(app: App, client: Client) -> None:
+    app.status = [200, 200]
+    app.connection_errors = 5
+    with pytest.raises(ConnectionError):
+        await client.post("http://localhost")
+    assert app.count == 5
+
+
+@pytest.mark.asyncio
+async def test_retry_connection_error_content_iterator(
+    app: App, client: Client
+) -> None:
+    async def content():
+        yield b"Hello "
+        yield b"world!"
+
+    app.status = [200, 200]
+    app.connection_errors = 1
+    res = await client.post("http://localhost", content=content())
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b"Hello world!"
 
 
 @pytest.mark.asyncio

@@ -123,6 +123,58 @@ If using mTLS with client certificates, just add `tls_cert` and `tls_key` simila
         application = MyApplication(client)
     ```
 
+### Middleware
+
+HTTP middleware are themselves just `Transport` implementations that accept another
+`Transport` to wrap it. By having the same signature, they can operate on any part of the
+request/response lifecycle.
+
+pyqwest includes the following middleware.
+
+#### Retry
+
+Retry middleware automatically reissues requests on errors. The default behavior is to
+retry known-safe errors, which include connection errors and transient error responses for
+non-idempotent methods. The conditions for determining a request or response is retryable
+can be customized by subclassing the middleware class and implementing `should_retry_request`
+or `should_retry_response` to fit your needs, for example matching against `request.url`.
+
+=== "async"
+
+    ```python
+    from pyqwest import Client, HTTPTransport, Request
+        from pyqwest.middleware.retry import RetryTransport
+
+
+        class MyRetryTransport(RetryTransport):
+            def should_retry_request(self, request: Request) -> bool:
+                return not request.url.endswith("/unsafe-method")
+
+
+        client = Client(transport=MyRetryTransport(HTTPTransport()))
+        await client.get(
+            "http://localhost/safe-method"
+        )  # will retry on transient errors
+        await client.get("http://localhost/unsafe-method")  # will not retry
+    ```
+
+=== "sync"
+
+    ```python
+    from pyqwest import SyncClient, SyncHTTPTransport, SyncRequest
+        from pyqwest.middleware.retry import SyncRetryTransport
+
+
+        class MyRetryTransport(SyncRetryTransport):
+            def should_retry_request(self, request: SyncRequest) -> bool:
+                return not request.url.endswith("/unsafe-method")
+
+
+        client = SyncClient(transport=MyRetryTransport(SyncHTTPTransport()))
+        client.get("http://localhost/safe-method")  # will retry on transient errors
+        client.get("http://localhost/unsafe-method")  # will not retry
+    ```
+
 ### Proxies
 
 The transport can be configured to send all requests through a proxy by passing its URL.

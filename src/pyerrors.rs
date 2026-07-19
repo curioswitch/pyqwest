@@ -17,10 +17,10 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
     }
 
     let msg = format!("{msg}: {:+}", errors::fmt(e));
-    if e.is_timeout() {
-        PyTimeoutError::new_err(msg)
-    } else if e.is_connect() {
+    if e.is_connect() {
         PyConnectionError::new_err(msg)
+    } else if e.is_timeout() {
+        PyTimeoutError::new_err(msg)
     } else if e.is_request() {
         WriteError::new_err(msg)
     } else if e.is_body() {

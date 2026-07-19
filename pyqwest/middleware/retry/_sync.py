@@ -14,10 +14,36 @@ from ._shared import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 
 class SyncRetryTransport(SyncTransport):
+    """Retry middleware for sync clients.
+
+    Wrap a SyncTransport with this class to allow requests to be automatically retried.
+    By default, known-safe errors are retried, meaning connection errors for any request,
+    and I/O errors or 429/5xx responses for idempotent methods.
+
+    The default behavior can be overridden by subclassing this class and overriding the
+    `should_retry_request` and `should_retry_response` methods to suit any need.
+
+    Examples:
+        ```python
+        from pyqwest import SyncClient, SyncHTTPTransport, SyncRequest
+        from pyqwest.middleware.retry import SyncRetryTransport
+
+
+        class MyRetryTransport(SyncRetryTransport):
+            def should_retry_request(self, request: SyncRequest) -> bool:
+                return not request.url.endswith("/unsafe-method")
+
+
+        client = SyncClient(transport=MyRetryTransport(SyncHTTPTransport()))
+        client.get("http://localhost/safe-method")  # will retry on transient errors
+        client.get("http://localhost/unsafe-method")  # will not retry
+        ```
+    """
+
     _transport: SyncTransport
     _initial_interval: float
     _randomization_factor: float
@@ -53,29 +79,18 @@ class SyncRetryTransport(SyncTransport):
             self._max_interval,
         )
 
-        content: bytes | bytearray | None = None
+        get_content: Callable[[], bytes | Iterator[bytes]]
 
-        initial_request_content: bytes | Iterator[bytes]
-        if isinstance(request.content, bytes):
-            content = request.content
-            initial_request_content = request.content
+        content = request.content
+        if isinstance(content, bytes):
+
+            def _get_content() -> bytes:
+                return content
+
+            get_content = _get_content
         else:
-
-            def initial_request_content_iter() -> Iterator[bytes]:
-                nonlocal content
-                assert not isinstance(request.content, bytes)  # noqa: S101
-                for chunk in request.content:
-                    match content:
-                        case None:
-                            content = chunk
-                        case bytes():
-                            content = bytearray(content)
-                            content.extend(chunk)
-                        case bytearray():
-                            content.extend(chunk)
-                    yield chunk
-
-            initial_request_content = initial_request_content_iter()
+            retrying_content = RetryingRequestContent(content)
+            get_content = retrying_content.get
 
         resp: SyncResponse | Exception
 
@@ -85,7 +100,7 @@ class SyncRetryTransport(SyncTransport):
                     method=request.method,
                     url=request.url,
                     headers=request.headers,
-                    content=initial_request_content,
+                    content=get_content(),
                 )
             )
         except Exception as e:
@@ -99,7 +114,13 @@ class SyncRetryTransport(SyncTransport):
                 resp.close()
             retries += 1
             if retries > self._max_retries:
+                if isinstance(resp, ConnectionError):
+                    # Connection errors that don't resolve with retries are better
+                    # surfaced as-is since they are network issues rather than backend.
+                    raise resp
                 msg = f"Maximum retry attempts exceeded: {self._max_retries}"
+                if isinstance(resp, Exception):
+                    raise ReadError(msg) from resp
                 raise ReadError(msg)
 
             if (
@@ -126,7 +147,7 @@ class SyncRetryTransport(SyncTransport):
                         method=request.method,
                         url=request.url,
                         headers=request.headers,
-                        content=content,
+                        content=get_content(),
                     )
                 )
             except Exception as e:
@@ -142,6 +163,20 @@ class SyncRetryTransport(SyncTransport):
     def should_retry_response(
         self, request: SyncRequest, response: SyncResponse | Exception
     ) -> bool:
-        if isinstance(response, Exception):
-            return True
-        return default_should_retry_response(response.status)
+        return default_should_retry_response(
+            request.method,
+            response.status if isinstance(response, SyncResponse) else response,
+        )
+
+
+class RetryingRequestContent:
+    def __init__(self, content: Iterator[bytes]) -> None:
+        self._content = content
+        self._buffer = bytearray()
+
+    def get(self) -> Iterator[bytes]:
+        if self._buffer:
+            yield bytes(self._buffer)
+        for chunk in self._content:
+            self._buffer.extend(chunk)
+            yield chunk
