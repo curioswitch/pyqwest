@@ -1,12 +1,12 @@
 [project]
 name = "pyqwest"
-version = "0.6.2"
+version = "0.7.0"
 description = "A modern, high-performance HTTP client for Python and Rust."
 readme = "README.md"
 requires-python = ">=3.10"
 license-files = ["LICENSE"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Operating System :: MacOS :: MacOS X",
