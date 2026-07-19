@@ -16,3 +16,11 @@ def test_set_timeout() -> None:
         assert 3.9 < timeout.total_seconds() < 4.91
     timeout = get_sync_timeout()
     assert timeout is None
+
+
+def test_get_timeout_after_fire() -> None:
+    with set_sync_timeout(0.0001):
+        time.sleep(0.1)
+        timeout = get_sync_timeout()
+        assert timeout is not None
+        assert timeout.total_seconds() == 0.0
