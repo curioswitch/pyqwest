@@ -18,7 +18,7 @@ async def test_response_minimal():
     assert response.headers == Headers()
     assert await anext(response.content, None) is None
     assert response.trailers == Headers()
-    assert not response._read_pending  # ty: ignore[unresolved-attribute]
+    assert not response._read_pending
 
 
 @pytest.mark.asyncio
@@ -63,7 +63,7 @@ def test_sync_response_minimal():
     assert response.headers == Headers()
     assert next(response.content, None) is None
     assert response.trailers == Headers()
-    assert not response._read_pending  # ty: ignore[unresolved-attribute]
+    assert not response._read_pending
 
 
 def test_sync_response_content_bytes():
