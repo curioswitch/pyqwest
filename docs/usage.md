@@ -175,6 +175,42 @@ or `should_retry_response` to fit your needs, for example matching against `requ
         client.get("http://localhost/unsafe-method")  # will not retry
     ```
 
+#### Logging
+
+Logging middleware logs requests and responses to a standard library logger, by default
+the logger named `pyqwest`. Requests log at `INFO`, responses at `INFO` for statuses
+below 400 and `ERROR` otherwise, request failures at `ERROR`, and each received content
+chunk at `DEBUG`. The messages and levels can be customized by subclassing the middleware
+class and overriding `log_request`, `log_response`, `log_chunk`, or `log_error`.
+
+=== "async"
+
+    ```python
+    import logging
+
+    from pyqwest import Client, HTTPTransport
+    from pyqwest.middleware.logging import LoggingTransport
+
+
+    logger = logging.getLogger("myapp.http")
+    client = Client(transport=LoggingTransport(HTTPTransport(), logger))
+    await client.get("http://localhost/hello")  # logs the request and response
+    ```
+
+=== "sync"
+
+    ```python
+    import logging
+
+    from pyqwest import SyncClient, SyncHTTPTransport
+    from pyqwest.middleware.logging import SyncLoggingTransport
+
+
+    logger = logging.getLogger("myapp.http")
+    client = SyncClient(transport=SyncLoggingTransport(SyncHTTPTransport(), logger))
+    client.get("http://localhost/hello")  # logs the request and response
+    ```
+
 ### Proxies
 
 The transport can be configured to send all requests through a proxy by passing its URL.

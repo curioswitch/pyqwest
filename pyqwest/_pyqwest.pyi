@@ -671,6 +671,9 @@ class Response:
         it is not necessary to explicitly close the response.
         """
 
+    @property
+    def _read_pending(self) -> bool: ...
+
 class SyncClient:
     """A synchronous HTTP client.
 
@@ -1145,6 +1148,9 @@ class SyncResponse:
         Note that if your code is guaranteed to fully consume the response content,
         it is not necessary to explicitly close the response.
         """
+
+    @property
+    def _read_pending(self) -> bool: ...
 
 class FullResponse:
     """A fully buffered HTTP response."""

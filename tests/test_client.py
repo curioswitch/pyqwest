@@ -636,12 +636,12 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
 
         read_task = asyncio.create_task(read_content())
 
-        while not resp._read_pending:  # ty: ignore[unresolved-attribute]  # noqa: ASYNC110
+        while not resp._read_pending:  # noqa: ASYNC110
             await asyncio.sleep(0.001)
 
     with pytest.raises(ReadError):
         await read_task
-    assert not resp._read_pending  # ty: ignore[unresolved-attribute]
+    assert not resp._read_pending
 
 
 @pytest.mark.asyncio
@@ -673,7 +673,7 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
             read_thread = threading.Thread(target=read_content)
             read_thread.start()
 
-            while not resp._read_pending:  # ty: ignore[unresolved-attribute]
+            while not resp._read_pending:
                 time.sleep(0.001)
 
         read_thread.join()
