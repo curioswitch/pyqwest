@@ -89,7 +89,7 @@ async def test_debug_log(
 
     records = records_for(caplog, DEBUG_LOGGER)
     assert [record.getMessage() for record in records] == [
-        f"Sending HTTP request: GET {url}",
+        f"Sending HTTP request: GET {url}"
     ]
     assert records[0].levelno == logging.DEBUG
     # The access logger inherits DEBUG from its "pyqwest" parent, completing the
@@ -120,7 +120,7 @@ async def test_debug_log_with_access_overridden(
     assert not records_for(caplog, ACCESS_LOGGER)
     records = records_for(caplog, DEBUG_LOGGER)
     assert [record.getMessage() for record in records] == [
-        f"Sending HTTP request: GET {url}",
+        f"Sending HTTP request: GET {url}"
     ]
 
 
