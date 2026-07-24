@@ -19,6 +19,8 @@ pub(crate) mod decompress;
 pub(crate) mod headername;
 /// An enum type corresponding to HTTP versions.
 pub(crate) mod httpversion;
+/// Multipart form request content.
+pub(crate) mod multipart;
 
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct FullResponse {

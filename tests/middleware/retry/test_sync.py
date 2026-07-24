@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pyqwest import ReadError, SyncClient, SyncRequest, SyncResponse
+from pyqwest import Multipart, Part, ReadError, SyncClient, SyncRequest, SyncResponse
 from pyqwest.middleware.retry import SyncRetryTransport
 from pyqwest.testing import WSGITransport
 
@@ -172,6 +172,30 @@ def test_retry_content_iterator(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
+
+
+def test_retry_multipart_bytes(app: App, client: SyncClient) -> None:
+    app.status = [500, 200]
+    res = client.put("http://localhost", content=Multipart({"field": b"value"}))
+    assert res.status == 200
+    assert app.count == 2
+    assert b"value" in app.read_content
+
+
+def test_retry_multipart_stream(app: App, client: SyncClient) -> None:
+    def content():
+        yield b"Hello "
+        yield b"world!"
+
+    app.status = [500, 200]
+    res = client.put(
+        "http://localhost",
+        content=Multipart({"field": b"value", "file": Part(content())}),
+    )
+    assert res.status == 200
+    assert app.count == 2
+    assert b"value" in app.read_content
+    assert b"Hello world!" in app.read_content
 
 
 def test_retry_timeout(app: App, client: SyncClient) -> None:

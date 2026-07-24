@@ -21,8 +21,12 @@ _T = TypeVar("_T")
 _JSON: TypeAlias = (
     Mapping[str, _JSON] | Sequence[_JSON] | str | int | float | bool | None
 )
-_RequestContent: TypeAlias = bytes | AsyncIterator[bytes] | Mapping[str, _JSON]
-_SyncRequestContent: TypeAlias = bytes | Iterable[bytes] | Mapping[str, _JSON]
+_RequestContent: TypeAlias = (
+    bytes | AsyncIterator[bytes] | Mapping[str, _JSON] | Multipart
+)
+_SyncRequestContent: TypeAlias = (
+    bytes | Iterable[bytes] | Mapping[str, _JSON] | Multipart
+)
 
 _Buffer: TypeAlias = bytes | memoryview | bytearray
 _QueryParams: TypeAlias = dict[str, str | None] | Iterable[tuple[str, str | None]]
@@ -213,6 +217,68 @@ class HTTPVersion:
     def __gt__(self, other: object) -> bool: ...
     def __ge__(self, other: object) -> bool: ...
 
+class Part:
+    """A single part of a multipart form."""
+
+    def __init__(
+        self,
+        content: bytes | str | Iterable[bytes] | AsyncIterator[bytes],
+        *,
+        filename: str | None = None,
+        content_type: str | None = None,
+    ) -> None:
+        """Creates a new Part object.
+
+        Args:
+            content: The content of the part. A str will be encoded as UTF-8.
+                     An iterator of bytes will be streamed - use a synchronous
+                     iterator with SyncRequest and an asynchronous iterator
+                     with Request.
+            filename: The filename to send in the part's content-disposition header.
+            content_type: The content type of the part.
+
+        Raises:
+            TypeError: If the content is not bytes, str, or an iterator.
+            ValueError: If the content type is invalid.
+        """
+
+    @property
+    def content(self) -> bytes | Iterable[bytes] | AsyncIterator[bytes]:
+        """Returns the content of the part."""
+
+    @property
+    def filename(self) -> str | None:
+        """Returns the filename of the part."""
+
+    @property
+    def content_type(self) -> str | None:
+        """Returns the content type of the part."""
+
+class Multipart:
+    """Multipart form request content.
+
+    Passing a Multipart object as request content sends the request as a
+    multipart/form-data request. The multipart boundary is generated when
+    sending the request, and the request's content-type header is set to
+    match it, replacing any user-provided content-type.
+    """
+
+    def __init__(
+        self,
+        parts: Mapping[str, Part | bytes | str]
+        | Iterable[tuple[str, Part | bytes | str]],
+    ) -> None:
+        """Creates a new Multipart object.
+
+        Args:
+            parts: The named parts of the form. bytes or str values are
+                   converted to parts without a filename or content type.
+        """
+
+    @property
+    def parts(self) -> list[tuple[str, Part]]:
+        """Returns the named parts of the form."""
+
 class Client:
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
@@ -259,7 +325,8 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -344,7 +411,8 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -367,7 +435,8 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -392,7 +461,8 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -417,7 +487,8 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -573,7 +644,8 @@ class Request:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
@@ -590,8 +662,8 @@ class Request:
         """Returns the request headers."""
 
     @property
-    def content(self) -> bytes | AsyncIterator[bytes]:
-        """Returns an async iterator over the request content."""
+    def content(self) -> bytes | AsyncIterator[bytes] | Multipart:
+        """Returns the request content."""
 
     @property
     def _json(self) -> bool: ...
@@ -723,7 +795,8 @@ class SyncClient:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -817,7 +890,8 @@ class SyncClient:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -842,7 +916,8 @@ class SyncClient:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -869,7 +944,8 @@ class SyncClient:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -896,7 +972,8 @@ class SyncClient:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             timeout: The timeout for the request in seconds.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
@@ -1048,7 +1125,8 @@ class SyncRequest:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
         """
 
@@ -1065,8 +1143,8 @@ class SyncRequest:
         """Returns the request headers."""
 
     @property
-    def content(self) -> bytes | Iterator[bytes]:
-        """Returns an iterator over the request content."""
+    def content(self) -> bytes | Iterator[bytes] | Multipart:
+        """Returns the request content."""
 
     @property
     def _json(self) -> bool: ...

@@ -1,14 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, cast
+from collections import OrderedDict
+from collections.abc import AsyncIterator, Iterator
+from types import MappingProxyType
+from typing import cast
 
 import pytest
 
-from pyqwest import Headers, Request, SyncRequest
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
+from pyqwest import (
+    Headers,
+    HTTPTransport,
+    Multipart,
+    Part,
+    Request,
+    SyncHTTPTransport,
+    SyncRequest,
+)
 
 
 @pytest.mark.asyncio
@@ -93,6 +100,7 @@ def test_sync_request_content_iterator():
     assert request.method == "DELETE"
     assert request.url == "https://example.com/resource?id=123"
     assert request.headers == {}
+    assert isinstance(request.content, Iterator)
     parts = list(request.content)
     assert parts == [b"Part 1, ", b"Part 2."]
 
@@ -106,7 +114,10 @@ async def test_request_content_invalid():
             content=cast("bytes", "invalid"),
         )
 
-    assert str(excinfo.value) == "Content must be bytes or an async iterator of bytes"
+    assert (
+        str(excinfo.value)
+        == "Content must be bytes, an async iterator of bytes, or Multipart"
+    )
 
 
 def test_sync_request_content_invalid():
@@ -118,6 +129,164 @@ def test_sync_request_content_invalid():
         )
 
     assert str(excinfo.value) == "'int' object is not iterable"
+
+
+@pytest.mark.asyncio
+async def test_request_content_multipart():
+    multipart = Multipart({"field": b"value"})
+    request = Request(
+        method="POST", url="https://example.com/upload", content=multipart
+    )
+    assert request.content is multipart
+
+
+def test_sync_request_content_multipart():
+    multipart = Multipart({"field": b"value"})
+    request = SyncRequest(
+        method="POST", url="https://example.com/upload", content=multipart
+    )
+    assert request.content is multipart
+
+
+@pytest.mark.asyncio
+async def test_request_multipart_sync_stream_part():
+    multipart = Multipart({"file": Part(iter([b"chunk"]))})
+    request = Request(method="POST", url="http://localhost/upload", content=multipart)
+    async with HTTPTransport() as transport:
+        with pytest.raises(TypeError) as excinfo:
+            transport.execute(request)
+    assert (
+        str(excinfo.value)
+        == "Part content must be bytes, str, or an async iterator of bytes"
+    )
+
+
+def test_sync_request_multipart_async_stream_part():
+    async def stream_async() -> AsyncIterator[bytes]:
+        yield b"chunk"
+
+    multipart = Multipart({"file": Part(stream_async())})
+    request = SyncRequest(
+        method="POST", url="http://localhost/upload", content=multipart
+    )
+    with SyncHTTPTransport() as transport, pytest.raises(TypeError) as excinfo:
+        transport.execute_sync(request)
+    assert (
+        str(excinfo.value) == "Part content must be bytes, str, or an iterator of bytes"
+    )
+
+
+@pytest.mark.asyncio
+async def test_request_multipart_invalid_part_after_stream_part():
+    async def stream_async() -> AsyncIterator[bytes]:
+        yield b"chunk"
+
+    multipart = Multipart(
+        [("first", Part(stream_async())), ("second", Part(iter([b"chunk"])))]
+    )
+    request = Request(method="POST", url="http://localhost/upload", content=multipart)
+    async with HTTPTransport() as transport:
+        with pytest.raises(TypeError) as excinfo:
+            transport.execute(request)
+    assert (
+        str(excinfo.value)
+        == "Part content must be bytes, str, or an async iterator of bytes"
+    )
+
+
+def test_sync_request_multipart_invalid_part_after_stream_part():
+    started = False
+
+    def stream_sync() -> Iterator[bytes]:
+        nonlocal started
+        started = True
+        yield b"chunk"
+
+    async def stream_async() -> AsyncIterator[bytes]:
+        yield b"chunk"
+
+    multipart = Multipart(
+        [("first", Part(stream_sync())), ("second", Part(stream_async()))]
+    )
+    request = SyncRequest(
+        method="POST", url="http://localhost/upload", content=multipart
+    )
+    with SyncHTTPTransport() as transport, pytest.raises(TypeError) as excinfo:
+        transport.execute_sync(request)
+    assert (
+        str(excinfo.value) == "Part content must be bytes, str, or an iterator of bytes"
+    )
+    # The earlier part's iterator must not have been consumed by the
+    # failed request.
+    assert not started
+
+
+def test_part_construction():
+    part = Part(b"data")
+    assert part.content == b"data"
+    assert part.filename is None
+    assert part.content_type is None
+
+    part = Part("text", filename="hello.txt", content_type="text/plain")
+    assert part.content == b"text"
+    assert part.filename == "hello.txt"
+    assert part.content_type == "text/plain"
+
+    stream = iter([b"chunk"])
+    part = Part(stream)
+    assert part.content is stream
+
+
+def test_part_content_invalid():
+    with pytest.raises(TypeError) as excinfo:
+        Part(cast("bytes", 10))
+    assert (
+        str(excinfo.value) == "Part content must be bytes, str, or an iterator of bytes"
+    )
+
+
+def test_part_content_type_invalid():
+    with pytest.raises(ValueError, match="Invalid content type"):
+        Part(b"data", content_type="invalid content type")
+
+
+def test_multipart_construction():
+    part = Part(b"part content")
+    multipart = Multipart({"field": b"value", "file": part})
+    parts = multipart.parts
+    assert len(parts) == 2
+    assert parts[0][0] == "field"
+    assert parts[0][1].content == b"value"
+    assert parts[1][0] == "file"
+    assert parts[1][1] is part
+
+    multipart = Multipart([("a", "text"), ("b", b"bytes")])
+    assert [(name, p.content) for name, p in multipart.parts] == [
+        ("a", b"text"),
+        ("b", b"bytes"),
+    ]
+
+
+def test_multipart_construction_mapping():
+    multipart = Multipart(MappingProxyType({"field": b"value", "text": "hello"}))
+    assert [(name, p.content) for name, p in multipart.parts] == [
+        ("field", b"value"),
+        ("text", b"hello"),
+    ]
+
+    multipart = Multipart(OrderedDict([("a", b"first"), ("b", b"second")]))
+    assert [(name, p.content) for name, p in multipart.parts] == [
+        ("a", b"first"),
+        ("b", b"second"),
+    ]
+
+
+def test_multipart_construction_invalid():
+    with pytest.raises(TypeError):
+        Multipart({"field": cast("bytes", 10)})
+
+    with pytest.raises(TypeError):
+        Multipart(cast("dict", 10))
 
 
 @pytest.mark.asyncio

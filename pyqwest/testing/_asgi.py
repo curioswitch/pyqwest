@@ -4,17 +4,23 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote, urlparse
 
 from pyqwest import (
     Headers,
     HTTPVersion,
+    Multipart,
     ReadError,
     Request,
     Response,
     Transport,
     WriteError,
+)
+from pyqwest._multipart import (
+    encode_multipart_async,
+    multipart_boundary,
+    multipart_content_type,
 )
 
 from ._asgi_compatibility import guarantee_single_callable
@@ -101,6 +107,16 @@ class ASGITransport(Transport):
         if request._json and "content-type" not in request_headers:  # noqa: SLF001
             request_headers["content-type"] = "application/json"
 
+        multipart_content: AsyncIterator[bytes] | None = None
+        if isinstance(request.content, Multipart):
+            boundary = multipart_boundary()
+            request_headers["content-type"] = multipart_content_type(boundary)
+            # The body is encoded fresh with a new boundary, so any
+            # user-provided content-length no longer matches it.
+            if "content-length" in request_headers:
+                del request_headers["content-length"]
+            multipart_content = encode_multipart_async(request.content, boundary)
+
         scope: HTTPScope = {
             "type": "http",
             "asgi": _asgi,
@@ -126,13 +142,27 @@ class ASGITransport(Transport):
 
         receive_queue: asyncio.Queue[bytes | Exception | None] = asyncio.Queue(1)
 
+        # Multipart content uses a separate coroutine because capturing the
+        # request content in a closure changes garbage collection ordering for
+        # requests cancelled mid-body, causing asyncio to finalize a still
+        # running user generator with unraisable errors.
+        async def read_multipart_content(content: AsyncIterator[bytes]) -> None:
+            try:
+                async for chunk in content:
+                    await receive_queue.put(chunk)
+                await receive_queue.put(None)
+            except Exception as e:
+                await receive_queue.put(e)
+            finally:
+                await content.aclose()  # ty: ignore[unresolved-attribute]
+
         async def read_request_content() -> None:
             try:
                 if isinstance(request.content, bytes):
                     await receive_queue.put(request.content)
                     await receive_queue.put(None)
                     return
-                async for chunk in request.content:
+                async for chunk in cast("AsyncIterator[bytes]", request.content):
                     if not isinstance(chunk, bytes):
                         msg = "Request not bytes object"
                         raise WriteError(msg)  # noqa: TRY301
@@ -150,7 +180,11 @@ class ASGITransport(Transport):
 
         # Need a separate task to read the request body to allow
         # cancelling when response closes.
-        request_task = asyncio.create_task(read_request_content())
+        request_task = asyncio.create_task(
+            read_request_content()
+            if multipart_content is None
+            else read_multipart_content(multipart_content)
+        )
 
         async def receive() -> ASGIReceiveEvent:
             chunk = await receive_queue.get()

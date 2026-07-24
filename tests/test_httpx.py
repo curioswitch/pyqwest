@@ -34,11 +34,15 @@ async def echo_app(
             content += message.get("body", b"")
             if not message.get("more_body", False):
                 break
+    headers = [(b"x-request-method", scope["method"].encode("utf-8"))]
+    for name, value in scope["headers"]:
+        if name == b"content-type":
+            headers.append((b"x-request-content-type", value))
     await send(
         {
             "type": "http.response.start",
             "status": 200,
-            "headers": [(b"x-request-method", scope["method"].encode("utf-8"))],
+            "headers": headers,
             "trailers": False,
         }
     )
@@ -49,8 +53,24 @@ def sync_echo_app(
     environ: WSGIEnvironment, start_response: StartResponse
 ) -> Iterable[bytes]:
     content = environ["wsgi.input"].read()
-    start_response("200 OK", [("x-request-method", environ["REQUEST_METHOD"])])
+    headers = [("x-request-method", environ["REQUEST_METHOD"])]
+    if content_type := environ.get("CONTENT_TYPE"):
+        headers.append(("x-request-content-type", content_type))
+    start_response("200 OK", headers)
     return [content]
+
+
+def assert_multipart_echo(res: httpx.Response) -> None:
+    assert res.status_code == 200
+    content_type = res.headers["x-request-content-type"]
+    assert content_type.startswith("multipart/form-data; boundary=")
+    boundary = content_type.removeprefix("multipart/form-data; boundary=")
+    assert res.content.startswith(f"--{boundary}\r\n".encode())
+    assert res.content.rstrip(b"\r\n").endswith(f"--{boundary}--".encode())
+    assert b'name="field"' in res.content
+    assert b"hello" in res.content
+    assert b'filename="f.bin"' in res.content
+    assert b"file bytes" in res.content
 
 
 @pytest.mark.asyncio
@@ -170,6 +190,18 @@ async def test_async_timeout_response_content() -> None:
         await asyncio.sleep(0.01)
 
 
+@pytest.mark.asyncio
+async def test_async_post_multipart() -> None:
+    transport = AsyncPyqwestTransport(ASGITransport(echo_app))
+    async with httpx.AsyncClient(transport=transport) as client:
+        res = await client.post(
+            "http://localhost/",
+            data={"field": "hello"},
+            files={"file": ("f.bin", b"file bytes", "application/octet-stream")},
+        )
+    assert_multipart_echo(res)
+
+
 def test_sync_get() -> None:
     transport = PyqwestTransport(WSGITransport(sync_echo_app))
     with httpx.Client(transport=transport) as client:
@@ -186,6 +218,17 @@ def test_sync_post_content() -> None:
     assert res.status_code == 200
     assert res.headers["x-request-method"] == "POST"
     assert res.content == b"Hello world!"
+
+
+def test_sync_post_multipart() -> None:
+    transport = PyqwestTransport(WSGITransport(sync_echo_app))
+    with httpx.Client(transport=transport) as client:
+        res = client.post(
+            "http://localhost/",
+            data={"field": "hello"},
+            files={"file": ("f.bin", b"file bytes", "application/octet-stream")},
+        )
+    assert_multipart_echo(res)
 
 
 def test_sync_timeout() -> None:

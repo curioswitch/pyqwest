@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pyqwest import Client, ReadError, Request, Response
+from pyqwest import Client, Multipart, Part, ReadError, Request, Response
 from pyqwest.middleware.retry import RetryTransport
 from pyqwest.testing import ASGITransport
 
@@ -182,6 +182,32 @@ async def test_retry_content_iterator(app: App, client: Client) -> None:
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_retry_multipart_bytes(app: App, client: Client) -> None:
+    app.status = [500, 200]
+    res = await client.put("http://localhost", content=Multipart({"field": b"value"}))
+    assert res.status == 200
+    assert app.count == 2
+    assert b"value" in app.read_content
+
+
+@pytest.mark.asyncio
+async def test_retry_multipart_stream(app: App, client: Client) -> None:
+    async def content():
+        yield b"Hello "
+        yield b"world!"
+
+    app.status = [500, 200]
+    res = await client.put(
+        "http://localhost",
+        content=Multipart({"field": b"value", "file": Part(content())}),
+    )
+    assert res.status == 200
+    assert app.count == 2
+    assert b"value" in app.read_content
+    assert b"Hello world!" in app.read_content
 
 
 @pytest.mark.asyncio

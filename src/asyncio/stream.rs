@@ -1,7 +1,10 @@
 use std::sync::Mutex;
 
 use pyo3::{
-    exceptions::PyBaseException, pyclass, pymethods, sync::MutexExt as _, types::PyAnyMethods as _,
+    exceptions::PyBaseException,
+    intern, pyclass, pymethods,
+    sync::MutexExt as _,
+    types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyTuple},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::{
@@ -44,6 +47,28 @@ pub(super) fn into_stream(
 
     let stream = ReceiverStream::new(rx);
     Ok((stream, task.unbind()))
+}
+
+/// Combines multiple request iterator tasks into a single cancellable object.
+/// Multiple tasks are combined with `asyncio.gather`, which propagates
+/// cancellation to all of them. `return_exceptions=True` keeps exceptions from
+/// propagating to the gather future, which is never awaited - the tasks
+/// themselves already consume their exceptions.
+pub(super) fn combine_tasks(
+    py: Python<'_>,
+    mut tasks: Vec<Py<PyAny>>,
+    constants: &Constants,
+) -> PyResult<Option<Py<PyAny>>> {
+    if tasks.len() <= 1 {
+        return Ok(tasks.pop());
+    }
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(intern!(py, "return_exceptions"), true)?;
+    let gathered = constants
+        .gather
+        .bind(py)
+        .call(PyTuple::new(py, &tasks)?, Some(&kwargs))?;
+    Ok(Some(gathered.unbind()))
 }
 
 #[pyclass(module = "_pyqwest.async", frozen)]
