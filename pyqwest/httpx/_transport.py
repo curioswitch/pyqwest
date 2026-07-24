@@ -204,13 +204,15 @@ def sync_request_content(
 def sync_request_content_iter(
     stream: httpx.AsyncByteStream | httpx.SyncByteStream,
 ) -> Iterator[bytes]:
+    # Some streams, notably MultipartStream, subclass both SyncByteStream and
+    # AsyncByteStream, so the sync case must be matched first.
     match stream:
-        case httpx.AsyncByteStream():
-            msg = "unreachable"
-            raise TypeError(msg)
         case httpx.SyncByteStream():
             with contextlib.closing(stream):
                 yield from stream
+        case httpx.AsyncByteStream():
+            msg = "unreachable"
+            raise TypeError(msg)
 
 
 class IteratorByteStream(httpx.SyncByteStream):
