@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from typing import TYPE_CHECKING
 
 import httpx
 import pytest
 
+from pyqwest import HTTPTransport, SyncHTTPTransport
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
 from pyqwest.testing import ASGITransport, WSGITransport
 
@@ -204,3 +206,42 @@ def test_sync_timeout() -> None:
             client.get("http://localhost/")
     finally:
         release.set()
+
+
+def access_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.name == "pyqwest.access"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_async_access_log(url: str, caplog: pytest.LogCaptureFixture) -> None:
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with caplog.at_level(logging.DEBUG, logger="pyqwest.access"):
+                res = await client.get(f"{url}/echo")
+    assert res.status_code == 200
+
+    records = access_records(caplog)
+    assert len(records) == 1
+    assert records[0].getMessage() == f'HTTP Request: GET {url}/echo "HTTP/1.1 200 OK"'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_sync_access_log(url: str, caplog: pytest.LogCaptureFixture) -> None:
+    def run() -> httpx.Response:
+        with SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with httpx.Client(transport=transport) as client:
+                return client.get(f"{url}/echo")
+
+    with caplog.at_level(logging.DEBUG, logger="pyqwest.access"):
+        res = await asyncio.to_thread(run)
+    assert res.status_code == 200
+
+    records = access_records(caplog)
+    assert len(records) == 1
+    assert records[0].getMessage() == f'HTTP Request: GET {url}/echo "HTTP/1.1 200 OK"'
