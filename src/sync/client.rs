@@ -145,15 +145,9 @@ impl SyncClient {
         } else {
             None
         };
-        let headers = if let Some(headers) = headers {
-            if let Ok(headers) = headers.cast::<Headers>() {
-                Some(headers.clone())
-            } else {
-                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
-            }
-        } else {
-            None
-        };
+        let headers = headers
+            .map(|headers| Headers::coerce(py, &headers))
+            .transpose()?;
         let request = SyncRequest::new(py, method, url, headers, content, params, &self.constants)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_execute(py, &request),
@@ -183,15 +177,9 @@ impl SyncClient {
         } else {
             None
         };
-        let headers = if let Some(headers) = headers {
-            if let Ok(headers) = headers.cast::<Headers>() {
-                Some(headers.clone())
-            } else {
-                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
-            }
-        } else {
-            None
-        };
+        let headers = headers
+            .map(|headers| Headers::coerce(py, &headers))
+            .transpose()?;
         let request = SyncRequest::new(py, method, url, headers, content, params, &self.constants)?;
         let response = match &self.transport {
             Transport::Http(transport) => transport.do_stream(py, &request)?.into_pyobject(py),

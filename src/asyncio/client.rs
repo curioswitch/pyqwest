@@ -128,15 +128,9 @@ impl Client {
         content: Option<Bound<'py, PyAny>>,
         params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let headers = if let Some(headers) = headers {
-            if let Ok(headers) = headers.cast::<Headers>() {
-                Some(headers.clone())
-            } else {
-                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
-            }
-        } else {
-            None
-        };
+        let headers = headers
+            .map(|headers| Headers::coerce(py, &headers))
+            .transpose()?;
         let request = Request::new(
             py,
             method,
@@ -166,15 +160,9 @@ impl Client {
         content: Option<Bound<'py, PyAny>>,
         params: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let headers = if let Some(headers) = headers {
-            if let Ok(headers) = headers.cast::<Headers>() {
-                Some(headers.clone())
-            } else {
-                Some(Bound::new(py, Headers::py_new(Some(headers))?)?)
-            }
-        } else {
-            None
-        };
+        let headers = headers
+            .map(|headers| Headers::coerce(py, &headers))
+            .transpose()?;
         let request = Request::py_new(py, method, url, headers, content, params)?;
         match &self.transport {
             Transport::Http(transport) => transport.do_stream(py, &request),
