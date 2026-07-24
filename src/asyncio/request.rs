@@ -13,11 +13,14 @@ use pyo3::{
 use tokio_stream::StreamExt as _;
 
 use crate::{
-    asyncio::stream::into_stream,
+    asyncio::stream::{combine_tasks, into_stream},
+    common::multipart::Multipart,
     headers::Headers,
     shared::{
         constants::Constants,
-        request::{maybe_encode_json_content, RequestHead, RequestStreamResult},
+        request::{
+            maybe_encode_json_content, multipart_content_type, RequestHead, RequestStreamResult,
+        },
     },
 };
 
@@ -72,6 +75,7 @@ impl Request {
         match &self.content {
             Some(Content::Bytes(bytes)) => bytes.into_bound_py_any(py),
             Some(Content::AsyncIter(iter)) => Ok(iter.bind(py).clone().into_any()),
+            Some(Content::Multipart(multipart)) => Ok(multipart.bind(py).clone().into_any()),
             None => Ok(self.constants.empty_bytes.bind(py).clone().into_any()),
         }
     }
@@ -117,48 +121,85 @@ impl Request {
     ) -> PyResult<(reqwest::Request, Arc<ArcSwapOption<Py<PyAny>>>)> {
         let mut req = self.head.new_reqwest(py, http3)?;
         let request_iter_task: Arc<ArcSwapOption<Py<PyAny>>> = Arc::new(ArcSwapOption::empty());
-        if let (Some(body), task) = self.content_into_reqwest(py)? {
-            *req.body_mut() = Some(body);
-            if let Some(task) = task {
+        match &self.content {
+            Some(Content::Bytes(bytes)) => {
+                *req.body_mut() = Some(reqwest::Body::from(Bytes::from_owner(bytes.clone_ref(py))));
+            }
+            Some(Content::AsyncIter(iter)) => {
+                let (body, task) = self.aiter_into_body(py, iter)?;
+                *req.body_mut() = Some(body);
                 request_iter_task.store(Some(Arc::new(task)));
             }
+            Some(Content::Multipart(multipart)) => {
+                let mut tasks: Vec<Py<PyAny>> = Vec::new();
+                let form = multipart.get().build_form(py, |py, stream| {
+                    let aiter = stream
+                        .bind(py)
+                        .call_method0(&self.constants.__aiter__)
+                        .map_err(|_| {
+                            PyTypeError::new_err(
+                                "Part content must be bytes, str, or an async iterator of bytes",
+                            )
+                        })?;
+                    let (body, task) = self.aiter_into_body(py, &aiter.unbind())?;
+                    tasks.push(task);
+                    Ok(body)
+                });
+                let form = match form {
+                    Ok(form) => form,
+                    Err(e) => {
+                        // Cancel the tasks already spawned for earlier stream
+                        // parts, which would otherwise keep consuming their
+                        // iterators after the error.
+                        for task in &tasks {
+                            let _ = task.call_method0(py, &self.constants.cancel);
+                        }
+                        return Err(e);
+                    }
+                };
+                req.headers_mut().insert(
+                    http::header::CONTENT_TYPE,
+                    multipart_content_type(form.boundary())?,
+                );
+                *req.body_mut() = Some(reqwest::Body::wrap_stream(form.into_stream()));
+                if let Some(task) = combine_tasks(py, tasks, &self.constants)? {
+                    request_iter_task.store(Some(Arc::new(task)));
+                }
+            }
+            None => {}
         }
         Ok((req, request_iter_task))
     }
 
-    fn content_into_reqwest(
+    fn aiter_into_body(
         &self,
         py: Python<'_>,
-    ) -> PyResult<(Option<reqwest::Body>, Option<Py<PyAny>>)> {
-        match &self.content {
-            Some(Content::Bytes(bytes)) => Ok((
-                Some(reqwest::Body::from(Bytes::from_owner(bytes.clone_ref(py)))),
-                None,
-            )),
-            Some(Content::AsyncIter(iter)) => {
-                let iter = wrap_async_iter(py, iter)?;
-                let (stream, task) = into_stream(py, iter, &self.constants)?;
-                let res = stream.map(bytes_from_chunk);
-                Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
-            }
-            None => Ok((None, None)),
-        }
+        iter: &Py<PyAny>,
+    ) -> PyResult<(reqwest::Body, Py<PyAny>)> {
+        let iter = wrap_async_iter(py, iter)?;
+        let (stream, task) = into_stream(py, iter, &self.constants)?;
+        let res = stream.map(bytes_from_chunk);
+        Ok((reqwest::Body::wrap_stream(res), task))
     }
 }
 
 enum Content {
     Bytes(PyBackedBytes),
     AsyncIter(Py<PyAny>),
+    Multipart(Py<Multipart>),
 }
 
 impl Content {
     fn from_py(obj: &Bound<'_, PyAny>, constants: &Constants) -> PyResult<Self> {
+        if let Ok(multipart) = obj.cast::<Multipart>() {
+            return Ok(Self::Multipart(multipart.clone().unbind()));
+        }
         if let Ok(bytes) = obj.extract::<PyBackedBytes>() {
             return Ok(Self::Bytes(bytes));
         }
 
         let aiter = obj.call_method0(&constants.__aiter__).map_err(|_| {
-            PyTypeError::new_err("Content must be bytes or an async iterator of bytes")
+            PyTypeError::new_err("Content must be bytes, an async iterator of bytes, or Multipart")
         })?;
         Ok(Self::AsyncIter(aiter.unbind()))
     }

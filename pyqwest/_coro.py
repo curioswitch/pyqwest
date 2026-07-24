@@ -73,7 +73,8 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -165,7 +166,8 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -191,7 +193,8 @@ class Client:
         Args:
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -219,7 +222,8 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:
@@ -248,7 +252,8 @@ class Client:
             method: The HTTP method.
             url: The unencoded request URL.
             headers: The request headers.
-            content: The request content. A Python dictionary will be converted to JSON.
+            content: The request content. A Python dictionary will be converted
+                     to JSON and a Multipart will be sent as a multipart form.
             params: Query parameters to append to the URL. None values will be treated as key-only.
 
         Raises:

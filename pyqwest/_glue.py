@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import types
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from ._pyqwest import FullResponse, Headers, Request, Transport
 
@@ -71,7 +71,13 @@ def read_content_sync(content: Iterator[bytes | memoryview]) -> bytes:
     return bytes(buf)
 
 
-def close_request_iterator(itr: Iterator[bytes]) -> None:
+def close_request_iterator(itr: Iterator[bytes] | list[Iterator[bytes]]) -> None:
+    # Multipart requests may have multiple request iterators.
+    if isinstance(itr, list):
+        for i in cast("list[Iterator[bytes]]", itr):
+            close_request_iterator(i)
+        return
+
     # Running generators cannot be closed reliably.
     # On Python 3.12, it can cause a hang.
     if (

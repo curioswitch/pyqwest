@@ -14,11 +14,17 @@ from urllib.parse import unquote, urlparse
 from pyqwest import (
     Headers,
     HTTPVersion,
+    Multipart,
     ReadError,
     SyncRequest,
     SyncResponse,
     SyncTransport,
     WriteError,
+)
+from pyqwest._multipart import (
+    encode_multipart_sync,
+    multipart_boundary,
+    multipart_content_type,
 )
 from pyqwest._pyqwest import get_sync_timeout
 
@@ -120,7 +126,14 @@ class WSGITransport(SyncTransport):
             for k, v in headers:
                 trailers.add(k, v)
 
-        request_input = RequestInput(request.content, self._http_version)
+        request_content = request.content
+        multipart_content_type_value: str | None = None
+        if isinstance(request_content, Multipart):
+            boundary = multipart_boundary()
+            multipart_content_type_value = multipart_content_type(boundary)
+            request_content = encode_multipart_sync(request_content, boundary)
+
+        request_input = RequestInput(request_content, self._http_version)
         environ: WSGIEnvironment = {
             "REQUEST_METHOD": request.method,
             "SCRIPT_NAME": "",
@@ -158,6 +171,11 @@ class WSGITransport(SyncTransport):
             environ["HTTP_HOST"] = parsed_url.netloc
         if request._json and "content-type" not in request.headers:  # noqa: SLF001
             environ["CONTENT_TYPE"] = "application/json"
+        if multipart_content_type_value is not None:
+            environ["CONTENT_TYPE"] = multipart_content_type_value
+            # The body is encoded fresh with a new boundary, so any
+            # user-provided content-length no longer matches it.
+            environ.pop("CONTENT_LENGTH", None)
 
         response_queue: Queue[bytes | None | Exception] = Queue()
 

@@ -53,6 +53,8 @@ mod pyqwest {
     #[pymodule_export]
     use common::decompress::{BrotliDecompressor, ZstdDecompressor};
     #[pymodule_export]
+    use common::multipart::{Multipart, Part};
+    #[pymodule_export]
     use common::{headername::HttpHeaderName, httpversion::HTTPVersion, FullResponse};
     #[pymodule_export]
     use headers::Headers;

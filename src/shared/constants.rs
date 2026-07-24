@@ -49,6 +49,8 @@ pub(crate) struct ConstantsInner {
     /// The _glue.py function `read_content_sync`.
     pub read_content_sync: Py<PyAny>,
 
+    /// The stdlib function `asyncio.gather`.
+    pub gather: Py<PyAny>,
     /// The stdlib function `json.loads`.
     pub json_loads: Py<PyAny>,
     /// The stdlib function `json.dumps`.
@@ -496,6 +498,7 @@ impl Constants {
                 forward: glue.getattr("forward")?.unbind(),
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
 
+                gather: py.import("asyncio")?.getattr("gather")?.unbind(),
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
                 json_dumps: py.import("json")?.getattr("dumps")?.unbind(),
 

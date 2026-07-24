@@ -14,6 +14,13 @@ use crate::sync::timeout::get_timeout;
 
 const CONTENT_TYPE_JSON: HeaderValue = HeaderValue::from_static("application/json");
 
+/// Returns the content-type header value for a multipart form with the given
+/// boundary.
+pub(crate) fn multipart_content_type(boundary: &str) -> PyResult<HeaderValue> {
+    HeaderValue::from_str(&format!("multipart/form-data; boundary={boundary}"))
+        .map_err(|e| PyValueError::new_err(format!("Invalid multipart boundary: {e}")))
+}
+
 pub(crate) struct RequestHead {
     method: http::Method,
     url: reqwest::Url,

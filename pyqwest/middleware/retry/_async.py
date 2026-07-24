@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from http import HTTPStatus
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, cast, final
 
-from pyqwest import HTTPHeaderName, ReadError, Transport
+from pyqwest import HTTPHeaderName, Multipart, Part, ReadError, Transport
 from pyqwest._pyqwest import Request, Response, _Backoff
 
 from ._shared import (
@@ -81,7 +81,7 @@ class RetryTransport(Transport):
             self._max_interval,
         )
 
-        get_content: Callable[[], bytes | AsyncIterator[bytes]]
+        get_content: Callable[[], bytes | AsyncIterator[bytes] | Multipart]
 
         content = request.content
         if isinstance(content, bytes):
@@ -90,6 +90,8 @@ class RetryTransport(Transport):
                 return content
 
             get_content = _get_content
+        elif isinstance(content, Multipart):
+            get_content = _retrying_multipart_content(content)
         else:
             retrying_content = RetryingRequestContent(content)
             get_content = retrying_content.get
@@ -182,3 +184,41 @@ class RetryingRequestContent:
         async for chunk in self._content:
             self._buffer.extend(chunk)
             yield chunk
+
+
+def _retrying_multipart_content(content: Multipart) -> Callable[[], Multipart]:
+    parts = content.parts
+    if all(isinstance(part.content, bytes) for _, part in parts):
+        # Parts with buffered content can be replayed as is.
+        return lambda: content
+
+    # Stream parts are buffered as they are sent so retries can replay them.
+    retrying_parts = [
+        (
+            name,
+            part,
+            None
+            if isinstance(part.content, bytes)
+            else RetryingRequestContent(cast("AsyncIterator[bytes]", part.content)),
+        )
+        for name, part in parts
+    ]
+
+    def get() -> Multipart:
+        return Multipart(
+            [
+                (
+                    name,
+                    part
+                    if retrying is None
+                    else Part(
+                        retrying.get(),
+                        filename=part.filename,
+                        content_type=part.content_type,
+                    ),
+                )
+                for name, part, retrying in retrying_parts
+            ]
+        )
+
+    return get
