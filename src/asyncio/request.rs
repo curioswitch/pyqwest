@@ -103,8 +103,8 @@ impl Request {
                 py,
                 content.as_ref(),
                 &mut headers,
+                &constants.multipart_class,
                 &constants.multipart_content,
-                &constants,
             )? {
                 (Some(content), false)
             } else {

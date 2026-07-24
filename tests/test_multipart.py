@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pyqwest import Client, Multipart, Part, SyncClient
+from pyqwest import Client, Multipart, Part, SyncClient, SyncMultipart, SyncPart
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -49,14 +49,14 @@ async def test_multipart(client: Client | SyncClient, url: str) -> None:
             yield b"stream "
             yield b"chunks"
 
-        multipart = Multipart(
+        multipart = SyncMultipart(
             [
                 ("field", "hello world"),
                 ("data", b"\x00\x01binary"),
-                ("file", Part(b"file content", filename="hello.txt")),
+                ("file", SyncPart(b"file content", filename="hello.txt")),
                 (
                     "stream",
-                    Part(
+                    SyncPart(
                         stream_sync(),
                         filename="stream.bin",
                         content_type="application/octet-stream",
@@ -105,11 +105,12 @@ async def test_multipart_overrides_content_type(
 ) -> None:
     url = f"{url}/echo"
     headers = [("content-type", "text/plain")]
-    multipart = Multipart({"field": b"value"})
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(client.post, url, headers, multipart)
+        resp = await asyncio.to_thread(
+            client.post, url, headers, SyncMultipart({"field": b"value"})
+        )
     else:
-        resp = await client.post(url, headers, multipart)
+        resp = await client.post(url, headers, Multipart({"field": b"value"}))
 
     assert resp.status == 200
     content_type = resp.headers["x-echo-content-type"]
@@ -129,10 +130,10 @@ async def test_multipart_multiple_streams(
         def stream_sync(chunks: list[bytes]) -> Iterator[bytes]:
             yield from chunks
 
-        multipart = Multipart(
+        multipart = SyncMultipart(
             [
-                ("first", Part(stream_sync([b"first ", b"stream"]))),
-                ("second", Part(stream_sync([b"second ", b"stream"]))),
+                ("first", SyncPart(stream_sync([b"first ", b"stream"]))),
+                ("second", SyncPart(stream_sync([b"second ", b"stream"]))),
             ]
         )
         resp = await asyncio.to_thread(client.post, url, content=multipart)
@@ -174,7 +175,7 @@ async def test_multipart_stream_error(client: Client | SyncClient, url: str) -> 
                 raise RuntimeError(msg)
 
             def run():
-                multipart = Multipart({"file": Part(stream_sync())})
+                multipart = SyncMultipart({"file": SyncPart(stream_sync())})
                 with client.stream(method, url, content=multipart) as resp:
                     b"".join(resp.content)
 

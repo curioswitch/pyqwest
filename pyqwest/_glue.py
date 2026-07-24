@@ -6,7 +6,7 @@ import types
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from ._multipart import (
-    encode_multipart_async,
+    encode_multipart,
     encode_multipart_sync,
     multipart_boundary,
     multipart_content_type,
@@ -16,7 +16,7 @@ from ._pyqwest import FullResponse, Headers, Request, Transport
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
-    from ._multipart import Multipart
+    from ._multipart import Multipart, SyncMultipart
 
 T_contra = TypeVar("T_contra", contravariant=True)
 U = TypeVar("U")
@@ -81,10 +81,10 @@ def read_content_sync(content: Iterator[bytes | memoryview]) -> bytes:
 
 def multipart_content(multipart: Multipart) -> tuple[str, AsyncIterator[bytes]]:
     boundary = multipart_boundary()
-    return multipart_content_type(boundary), encode_multipart_async(multipart, boundary)
+    return multipart_content_type(boundary), encode_multipart(multipart, boundary)
 
 
-def multipart_content_sync(multipart: Multipart) -> tuple[str, Iterator[bytes]]:
+def multipart_content_sync(multipart: SyncMultipart) -> tuple[str, Iterator[bytes]]:
     boundary = multipart_boundary()
     return multipart_content_type(boundary), encode_multipart_sync(multipart, boundary)
 

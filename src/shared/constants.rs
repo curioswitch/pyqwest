@@ -55,6 +55,8 @@ pub(crate) struct ConstantsInner {
 
     /// The class `pyqwest.Multipart`.
     pub multipart_class: Py<PyAny>,
+    /// The class `pyqwest.SyncMultipart`.
+    pub sync_multipart_class: Py<PyAny>,
 
     /// The stdlib function `json.loads`.
     pub json_loads: Py<PyAny>,
@@ -475,6 +477,7 @@ impl Constants {
     #[allow(clippy::too_many_lines)]
     fn new(py: Python<'_>) -> PyResult<Self> {
         let glue = py.import("pyqwest._glue")?;
+        let multipart = py.import("pyqwest._multipart")?;
         let contextvars = py.import("contextvars")?;
         let timeout_context_var = contextvars
             .getattr("ContextVar")?
@@ -505,10 +508,8 @@ impl Constants {
                 multipart_content_sync: glue.getattr("multipart_content_sync")?.unbind(),
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
 
-                multipart_class: py
-                    .import("pyqwest._multipart")?
-                    .getattr("Multipart")?
-                    .unbind(),
+                multipart_class: multipart.getattr("Multipart")?.unbind(),
+                sync_multipart_class: multipart.getattr("SyncMultipart")?.unbind(),
 
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
                 json_dumps: py.import("json")?.getattr("dumps")?.unbind(),

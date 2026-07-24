@@ -5,6 +5,8 @@ These APIs should be used in synchronous apps without asyncio. For asynchronous 
 
 ::: pyqwest.SyncClient
 ::: pyqwest.SyncRequest
+::: pyqwest.SyncMultipart
+::: pyqwest.SyncPart
 ::: pyqwest.SyncTransport
 ::: pyqwest.SyncHTTPTransport
 ::: pyqwest.get_default_sync_transport

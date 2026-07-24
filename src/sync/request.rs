@@ -99,8 +99,8 @@ impl SyncRequest {
                 py,
                 content.as_ref(),
                 &mut headers,
+                &constants.sync_multipart_class,
                 &constants.multipart_content_sync,
-                constants,
             )? {
                 (Some(content), false)
             } else {

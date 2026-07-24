@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from pyqwest import Headers, Multipart, Part, Request, SyncRequest
+from pyqwest import Headers, Multipart, Request, SyncMultipart, SyncRequest
 
 
 @pytest.mark.asyncio
@@ -165,7 +165,7 @@ def test_sync_request_content_multipart():
         method="POST",
         url="https://example.com/upload",
         headers=headers,
-        content=Multipart({"field": b"value"}),
+        content=SyncMultipart({"field": b"value"}),
     )
 
     boundary = multipart_boundary_from_headers(request.headers)
@@ -193,26 +193,29 @@ async def test_request_multipart_unique_boundaries():
 
 
 @pytest.mark.asyncio
-async def test_request_multipart_sync_stream_part():
-    multipart = Multipart({"file": Part(iter([b"chunk"]))})
+async def test_request_content_sync_multipart():
+    multipart = SyncMultipart({"field": b"value"})
     with pytest.raises(TypeError) as excinfo:
-        Request(method="POST", url="https://example.com/upload", content=multipart)
+        Request(
+            method="POST",
+            url="https://example.com/upload",
+            content=cast("Multipart", multipart),
+        )
     assert (
         str(excinfo.value)
-        == "Part content must be bytes, str, or an async iterator of bytes"
+        == "Content must be bytes, an async iterator of bytes, or Multipart"
     )
 
 
-def test_sync_request_multipart_async_stream_part():
-    async def stream_async() -> AsyncIterator[bytes]:
-        yield b"chunk"
-
-    multipart = Multipart({"file": Part(stream_async())})
+def test_sync_request_content_async_multipart():
+    multipart = Multipart({"field": b"value"})
     with pytest.raises(TypeError) as excinfo:
-        SyncRequest(method="POST", url="https://example.com/upload", content=multipart)
-    assert (
-        str(excinfo.value) == "Part content must be bytes, str, or an iterator of bytes"
-    )
+        SyncRequest(
+            method="POST",
+            url="https://example.com/upload",
+            content=cast("SyncMultipart", multipart),
+        )
+    assert str(excinfo.value) == "'Multipart' object is not iterable"
 
 
 @pytest.mark.asyncio

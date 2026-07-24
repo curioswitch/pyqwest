@@ -5,6 +5,8 @@ These APIs should be used in asyncio based apps. For synchronous applications, u
 
 ::: pyqwest.Client
 ::: pyqwest.Request
+::: pyqwest.Multipart
+::: pyqwest.Part
 ::: pyqwest.Transport
 ::: pyqwest.HTTPTransport
 ::: pyqwest.get_default_transport
