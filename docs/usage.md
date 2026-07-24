@@ -197,6 +197,54 @@ will be used for proxy authentication.
         application = MyApplication(client)
     ```
 
+For more control, pass a `Proxy` object instead of a URL. It supports basic
+authentication without embedding credentials in the URL, extra headers to send
+to the proxy, restricting the proxy to `http` or `https` requests, and a
+`no_proxy` exclusion list of hosts that should connect directly.
+
+```python
+from pyqwest import Proxy
+
+proxy = Proxy(
+    "http://localhost:8030",
+    auth=("user", "pass"),
+    headers={"x-tenant": "my-tenant"},
+    no_proxy="localhost, internal.example.com",
+    scheme="https",
+)
+```
+
+A sequence of proxies can also be passed to apply multiple routing rules. The
+first proxy matching a request is used. An empty sequence, like `None`,
+configures no explicit proxy, in which case proxy environment variables such
+as `HTTP_PROXY` still apply.
+
+=== "async"
+
+    ```python
+    async with HTTPTransport(
+        proxy=[
+            Proxy("http://insecure.prox:8030", scheme="http"),
+            Proxy("http://secure.prox:8030", scheme="https"),
+        ]
+    ) as transport:
+        client = Client(transport)
+        application = MyApplication(client)
+    ```
+
+=== "sync"
+
+    ```python
+    with SyncHTTPTransport(
+        proxy=[
+            Proxy("http://insecure.prox:8030", scheme="http"),
+            Proxy("http://secure.prox:8030", scheme="https"),
+        ]
+    ) as transport:
+        client = SyncClient(transport)
+        application = MyApplication(client)
+    ```
+
 ### Timeouts
 
 The transport can be configured with timeouts for overall operations, connect, and reads.

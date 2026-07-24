@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 
-from pyqwest import Client, HTTPTransport, SyncClient, SyncHTTPTransport
+from pyqwest import Client, HTTPTransport, Proxy, SyncClient, SyncHTTPTransport
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -111,3 +111,156 @@ def test_proxy_invalid_url() -> None:
 def test_proxy_invalid_url_sync() -> None:
     with pytest.raises(ValueError, match="Failed to parse proxy URL"):
         SyncHTTPTransport(proxy="not a url")
+
+
+@pytest.mark.asyncio
+async def test_proxy_object(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(proxy=Proxy(proxy.url()), timeout=10) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+    assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_sync(proxy: RecordingProxy) -> None:
+    with SyncHTTPTransport(proxy=Proxy(proxy.url()), timeout=10) as transport:
+        res = await asyncio.to_thread(SyncClient(transport).get, TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+    assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_auth(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(
+        proxy=Proxy(proxy.url(), auth=("user", "pass")), timeout=10
+    ) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    # base64 of "user:pass"
+    assert proxy.request_headers()[b"proxy-authorization"] == b"Basic dXNlcjpwYXNz"
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_headers(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(
+        proxy=Proxy(proxy.url(), headers={"x-tenant": "my-tenant"}), timeout=10
+    ) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    assert proxy.request_headers()[b"x-tenant"] == b"my-tenant"
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_no_proxy_match(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(
+        proxy=Proxy(proxy.url(), no_proxy="pyqwest.invalid"), timeout=10
+    ) as transport:
+        # The target host is excluded from proxying and does not resolve.
+        with pytest.raises(ConnectionError):
+            await Client(transport).get(TARGET_URL)
+    assert not proxy.requests
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_no_proxy_no_match(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(
+        proxy=Proxy(proxy.url(), no_proxy="other.invalid"), timeout=10
+    ) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_scheme_http(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(
+        proxy=Proxy(proxy.url(), scheme="http"), timeout=10
+    ) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+
+
+@pytest.mark.asyncio
+async def test_proxy_object_scheme_https(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(
+        proxy=Proxy(proxy.url(), scheme="https"), timeout=10
+    ) as transport:
+        # Only https requests are proxied, so the http request connects
+        # directly to the target host, which does not resolve.
+        with pytest.raises(ConnectionError):
+            await Client(transport).get(TARGET_URL)
+    assert not proxy.requests
+
+
+@pytest.mark.asyncio
+async def test_proxy_sequence(proxy: RecordingProxy) -> None:
+    proxies = [
+        Proxy("http://other.invalid:8030", scheme="https"),
+        Proxy(proxy.url(), scheme="http"),
+    ]
+    async with HTTPTransport(proxy=proxies, timeout=10) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+    assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
+
+
+@pytest.mark.asyncio
+async def test_proxy_sequence_sync(proxy: RecordingProxy) -> None:
+    proxies = [
+        Proxy("http://other.invalid:8030", scheme="https"),
+        Proxy(proxy.url(), scheme="http"),
+    ]
+    with SyncHTTPTransport(proxy=proxies, timeout=10) as transport:
+        res = await asyncio.to_thread(SyncClient(transport).get, TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+
+
+@pytest.mark.asyncio
+async def test_proxy_sequence_url_strings(proxy: RecordingProxy) -> None:
+    async with HTTPTransport(proxy=[proxy.url()], timeout=10) as transport:
+        res = await Client(transport).get(TARGET_URL)
+    assert res.status == 200
+    assert res.content == b"proxy"
+
+
+def test_proxy_object_invalid_url() -> None:
+    with pytest.raises(ValueError, match="Failed to parse proxy URL"):
+        Proxy("not a url")
+
+
+def test_proxy_object_invalid_scheme() -> None:
+    with pytest.raises(ValueError, match="Invalid proxy scheme"):
+        Proxy("http://localhost:8030", scheme="socks5")  # ty: ignore[invalid-argument-type]
+
+
+def test_proxy_invalid_type() -> None:
+    with pytest.raises(TypeError, match="proxy must be"):
+        HTTPTransport(proxy=1)  # ty: ignore[invalid-argument-type]
+
+
+def test_proxy_invalid_item_type() -> None:
+    with pytest.raises(TypeError, match="proxy must be"):
+        HTTPTransport(proxy=[1])  # ty: ignore[invalid-argument-type]
+
+
+def test_proxy_invalid_dict() -> None:
+    # A requests/httpx-style mapping would otherwise iterate as its keys.
+    with pytest.raises(TypeError, match="proxy must be"):
+        HTTPTransport(proxy={"http": "http://localhost:8030"})  # ty: ignore[invalid-argument-type]
+
+
+def test_proxy_invalid_bytes() -> None:
+    # Bytes would otherwise iterate as a sequence of ints.
+    with pytest.raises(TypeError, match="proxy must be"):
+        HTTPTransport(proxy=b"http://localhost:8030")  # ty: ignore[invalid-argument-type]
+
+
+def test_proxy_repr_masks_password() -> None:
+    rendered = repr(Proxy("http://user:pass@localhost:8030"))
+    assert "pass" not in rendered
+    assert rendered == 'Proxy(url="http://user:********@localhost:8030/", scheme="all")'
