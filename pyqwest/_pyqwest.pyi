@@ -12,7 +12,7 @@ from collections.abc import (
 )
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Protocol, TypeAlias, TypeVar, overload, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, TypeVar, overload, runtime_checkable
 
 from opentelemetry.metrics import MeterProvider
 from opentelemetry.trace import TracerProvider
@@ -427,6 +427,42 @@ class Client:
             WriteError: If an error occurs writing the request.
         """
 
+class Proxy:
+    """A proxy for transports to route requests through.
+
+    In addition to authentication and extra headers to send to the proxy,
+    it allows restricting the requests routed through the proxy by URL
+    scheme or exclusion list.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        auth: tuple[str, str] | None = None,
+        headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        no_proxy: str | None = None,
+        scheme: Literal["all", "http", "https"] = "all",
+    ) -> None:
+        """Creates a new Proxy object.
+
+        Args:
+            url: The URL of the proxy, for example "http://localhost:8030".
+                 The URL scheme may be http, https, socks5, or socks5h.
+                 Credentials in the URL, for example
+                 "http://user:pass@localhost:8030", will be used for proxy
+                 authentication.
+            auth: A (username, password) tuple to use for basic proxy
+                  authentication, as an alternative to credentials in the URL.
+            headers: Extra headers to send to the proxy.
+            no_proxy: A comma-separated list of hosts that should not be proxied.
+                      Entries may be IP addresses, optionally with a subnet mask
+                      such as "192.168.1.0/24", or domain names which also match
+                      all subdomains. The entry "*" matches all hosts.
+            scheme: Which request URL scheme to route through the proxy. By default,
+                    both http and https requests are proxied.
+        """
+
 @runtime_checkable
 class Transport(Protocol):
     """Protocol for asynchronous HTTP transport implementations.
@@ -452,7 +488,7 @@ class HTTPTransport:
         tls_key: bytes | None = None,
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
-        proxy: str | None = None,
+        proxy: str | Proxy | Sequence[str | Proxy] | None = None,
         timeout: float | None = None,
         connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
@@ -484,11 +520,14 @@ class HTTPTransport:
             http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
                           plaintext and ALPN negotiates the version for TLS connections
                           which typically means HTTP/2 if the server supports it.
-            proxy: The URL of a proxy to send all requests through, for example
-                   "http://localhost:8030". The URL scheme may be http, https, socks5,
-                   or socks5h. Credentials in the URL, for example
-                   "http://user:pass@localhost:8030", will be used for proxy
-                   authentication.
+            proxy: A proxy to send requests through. A URL string such as
+                   "http://localhost:8030" proxies all requests, equivalent to
+                   Proxy(url). Pass a Proxy object to configure authentication,
+                   extra headers, or routing rules, or a sequence of them to
+                   apply multiple proxy rules, where the first matching proxy
+                   is used for each request. An empty sequence, like None,
+                   configures no explicit proxy, in which case proxy
+                   environment variables such as HTTP_PROXY still apply.
             timeout: Default timeout for requests in seconds. This is the timeout from
                      the start of the request to the end of the response.
             connect_timeout: Timeout for connection establishment in seconds.
@@ -932,7 +971,7 @@ class SyncHTTPTransport:
         tls_key: bytes | None = None,
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
-        proxy: str | None = None,
+        proxy: str | Proxy | Sequence[str | Proxy] | None = None,
         timeout: float | None = None,
         connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
@@ -964,11 +1003,14 @@ class SyncHTTPTransport:
             http_version: The HTTP version to use for requests. If unset, HTTP/1 is used for
                           plaintext and ALPN negotiates the version for TLS connections
                           which typically means HTTP/2 if the server supports it.
-            proxy: The URL of a proxy to send all requests through, for example
-                   "http://localhost:8030". The URL scheme may be http, https, socks5,
-                   or socks5h. Credentials in the URL, for example
-                   "http://user:pass@localhost:8030", will be used for proxy
-                   authentication.
+            proxy: A proxy to send requests through. A URL string such as
+                   "http://localhost:8030" proxies all requests, equivalent to
+                   Proxy(url). Pass a Proxy object to configure authentication,
+                   extra headers, or routing rules, or a sequence of them to
+                   apply multiple proxy rules, where the first matching proxy
+                   is used for each request. An empty sequence, like None,
+                   configures no explicit proxy, in which case proxy
+                   environment variables such as HTTP_PROXY still apply.
             timeout: Default timeout for requests in seconds. This is the timeout from
                      the start of the request to the end of the response.
             connect_timeout: Timeout for connection establishment in seconds.
