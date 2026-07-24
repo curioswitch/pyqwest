@@ -442,7 +442,7 @@ class Proxy:
         auth: tuple[str, str] | None = None,
         headers: Headers | Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         no_proxy: str | None = None,
-        scheme: Literal["all", "http", "https"] = "all",
+        scheme: Literal["http", "https"] | None = None,
     ) -> None:
         """Creates a new Proxy object.
 

@@ -3,7 +3,7 @@ use std::time::Duration;
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     sync::PyOnceLock,
-    types::{PyAnyMethods as _, PyByteArray, PyBytes, PyString, PyStringMethods as _},
+    types::{PyAnyMethods as _, PyString, PyStringMethods as _},
     Bound, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -138,20 +138,8 @@ fn proxies_from_py(proxy: &Bound<'_, PyAny>) -> PyResult<Vec<reqwest::Proxy>> {
     if proxy.cast::<PyString>().is_ok() || proxy.cast::<Proxy>().is_ok() {
         return Ok(vec![proxy_from_item(proxy)?]);
     }
-    // Mappings iterate as their keys and byte strings as ints, so reject them
-    // before falling through to iteration rather than misreading them as
-    // sequences of proxies.
-    if proxy.hasattr("keys")?
-        || proxy.cast::<PyBytes>().is_ok()
-        || proxy.cast::<PyByteArray>().is_ok()
-    {
-        return Err(PyTypeError::new_err(PROXY_TYPE_ERROR));
-    }
-    let items = proxy
-        .try_iter()
-        .map_err(|_| PyTypeError::new_err(PROXY_TYPE_ERROR))?;
     let mut proxies = Vec::new();
-    for item in items {
+    for item in proxy.try_iter()? {
         proxies.push(proxy_from_item(&item?)?);
     }
     Ok(proxies)

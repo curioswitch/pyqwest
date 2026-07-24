@@ -10,28 +10,28 @@ use crate::headers::Headers;
 pub(crate) struct Proxy {
     inner: reqwest::Proxy,
     url: String,
-    scheme: String,
+    scheme: Option<String>,
 }
 
 #[pymethods]
 impl Proxy {
     #[new]
-    #[pyo3(signature = (url, *, auth=None, headers=None, no_proxy=None, scheme="all"))]
+    #[pyo3(signature = (url, *, auth=None, headers=None, no_proxy=None, scheme=None))]
     fn py_new(
         py: Python<'_>,
         url: &str,
         auth: Option<(String, String)>,
         headers: Option<Bound<'_, PyAny>>,
         no_proxy: Option<&str>,
-        scheme: &str,
+        scheme: Option<&str>,
     ) -> PyResult<Self> {
         let mut proxy = parse_proxy(match scheme {
-            "all" => reqwest::Proxy::all(url),
-            "http" => reqwest::Proxy::http(url),
-            "https" => reqwest::Proxy::https(url),
-            _ => {
+            None => reqwest::Proxy::all(url),
+            Some("http") => reqwest::Proxy::http(url),
+            Some("https") => reqwest::Proxy::https(url),
+            Some(scheme) => {
                 return Err(PyValueError::new_err(format!(
-                    "Invalid proxy scheme '{scheme}', must be 'all', 'http', or 'https'"
+                    "Invalid proxy scheme '{scheme}', must be 'http' or 'https'"
                 )))
             }
         })?;
@@ -50,16 +50,19 @@ impl Proxy {
         Ok(Self {
             inner: proxy,
             url: url.to_string(),
-            scheme: scheme.to_string(),
+            scheme: scheme.map(str::to_string),
         })
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "Proxy(url=\"{}\", scheme=\"{}\")",
-            mask_url(&self.url),
-            self.scheme
-        )
+        match &self.scheme {
+            Some(scheme) => format!(
+                "Proxy(url=\"{}\", scheme=\"{}\")",
+                mask_url(&self.url),
+                scheme
+            ),
+            None => format!("Proxy(url=\"{}\")", mask_url(&self.url)),
+        }
     }
 }
 
