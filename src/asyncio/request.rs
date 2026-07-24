@@ -17,7 +17,10 @@ use crate::{
     headers::Headers,
     shared::{
         constants::Constants,
-        request::{maybe_encode_json_content, RequestHead, RequestStreamResult},
+        request::{
+            maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
+            RequestStreamResult,
+        },
     },
 };
 
@@ -92,10 +95,18 @@ impl Request {
         params: Option<Bound<'py, PyAny>>,
         constants: Constants,
     ) -> PyResult<Self> {
-        let headers = Headers::from_option(py, headers)?;
+        let mut headers = Headers::from_option(py, headers)?;
         let (content, json) =
             if let Some(content) = maybe_encode_json_content(py, content.as_ref(), &constants)? {
                 (Some(content), true)
+            } else if let Some(content) = maybe_encode_multipart_content(
+                py,
+                content.as_ref(),
+                &mut headers,
+                &constants.multipart_content,
+                &constants,
+            )? {
+                (Some(content), false)
             } else {
                 (content, false)
             };
@@ -158,7 +169,7 @@ impl Content {
         }
 
         let aiter = obj.call_method0(&constants.__aiter__).map_err(|_| {
-            PyTypeError::new_err("Content must be bytes or an async iterator of bytes")
+            PyTypeError::new_err("Content must be bytes, an async iterator of bytes, or Multipart")
         })?;
         Ok(Self::AsyncIter(aiter.unbind()))
     }

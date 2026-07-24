@@ -51,6 +51,25 @@ impl Headers {
         }
     }
 
+    /// Returns a copy of these headers with the content-type header set to the
+    /// given value, replacing any existing values.
+    pub(crate) fn copy_with_content_type(
+        &self,
+        py: Python<'_>,
+        content_type: &Bound<'_, PyString>,
+    ) -> PyResult<Self> {
+        let src = self.store.lock_py_attached(py).unwrap();
+        let mut store: HeaderMap<PyHeaderValue> = HeaderMap::with_capacity(src.len() + 1);
+        for (name, value) in src.iter() {
+            store.append(name, value.clone_ref(py));
+        }
+        drop(src);
+        store.insert(header::CONTENT_TYPE, PyHeaderValue::from_py(content_type)?);
+        Ok(Headers {
+            store: Mutex::new(store),
+        })
+    }
+
     /// Appends all entries, converted to HTTP values, to `headers`.
     pub(crate) fn append_to(&self, py: Python<'_>, headers: &mut HeaderMap) -> PyResult<()> {
         for (name, value) in self.store.lock_py_attached(py).unwrap().iter() {
@@ -622,6 +641,15 @@ impl PyHeaderValue {
     fn from_http(http: HeaderValue) -> Self {
         Self {
             kind: PyHeaderValueKind::Http(http),
+        }
+    }
+
+    fn clone_ref(&self, py: Python<'_>) -> Self {
+        Self {
+            kind: match &self.kind {
+                PyHeaderValueKind::Py(py_str) => PyHeaderValueKind::Py(py_str.clone_ref(py)),
+                PyHeaderValueKind::Http(http) => PyHeaderValueKind::Http(http.clone()),
+            },
         }
     }
 

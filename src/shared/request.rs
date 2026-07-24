@@ -167,3 +167,31 @@ pub(crate) fn maybe_encode_json_content<'py>(
     let json_str = constants.json_dumps.bind(py).call1((value,))?;
     Ok(Some(json_str.cast::<PyString>()?.encode_utf8()?.into_any()))
 }
+
+/// If `value` is a `Multipart`, encodes it with `encode_fn`, a Python glue
+/// function returning a (content-type, bytes iterator) tuple, and replaces
+/// `headers` with a copy holding the content-type of the generated boundary.
+pub(crate) fn maybe_encode_multipart_content<'py>(
+    py: Python<'py>,
+    value: Option<&Bound<'py, PyAny>>,
+    headers: &mut Py<Headers>,
+    encode_fn: &Py<PyAny>,
+    constants: &Constants,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if !value.is_instance(constants.multipart_class.bind(py))? {
+        return Ok(None);
+    }
+    let encoded = encode_fn.bind(py).call1((value,))?;
+    let content_type = encoded.get_item(0)?;
+    let content = encoded.get_item(1)?;
+    *headers = Py::new(
+        py,
+        headers
+            .get()
+            .copy_with_content_type(py, content_type.cast::<PyString>()?)?,
+    )?;
+    Ok(Some(content))
+}

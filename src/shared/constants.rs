@@ -46,8 +46,15 @@ pub(crate) struct ConstantsInner {
     pub execute_and_read_full: Py<PyAny>,
     /// The _glue.py function `forward`.
     pub forward: Py<PyAny>,
+    /// The _glue.py function `multipart_content`.
+    pub multipart_content: Py<PyAny>,
+    /// The _glue.py function `multipart_content_sync`.
+    pub multipart_content_sync: Py<PyAny>,
     /// The _glue.py function `read_content_sync`.
     pub read_content_sync: Py<PyAny>,
+
+    /// The class `pyqwest.Multipart`.
+    pub multipart_class: Py<PyAny>,
 
     /// The stdlib function `json.loads`.
     pub json_loads: Py<PyAny>,
@@ -494,7 +501,14 @@ impl Constants {
                 close_request_iterator: glue.getattr("close_request_iterator")?.unbind(),
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
                 forward: glue.getattr("forward")?.unbind(),
+                multipart_content: glue.getattr("multipart_content")?.unbind(),
+                multipart_content_sync: glue.getattr("multipart_content_sync")?.unbind(),
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
+
+                multipart_class: py
+                    .import("pyqwest._multipart")?
+                    .getattr("Multipart")?
+                    .unbind(),
 
                 json_loads: py.import("json")?.getattr("loads")?.unbind(),
                 json_dumps: py.import("json")?.getattr("dumps")?.unbind(),

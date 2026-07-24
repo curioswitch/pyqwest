@@ -14,7 +14,8 @@ use crate::{
     shared::{
         constants::Constants,
         request::{
-            maybe_encode_json_content, RequestHead, RequestStreamError, RequestStreamResult,
+            maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
+            RequestStreamError, RequestStreamResult,
         },
     },
     sync::timeout::get_timeout,
@@ -90,10 +91,18 @@ impl SyncRequest {
         params: Option<Bound<'py, PyAny>>,
         constants: &Constants,
     ) -> PyResult<Self> {
-        let headers = Headers::from_option(py, headers)?;
+        let mut headers = Headers::from_option(py, headers)?;
         let (content, json) =
             if let Some(content) = maybe_encode_json_content(py, content.as_ref(), constants)? {
                 (Some(content), true)
+            } else if let Some(content) = maybe_encode_multipart_content(
+                py,
+                content.as_ref(),
+                &mut headers,
+                &constants.multipart_content_sync,
+                constants,
+            )? {
+                (Some(content), false)
             } else {
                 (content, false)
             };
