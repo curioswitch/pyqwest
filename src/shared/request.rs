@@ -1,7 +1,6 @@
 use std::fmt;
 
 use http::HeaderValue;
-use pyo3::sync::MutexExt as _;
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyString, PyStringMethods as _};
 use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 use pyo3::{Bound, PyAny};
@@ -62,10 +61,7 @@ impl RequestHead {
         if http3 {
             *req.version_mut() = http::Version::HTTP_3;
         }
-        let hdrs = self.headers.bind(py).borrow();
-        for (name, value) in hdrs.store.lock_py_attached(py).unwrap().iter() {
-            req.headers_mut().append(name, value.as_http(py)?);
-        }
+        self.headers.get().append_to(py, req.headers_mut())?;
         if self.json && !req.headers().contains_key(http::header::CONTENT_TYPE) {
             req.headers_mut()
                 .insert(http::header::CONTENT_TYPE, CONTENT_TYPE_JSON);

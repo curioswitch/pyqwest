@@ -38,6 +38,27 @@ impl Headers {
         }
     }
 
+    /// Returns the object itself if it is already a `Headers`, otherwise
+    /// constructs a `Headers` from it as `Headers(obj)` would.
+    pub(crate) fn coerce<'py>(
+        py: Python<'py>,
+        obj: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, Headers>> {
+        if let Ok(headers) = obj.cast::<Headers>() {
+            Ok(headers.clone())
+        } else {
+            Bound::new(py, Headers::py_new(Some(obj.clone()))?)
+        }
+    }
+
+    /// Appends all entries, converted to HTTP values, to `headers`.
+    pub(crate) fn append_to(&self, py: Python<'_>, headers: &mut HeaderMap) -> PyResult<()> {
+        for (name, value) in self.store.lock_py_attached(py).unwrap().iter() {
+            headers.append(name, value.as_http(py)?);
+        }
+        Ok(())
+    }
+
     pub(crate) fn fill(&self, headers: HeaderMap) {
         let mut store = self.store.lock().unwrap();
         store.reserve(headers.len());
