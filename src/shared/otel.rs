@@ -31,6 +31,7 @@ struct InstrumentationInner {
 #[derive(Clone)]
 pub(crate) struct Instrumentation {
     inner: Option<Arc<InstrumentationInner>>,
+    constants: Constants,
 }
 
 impl Instrumentation {
@@ -42,7 +43,10 @@ impl Instrumentation {
         constants: &Constants,
     ) -> PyResult<Self> {
         if !enable_otel {
-            return Ok(Self { inner: None });
+            return Ok(Self {
+                inner: None,
+                constants: constants.clone(),
+            });
         }
         let meter_provider = match meter_provider {
             Some(mp) => mp,
@@ -88,12 +92,56 @@ impl Instrumentation {
                 metric_http_client_request_duration: metric_http_client_request_duration.unbind(),
                 constants: constants.clone(),
             })),
+            constants: constants.clone(),
         })
     }
 
+    /// Prepares log records for this request if the "pyqwest" logger (granular
+    /// lifecycle records) or the "pyqwest.access" logger (one httpx-style summary
+    /// line per request) has DEBUG enabled. The level checks happen per request so
+    /// runtime logging configuration changes are respected like in pure Python.
+    fn start_log(
+        &self,
+        py: Python<'_>,
+        request: &RequestHead,
+    ) -> PyResult<Option<Arc<LogOperation>>> {
+        let constants = &self.constants;
+        let debug = constants
+            .logger_is_enabled_for
+            .bind(py)
+            .call1((&constants.logging_debug_level,))?
+            .is_truthy()?;
+        let access = constants
+            .access_logger_is_enabled_for
+            .bind(py)
+            .call1((&constants.logging_debug_level,))?
+            .is_truthy()?;
+        if !debug && !access {
+            return Ok(None);
+        }
+        let method = request.method(py)?;
+        let url = PyString::new(py, request.url()).unbind();
+        if debug {
+            constants.logger_debug.bind(py).call1((
+                &constants.log_request_started,
+                &method,
+                &url,
+            ))?;
+        }
+        Ok(Some(Arc::new(LogOperation {
+            method,
+            url,
+            debug,
+            access,
+            response_info: Mutex::new(None),
+            constants: constants.clone(),
+        })))
+    }
+
     pub(crate) fn start(&self, py: Python<'_>, request: &RequestHead) -> PyResult<Operation> {
+        let log = self.start_log(py, request)?;
         let Some(inner) = self.inner.as_ref() else {
-            return Ok(Operation { inner: None });
+            return Ok(Operation { inner: None, log });
         };
         let http_method = request.method(py)?;
         let base_attrs = PyDict::new(py);
@@ -145,13 +193,66 @@ impl Instrumentation {
                 instrumentation: inner.clone(),
                 constants: inner.constants.clone(),
             })),
+            log,
         })
     }
 }
 
+#[derive(Clone, Copy)]
 struct ResponseInfo {
     status_code: http::StatusCode,
     http_version: http::Version,
+}
+
+struct LogOperation {
+    method: Py<PyString>,
+    url: Py<PyString>,
+    /// Whether the "pyqwest" logger has DEBUG enabled.
+    debug: bool,
+    /// Whether the "pyqwest.access" logger has DEBUG enabled.
+    access: bool,
+    response_info: Mutex<Option<ResponseInfo>>,
+    constants: Constants,
+}
+
+impl LogOperation {
+    fn emit(&self, py: Python<'_>, err: Option<&PyErr>) -> PyResult<()> {
+        let constants = &self.constants;
+        let Some(info) = self.response_info.lock_py_attached(py).unwrap().take() else {
+            // Requests that failed without a response, e.g. connection errors, only
+            // get a granular record, keeping the access log to responses like httpx.
+            if let (true, Some(err)) = (self.debug, err) {
+                constants.logger_debug.bind(py).call1((
+                    &constants.log_request_failed,
+                    &self.method,
+                    &self.url,
+                    err.value(py),
+                ))?;
+            }
+            return Ok(());
+        };
+        // The response summary is only recorded on the access logger. It is a child
+        // of the "pyqwest" logger so enabling that at DEBUG includes it by default,
+        // without duplicating a granular record for the same event.
+        if !self.access {
+            return Ok(());
+        }
+        let version = match info.http_version {
+            http::Version::HTTP_10 => &constants.log_http_1_0,
+            http::Version::HTTP_2 => &constants.log_http_2,
+            http::Version::HTTP_3 => &constants.log_http_3,
+            _ => &constants.log_http_1_1,
+        };
+        constants.access_logger_debug.bind(py).call1((
+            &constants.http_request_log,
+            &self.method,
+            &self.url,
+            version,
+            constants.status_code(py, info.status_code),
+            info.status_code.canonical_reason().unwrap_or_default(),
+        ))?;
+        Ok(())
+    }
 }
 
 struct OperationInner {
@@ -168,6 +269,7 @@ struct OperationInner {
 #[derive(Clone)]
 pub(crate) struct Operation {
     inner: Option<Arc<OperationInner>>,
+    log: Option<Arc<LogOperation>>,
 }
 
 impl Operation {
@@ -191,18 +293,22 @@ impl Operation {
     }
 
     pub(crate) fn fill_response(&self, response: &reqwest::Response) {
-        let Some(inner) = self.inner.as_ref() else {
-            return;
-        };
-        let mut response_info = inner.response_info.lock().unwrap();
-
-        *response_info = Some(ResponseInfo {
+        let info = ResponseInfo {
             status_code: response.status(),
             http_version: response.version(),
-        });
+        };
+        if let Some(inner) = self.inner.as_ref() {
+            *inner.response_info.lock().unwrap() = Some(info);
+        }
+        if let Some(log) = self.log.as_ref() {
+            *log.response_info.lock().unwrap() = Some(info);
+        }
     }
 
     pub(crate) fn end(&self, py: Python<'_>, err: Option<&PyErr>) -> PyResult<()> {
+        if let Some(log) = self.log.as_ref() {
+            log.emit(py, err)?;
+        }
         let Some(inner) = self.inner.as_ref() else {
             return Ok(());
         };

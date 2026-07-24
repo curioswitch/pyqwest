@@ -233,3 +233,45 @@ setting by passing `timeout` for sync clients or using `asyncio.wait_for` or
     ```python
     response = client.get("https://pyqwest.dev", timeout=2.0)
     ```
+
+## Logging
+
+pyqwest integrates with Python's standard [`logging`](https://docs.python.org/3/library/logging.html)
+module using two loggers, both emitting at `DEBUG` level:
+
+- `pyqwest.access` — one summary line per HTTP request, in the same format as httpx,
+  emitted once response headers are received.
+- `pyqwest` — granular request lifecycle records, e.g. when a request is sent or
+  fails without a response.
+
+Unlike httpx, no records are emitted at `INFO` level, so enabling `INFO` for your whole
+application will not also log every HTTP request. Opt in explicitly instead:
+
+```python
+import logging
+
+logging.basicConfig(
+    format="%(levelname)s [%(asctime)s] %(name)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logging.getLogger("pyqwest.access").setLevel(logging.DEBUG)
+
+response = client.get("https://pyqwest.dev")
+```
+
+Will send log output such as:
+
+```
+DEBUG [2026-07-24 12:34:56] pyqwest.access - HTTP Request: GET https://pyqwest.dev "HTTP/2 200 OK"
+```
+
+Setting the `pyqwest` logger to `DEBUG` instead enables the full request lifecycle,
+including the access records through standard logger inheritance. The two never
+duplicate each other, and an explicit level on `pyqwest.access` always takes
+precedence, so the access log can be enabled on its own or silenced while keeping
+the granular records.
+
+The log records are emitted directly from the Rust HTTP transports with no overhead
+when neither logger is enabled for `DEBUG`. Requests that fail without a response,
+such as connection errors, appear only on the `pyqwest` logger, keeping the access
+log to requests with responses like httpx.

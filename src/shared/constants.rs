@@ -136,6 +136,32 @@ pub(crate) struct ConstantsInner {
     /// The string "url.full".
     pub url_full: Py<PyString>,
 
+    // Logging.
+    /// The bound method `isEnabledFor` of the "pyqwest" logger.
+    pub(super) logger_is_enabled_for: Py<PyAny>,
+    /// The bound method `debug` of the "pyqwest" logger.
+    pub(super) logger_debug: Py<PyAny>,
+    /// The bound method `isEnabledFor` of the "pyqwest.access" logger.
+    pub(super) access_logger_is_enabled_for: Py<PyAny>,
+    /// The bound method `debug` of the "pyqwest.access" logger.
+    pub(super) access_logger_debug: Py<PyAny>,
+    /// The level `logging.DEBUG`.
+    pub(super) logging_debug_level: Py<PyAny>,
+    /// The format string for access log records.
+    pub(super) http_request_log: Py<PyString>,
+    /// The format string for request started log records.
+    pub(super) log_request_started: Py<PyString>,
+    /// The format string for request failed log records.
+    pub(super) log_request_failed: Py<PyString>,
+    /// The string "HTTP/1.0".
+    pub(super) log_http_1_0: Py<PyString>,
+    /// The string "HTTP/1.1".
+    pub(super) log_http_1_1: Py<PyString>,
+    /// The string "HTTP/2".
+    pub(super) log_http_2: Py<PyString>,
+    /// The string "HTTP/3".
+    pub(super) log_http_3: Py<PyString>,
+
     /// The string `add`.
     pub(super) add: Py<PyString>,
     /// The string `create_histogram`.
@@ -473,6 +499,10 @@ impl Constants {
             .getattr("ContextVar")?
             .call1(("pyqwest_timeout",))?;
 
+        let logging = py.import("logging")?;
+        let logger = logging.call_method1("getLogger", ("pyqwest",))?;
+        let access_logger = logging.call_method1("getLogger", ("pyqwest.access",))?;
+
         let otel_metrics = py.import("opentelemetry.metrics")?;
         let otel_propagate = py.import("opentelemetry.propagate")?;
         let otel_trace = py.import("opentelemetry.trace")?;
@@ -543,6 +573,19 @@ impl Constants {
                 server_address: PyString::new(py, "server.address").unbind(),
                 server_port: PyString::new(py, "server.port").unbind(),
                 url_full: PyString::new(py, "url.full").unbind(),
+
+                logger_is_enabled_for: logger.getattr("isEnabledFor")?.unbind(),
+                logger_debug: logger.getattr("debug")?.unbind(),
+                access_logger_is_enabled_for: access_logger.getattr("isEnabledFor")?.unbind(),
+                access_logger_debug: access_logger.getattr("debug")?.unbind(),
+                logging_debug_level: logging.getattr("DEBUG")?.unbind(),
+                http_request_log: PyString::new(py, "HTTP Request: %s %s \"%s %d %s\"").unbind(),
+                log_request_started: PyString::new(py, "Sending HTTP request: %s %s").unbind(),
+                log_request_failed: PyString::new(py, "HTTP request failed: %s %s (%r)").unbind(),
+                log_http_1_0: PyString::new(py, "HTTP/1.0").unbind(),
+                log_http_1_1: PyString::new(py, "HTTP/1.1").unbind(),
+                log_http_2: PyString::new(py, "HTTP/2").unbind(),
+                log_http_3: PyString::new(py, "HTTP/3").unbind(),
 
                 add: PyString::new(py, "add").unbind(),
                 create_histogram: PyString::new(py, "create_histogram").unbind(),
