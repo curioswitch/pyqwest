@@ -19,6 +19,8 @@ pub(crate) mod decompress;
 pub(crate) mod headername;
 /// An enum type corresponding to HTTP versions.
 pub(crate) mod httpversion;
+/// A type describing a proxy for transports to route requests through.
+pub(crate) mod proxy;
 
 #[pyclass(module = "pyqwest", frozen)]
 pub(crate) struct FullResponse {

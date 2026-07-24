@@ -5,3 +5,4 @@
 ::: pyqwest.HTTPVersion
 ::: pyqwest.Multipart
 ::: pyqwest.Part
+::: pyqwest.Proxy

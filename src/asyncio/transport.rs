@@ -59,7 +59,7 @@ impl HttpTransport {
         tls_key: Option<&[u8]>,
         tls_cert: Option<&[u8]>,
         http_version: Option<Bound<'_, HTTPVersion>>,
-        proxy: Option<&str>,
+        proxy: Option<Bound<'_, PyAny>>,
         timeout: Option<f64>,
         connect_timeout: Option<f64>,
         read_timeout: Option<f64>,
