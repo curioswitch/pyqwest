@@ -1,13 +1,20 @@
 use std::time::Duration;
 
 use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     sync::PyOnceLock,
-    Bound, PyResult, Python,
+    types::{PyAnyMethods as _, PyByteArray, PyBytes, PyString, PyStringMethods as _},
+    Bound, PyAny, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use crate::{common::httpversion::HTTPVersion, shared::validation::validate_timeout};
+use crate::{
+    common::{
+        httpversion::HTTPVersion,
+        proxy::{proxy_from_url, Proxy},
+    },
+    shared::validation::validate_timeout,
+};
 
 static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();
 
@@ -17,7 +24,7 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) tls_key: Option<&'a [u8]>,
     pub(crate) tls_cert: Option<&'a [u8]>,
     pub(crate) http_version: Option<Bound<'a, HTTPVersion>>,
-    pub(crate) proxy: Option<&'a str>,
+    pub(crate) proxy: Option<Bound<'a, PyAny>>,
     pub(crate) timeout: Option<f64>,
     pub(crate) connect_timeout: Option<f64>,
     pub(crate) read_timeout: Option<f64>,
@@ -71,10 +78,9 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
         ));
     }
     if let Some(proxy) = params.proxy {
-        let proxy = reqwest::Proxy::all(proxy).map_err(|e| {
-            PyValueError::new_err(format!("Failed to parse proxy URL: {:+}", errors::fmt(&e)))
-        })?;
-        builder = builder.proxy(proxy);
+        for proxy in proxies_from_py(&proxy)? {
+            builder = builder.proxy(proxy);
+        }
     }
 
     if let Some(timeout) = validate_timeout(params.timeout)? {
@@ -114,6 +120,41 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
         PyRuntimeError::new_err(format!("Failed to create client: {:+}", errors::fmt(&e)))
     })?;
     Ok((client, http3))
+}
+
+const PROXY_TYPE_ERROR: &str = "proxy must be a str, Proxy, or sequence of str | Proxy";
+
+fn proxy_from_item(item: &Bound<'_, PyAny>) -> PyResult<reqwest::Proxy> {
+    if let Ok(url) = item.cast::<PyString>() {
+        return proxy_from_url(url.to_str()?);
+    }
+    if let Ok(proxy) = item.cast::<Proxy>() {
+        return Ok(proxy.get().as_reqwest());
+    }
+    Err(PyTypeError::new_err(PROXY_TYPE_ERROR))
+}
+
+fn proxies_from_py(proxy: &Bound<'_, PyAny>) -> PyResult<Vec<reqwest::Proxy>> {
+    if proxy.cast::<PyString>().is_ok() || proxy.cast::<Proxy>().is_ok() {
+        return Ok(vec![proxy_from_item(proxy)?]);
+    }
+    // Mappings iterate as their keys and byte strings as ints, so reject them
+    // before falling through to iteration rather than misreading them as
+    // sequences of proxies.
+    if proxy.hasattr("keys")?
+        || proxy.cast::<PyBytes>().is_ok()
+        || proxy.cast::<PyByteArray>().is_ok()
+    {
+        return Err(PyTypeError::new_err(PROXY_TYPE_ERROR));
+    }
+    let items = proxy
+        .try_iter()
+        .map_err(|_| PyTypeError::new_err(PROXY_TYPE_ERROR))?;
+    let mut proxies = Vec::new();
+    for item in items {
+        proxies.push(proxy_from_item(&item?)?);
+    }
+    Ok(proxies)
 }
 
 pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
