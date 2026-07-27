@@ -67,9 +67,10 @@ To send a `multipart/form-data` request, for example to upload files, pass a
 [`Multipart`](/api/#pyqwest.Multipart) object as the request content with `Client`, or a
 [`SyncMultipart`](/api/#pyqwest.SyncMultipart) with `SyncClient`. Parts can be provided
 as `bytes` or `str` for simple form fields, or as a [`Part`](/api/#pyqwest.Part) /
-[`SyncPart`](/api/#pyqwest.SyncPart) to set a filename or content type. A part's content
-can also be an iterator of `bytes` to stream it. The multipart boundary is generated
-automatically when constructing the request and the content-type header is set to match it.
+[`SyncPart`](/api/#pyqwest.SyncPart) to set a filename or part headers such as a
+content type. A part's content can also be an iterator of `bytes` to stream it. The
+multipart boundary is generated automatically when constructing the request and the
+content-type header is set to match it.
 
 === "async"
 
@@ -84,7 +85,7 @@ automatically when constructing the request and the content-type header is set t
         "https://httpbingo.org/post",
         content=Multipart({
             "field": "value",
-            "file": Part(file_chunks(), filename="hello.txt", content_type="text/plain"),
+            "file": Part(file_chunks(), filename="hello.txt", headers={"content-type": "text/plain"}),
         }),
     )
     print(response.text())
@@ -103,7 +104,7 @@ automatically when constructing the request and the content-type header is set t
         "https://httpbingo.org/post",
         content=SyncMultipart({
             "field": "value",
-            "file": SyncPart(file_chunks(), filename="hello.txt", content_type="text/plain"),
+            "file": SyncPart(file_chunks(), filename="hello.txt", headers={"content-type": "text/plain"}),
         }),
     )
     print(response.text())

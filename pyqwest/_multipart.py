@@ -3,21 +3,31 @@ from __future__ import annotations
 import secrets
 from typing import TYPE_CHECKING, cast
 
+from ._pyqwest import Headers
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
+
+    from ._pyqwest import HTTPHeaderName
+
+    _PartHeaders = (
+        Headers
+        | Mapping[str | HTTPHeaderName, str]
+        | Iterable[tuple[str | HTTPHeaderName, str]]
+    )
 
 
 class Part:
     """A single part of a multipart form, for use with Multipart."""
 
-    __slots__ = ("_content", "_content_type", "_filename")
+    __slots__ = ("_content", "_filename", "_headers")
 
     def __init__(
         self,
         content: bytes | str | AsyncIterator[bytes],
         *,
         filename: str | None = None,
-        content_type: str | None = None,
+        headers: _PartHeaders | None = None,
     ) -> None:
         """Creates a new Part object.
 
@@ -25,16 +35,15 @@ class Part:
             content: The content of the part. A str will be encoded as UTF-8.
                      An async iterator of bytes will be streamed.
             filename: The filename to send in the part's content-disposition header.
-            content_type: The content type of the part.
+            headers: Additional headers to send with the part, for example
+                     content-type.
 
         Raises:
-            ValueError: If the content type is invalid.
+            ValueError: If a header name or value is invalid.
         """
-        if content_type is not None:
-            _validate_content_type(content_type)
         self._content = content.encode() if isinstance(content, str) else content
         self._filename = filename
-        self._content_type = content_type
+        self._headers = headers if isinstance(headers, Headers) else Headers(headers)
 
     @property
     def content(self) -> bytes | AsyncIterator[bytes]:
@@ -47,9 +56,9 @@ class Part:
         return self._filename
 
     @property
-    def content_type(self) -> str | None:
-        """Returns the content type of the part."""
-        return self._content_type
+    def headers(self) -> Headers:
+        """Returns the headers of the part."""
+        return self._headers
 
 
 class Multipart:
@@ -60,7 +69,8 @@ class Multipart:
     content as a multipart/form-data request. The multipart boundary is
     generated when constructing the request, and the request uses a copy of
     the provided headers with the content-type header set to match the
-    boundary, replacing any user-provided content-type.
+    boundary. The provided headers must not have a content-type other than
+    multipart/form-data.
     """
 
     __slots__ = ("_parts",)
@@ -74,7 +84,7 @@ class Multipart:
 
         Args:
             parts: The named parts of the form. bytes or str values are
-                   converted to parts without a filename or content type.
+                   converted to parts without a filename or headers.
         """
         items = (
             cast("Mapping[str, Part | bytes | str]", parts).items()
@@ -95,14 +105,14 @@ class Multipart:
 class SyncPart:
     """A single part of a multipart form, for use with SyncMultipart."""
 
-    __slots__ = ("_content", "_content_type", "_filename")
+    __slots__ = ("_content", "_filename", "_headers")
 
     def __init__(
         self,
         content: bytes | str | Iterable[bytes],
         *,
         filename: str | None = None,
-        content_type: str | None = None,
+        headers: _PartHeaders | None = None,
     ) -> None:
         """Creates a new SyncPart object.
 
@@ -110,16 +120,15 @@ class SyncPart:
             content: The content of the part. A str will be encoded as UTF-8.
                      An iterable of bytes will be streamed.
             filename: The filename to send in the part's content-disposition header.
-            content_type: The content type of the part.
+            headers: Additional headers to send with the part, for example
+                     content-type.
 
         Raises:
-            ValueError: If the content type is invalid.
+            ValueError: If a header name or value is invalid.
         """
-        if content_type is not None:
-            _validate_content_type(content_type)
         self._content = content.encode() if isinstance(content, str) else content
         self._filename = filename
-        self._content_type = content_type
+        self._headers = headers if isinstance(headers, Headers) else Headers(headers)
 
     @property
     def content(self) -> bytes | Iterable[bytes]:
@@ -132,9 +141,9 @@ class SyncPart:
         return self._filename
 
     @property
-    def content_type(self) -> str | None:
-        """Returns the content type of the part."""
-        return self._content_type
+    def headers(self) -> Headers:
+        """Returns the headers of the part."""
+        return self._headers
 
 
 class SyncMultipart:
@@ -145,7 +154,8 @@ class SyncMultipart:
     request content as a multipart/form-data request. The multipart boundary
     is generated when constructing the request, and the request uses a copy of
     the provided headers with the content-type header set to match the
-    boundary, replacing any user-provided content-type.
+    boundary. The provided headers must not have a content-type other than
+    multipart/form-data.
     """
 
     __slots__ = ("_parts",)
@@ -159,7 +169,7 @@ class SyncMultipart:
 
         Args:
             parts: The named parts of the form. bytes or str values are
-                   converted to parts without a filename or content type.
+                   converted to parts without a filename or headers.
         """
         items = (
             cast("Mapping[str, SyncPart | bytes | str]", parts).items()
@@ -175,18 +185,6 @@ class SyncMultipart:
     def parts(self) -> list[tuple[str, SyncPart]]:
         """Returns the named parts of the form."""
         return list(self._parts)
-
-
-def _validate_content_type(content_type: str) -> None:
-    type_, sep, subtype = content_type.split(";", 1)[0].partition("/")
-    if (
-        not type_.strip()
-        or not sep
-        or not subtype.strip()
-        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in content_type)
-    ):
-        msg = f"Invalid content type: {content_type}"
-        raise ValueError(msg)
 
 
 def multipart_boundary() -> str:
@@ -205,6 +203,8 @@ _ESCAPE_CHARS = frozenset(' "<>`#?{}/%' + "".join(map(chr, range(0x20))) + "\x7f
 
 
 def _escape(value: str) -> str:
+    if not any(c in _ESCAPE_CHARS for c in value):
+        return value
     return "".join(f"%{ord(c):02X}" if c in _ESCAPE_CHARS else c for c in value)
 
 
@@ -214,8 +214,7 @@ def _part_header(boundary: str, part_name: str, part: Part | SyncPart) -> bytes:
     if part.filename is not None:
         disposition += f'; filename="{_escape(part.filename)}"'
     lines.append(disposition)
-    if part.content_type is not None:
-        lines.append(f"content-type: {part.content_type}")
+    lines.extend(f"{name}: {value}" for name, value in part.headers.items())
     lines.extend(["", ""])
     return "\r\n".join(lines).encode()
 
@@ -227,13 +226,10 @@ def encode_multipart_sync(multipart: SyncMultipart, boundary: str) -> Iterator[b
         if isinstance(content, bytes):
             yield content
         else:
-            itr = iter(content)
             try:
-                yield from itr
+                yield from content
             finally:
-                # Closing this generator does not cascade to the part's
-                # iterator, so close it explicitly.
-                close = getattr(itr, "close", None)
+                close = getattr(content, "close", None)
                 if close is not None:
                     close()
         yield b"\r\n"
@@ -247,15 +243,11 @@ async def encode_multipart(multipart: Multipart, boundary: str) -> AsyncIterator
         if isinstance(content, bytes):
             yield content
         else:
-            itr = aiter(content)
             try:
-                async for chunk in itr:
+                async for chunk in content:
                     yield chunk
             finally:
-                # Closing this generator does not cascade to the part's
-                # iterator, so close it explicitly to keep cancellation
-                # from leaving it to be finalized at an arbitrary point.
-                aclose = getattr(itr, "aclose", None)
+                aclose = getattr(content, "aclose", None)
                 if aclose is not None:
                     await aclose()
         yield b"\r\n"

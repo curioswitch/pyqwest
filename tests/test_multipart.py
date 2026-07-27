@@ -59,7 +59,7 @@ async def test_multipart(client: Client | SyncClient, url: str) -> None:
                     SyncPart(
                         stream_sync(),
                         filename="stream.bin",
-                        content_type="application/octet-stream",
+                        headers={"content-type": "application/octet-stream"},
                     ),
                 ),
             ]
@@ -81,7 +81,7 @@ async def test_multipart(client: Client | SyncClient, url: str) -> None:
                     Part(
                         stream_async(),
                         filename="stream.bin",
-                        content_type="application/octet-stream",
+                        headers={"content-type": "application/octet-stream"},
                     ),
                 ),
             ]
@@ -100,11 +100,11 @@ async def test_multipart(client: Client | SyncClient, url: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_multipart_overrides_content_type(
+async def test_multipart_adds_boundary_to_content_type(
     client: Client | SyncClient, url: str
 ) -> None:
     url = f"{url}/echo"
-    headers = [("content-type", "text/plain")]
+    headers = [("content-type", "multipart/form-data")]
     if isinstance(client, SyncClient):
         resp = await asyncio.to_thread(
             client.post, url, headers, SyncMultipart({"field": b"value"})

@@ -139,7 +139,7 @@ def expected_multipart_body(boundary: str) -> bytes:
 
 @pytest.mark.asyncio
 async def test_request_content_multipart():
-    headers = Headers({"content-type": "text/plain", "x-hello": "world"})
+    headers = Headers({"content-type": "multipart/form-data", "x-hello": "world"})
     request = Request(
         method="POST",
         url="https://example.com/upload",
@@ -150,7 +150,7 @@ async def test_request_content_multipart():
     boundary = multipart_boundary_from_headers(request.headers)
     assert request.headers["x-hello"] == "world"
     # The request headers are a copy, leaving the provided headers unchanged.
-    assert headers["content-type"] == "text/plain"
+    assert headers["content-type"] == "multipart/form-data"
 
     assert isinstance(request.content, AsyncIterator)
     content = bytearray()
@@ -160,7 +160,7 @@ async def test_request_content_multipart():
 
 
 def test_sync_request_content_multipart():
-    headers = Headers({"content-type": "text/plain", "x-hello": "world"})
+    headers = Headers({"content-type": "multipart/form-data", "x-hello": "world"})
     request = SyncRequest(
         method="POST",
         url="https://example.com/upload",
@@ -171,11 +171,31 @@ def test_sync_request_content_multipart():
     boundary = multipart_boundary_from_headers(request.headers)
     assert request.headers["x-hello"] == "world"
     # The request headers are a copy, leaving the provided headers unchanged.
-    assert headers["content-type"] == "text/plain"
+    assert headers["content-type"] == "multipart/form-data"
 
     assert isinstance(request.content, Iterator)
     content = cast("Iterator[bytes]", request.content)
     assert b"".join(content) == expected_multipart_body(boundary)
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_request_multipart_other_content_type(mode: str):
+    headers = Headers({"content-type": "text/plain"})
+    with pytest.raises(ValueError, match="must be unset or multipart/form-data"):
+        if mode == "sync":
+            SyncRequest(
+                method="POST",
+                url="https://example.com/upload",
+                headers=headers,
+                content=SyncMultipart({"field": b"value"}),
+            )
+        else:
+            Request(
+                method="POST",
+                url="https://example.com/upload",
+                headers=headers,
+                content=Multipart({"field": b"value"}),
+            )
 
 
 @pytest.mark.asyncio

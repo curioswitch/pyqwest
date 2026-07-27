@@ -52,13 +52,24 @@ impl Headers {
     }
 
     /// Returns a copy of these headers with the content-type header set to the
-    /// given value, replacing any existing values.
+    /// given value. Any existing content-type must be multipart/form-data and
+    /// is replaced.
     pub(crate) fn copy_with_content_type(
         &self,
         py: Python<'_>,
         content_type: &Bound<'_, PyString>,
     ) -> PyResult<Self> {
         let src = self.store.lock_py_attached(py).unwrap();
+        if let Some(existing) = src.get(header::CONTENT_TYPE) {
+            let form_data = existing.as_mime(py).is_some_and(|mime| {
+                mime.type_() == mime::MULTIPART && mime.subtype() == mime::FORM_DATA
+            });
+            if !form_data {
+                return Err(PyValueError::new_err(
+                    "Content-type header must be unset or multipart/form-data for multipart content",
+                ));
+            }
+        }
         let mut store: HeaderMap<PyHeaderValue> = HeaderMap::with_capacity(src.len() + 1);
         for (name, value) in src.iter() {
             store.append(name, value.clone_ref(py));

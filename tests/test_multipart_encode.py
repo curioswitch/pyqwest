@@ -20,15 +20,19 @@ def test_escapes_part_name_and_filename() -> None:
     assert b'filename="f%22%0D%0A%20%2F%25.txt"' in body
 
 
+def test_encodes_part_headers() -> None:
+    part = SyncPart(
+        b"x", headers={"content-type": "text/plain", "x-part-meta": "hello"}
+    )
+    body = b"".join(encode_multipart_sync(SyncMultipart({"field": part}), "boundary"))
+    assert b"content-type: text/plain\r\n" in body
+    assert b"x-part-meta: hello\r\n" in body
+
+
 @pytest.mark.parametrize("part_class", [Part, SyncPart])
-@pytest.mark.parametrize(
-    "content_type", ["text", "/plain", "text/", "text/pl\r\nain", ""]
-)
-def test_part_invalid_content_type(
-    part_class: type[Part | SyncPart], content_type: str
-) -> None:
-    with pytest.raises(ValueError, match="Invalid content type"):
-        part_class(b"x", content_type=content_type)
+def test_part_invalid_header_value(part_class: type[Part | SyncPart]) -> None:
+    with pytest.raises(ValueError, match="Invalid header value"):
+        part_class(b"x", headers={"content-type": "text/pl\r\nain"})
 
 
 def test_multipart_accepts_mapping() -> None:
