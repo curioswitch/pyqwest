@@ -156,7 +156,7 @@ async def test_async_timeout_headers() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(app))
     try:
         async with httpx.AsyncClient(transport=transport, timeout=0.1) as client:
-            with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+            with pytest.raises(httpx.ReadTimeout):
                 await client.get("http://localhost/")
     finally:
         release.set()
@@ -195,7 +195,7 @@ async def test_async_timeout_response_content() -> None:
         ):
             assert res.status_code == 200
             content = b""
-            with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+            with pytest.raises(httpx.ReadTimeout):
                 async for chunk in res.aiter_raw():
                     content += chunk
             assert content == b"partial"
@@ -244,7 +244,7 @@ def test_sync_timeout() -> None:
     try:
         with (
             httpx.Client(transport=transport, timeout=0.1) as client,
-            pytest.raises(TimeoutError),
+            pytest.raises(httpx.ReadTimeout),
         ):
             client.get("http://localhost/")
     finally:
