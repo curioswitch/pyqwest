@@ -43,7 +43,7 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
         self._transport = transport
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        request_headers = convert_headers(request.headers)
+        request_headers = convert_headers(request)
         request_content = async_request_content(request.stream)
         timeout = convert_timeout(request.extensions)
         deadline = None
@@ -156,7 +156,7 @@ class PyqwestTransport(httpx.BaseTransport):
         self._transport = transport
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        request_headers = convert_headers(request.headers)
+        request_headers = convert_headers(request)
         request_content = sync_request_content(request.stream)
         timeout = convert_timeout(request.extensions)
         timeout_manager = None
@@ -244,10 +244,21 @@ TRANSPORT_HEADERS = {
 }
 
 
-def convert_headers(headers: httpx.Headers) -> Headers:
-    return Headers(
-        (k, v) for k, v in headers.multi_items() if k.lower() not in TRANSPORT_HEADERS
-    )
+def convert_headers(request: httpx.Request) -> Headers:
+    # httpx adds a host header matching the URL to every request, but the
+    # transport derives it from the URL itself (:authority on HTTP/2, where a
+    # redundant literal host field is rejected by some servers). Only forward
+    # host when the user overrode it to a different value.
+    default_host = request.url.netloc.decode("ascii").lower()
+    headers = []
+    for name, value in request.headers.multi_items():
+        lower_name = name.lower()
+        if lower_name in TRANSPORT_HEADERS:
+            continue
+        if lower_name == "host" and value.lower() == default_host:
+            continue
+        headers.append((name, value))
+    return Headers(headers)
 
 
 def convert_timeout(extensions: dict) -> float | None:

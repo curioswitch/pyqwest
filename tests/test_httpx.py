@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 
-from pyqwest import HTTPTransport, SyncHTTPTransport
+from pyqwest import HTTPTransport, Request, Response, SyncHTTPTransport, Transport
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
+from pyqwest.httpx._transport import convert_headers
 from pyqwest.testing import ASGITransport, WSGITransport
 
 if TYPE_CHECKING:
@@ -249,6 +250,60 @@ def test_sync_timeout() -> None:
             client.get("http://localhost/")
     finally:
         release.set()
+
+
+def test_convert_headers_strips_default_host() -> None:
+    request = httpx.Request("GET", "https://example.com:8443/path")
+    assert request.headers["host"] == "example.com:8443"
+    assert "host" not in convert_headers(request)
+
+
+def test_convert_headers_strips_default_host_case_insensitively() -> None:
+    request = httpx.Request(
+        "GET", "https://example.com/", headers={"Host": "EXAMPLE.com"}
+    )
+    assert "host" not in convert_headers(request)
+
+
+def test_convert_headers_keeps_custom_host() -> None:
+    request = httpx.Request(
+        "GET", "https://example.com/", headers={"host": "other.example.com"}
+    )
+    assert convert_headers(request)["host"] == "other.example.com"
+
+
+def test_convert_headers_strips_transport_headers() -> None:
+    request = httpx.Request(
+        "GET",
+        "https://example.com/",
+        headers={"connection": "close", "x-custom": "kept"},
+    )
+    headers = convert_headers(request)
+    assert "connection" not in headers
+    assert headers["x-custom"] == "kept"
+
+
+class RecordingTransport(Transport):
+    def __init__(self) -> None:
+        self.requests: list[Request] = []
+
+    async def execute(self, request: Request) -> Response:
+        self.requests.append(request)
+        return Response(status=200)
+
+
+@pytest.mark.asyncio
+async def test_async_host_header_not_forwarded() -> None:
+    recording = RecordingTransport()
+    transport = AsyncPyqwestTransport(recording)
+    async with httpx.AsyncClient(transport=transport) as client:
+        res = await client.get("http://localhost/")
+        assert res.status_code == 200
+        res = await client.get("http://localhost/", headers={"host": "example.com"})
+        assert res.status_code == 200
+
+    assert "host" not in recording.requests[0].headers
+    assert recording.requests[1].headers["host"] == "example.com"
 
 
 def access_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
