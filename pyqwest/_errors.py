@@ -27,6 +27,14 @@ class StreamErrorCode(IntEnum):
         return cls.INTERNAL_ERROR
 
 
+class ConnectTimeout(ConnectionError, TimeoutError):
+    """An error indicating a timeout while establishing a connection.
+
+    Subclasses both ConnectionError and TimeoutError, so it can be handled
+    as either.
+    """
+
+
 class StreamError(Exception):
     """An error representing an HTTP/2+ stream error."""
 

@@ -64,6 +64,8 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except ConnectionError as e:
+            raise map_connection_error(e, request) from e
         except (TimeoutError, asyncio.TimeoutError) as e:
             raise map_timeout_error(e, request) from e
 
@@ -179,6 +181,8 @@ class PyqwestTransport(httpx.BaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except ConnectionError as e:
+            raise map_connection_error(e, request) from e
         except TimeoutError as e:
             raise map_timeout_error(e, request) from e
         finally:
@@ -286,12 +290,21 @@ def remaining_time(deadline: float | None) -> float | None:
     return max(deadline - asyncio.get_running_loop().time(), 0.0)
 
 
+def map_connection_error(
+    e: ConnectionError, request: httpx.Request | None = None
+) -> httpx.ConnectError | httpx.ConnectTimeout:
+    if isinstance(e, TimeoutError):
+        return httpx.ConnectTimeout(str(e) or "timed out", request=request)
+    return httpx.ConnectError(str(e), request=request)
+
+
 def map_timeout_error(
     e: BaseException, request: httpx.Request | None = None
 ) -> httpx.ReadTimeout:
-    # The operation timeout covers connect/read/write without distinguishing
-    # which phase expired, so all timeouts map to ReadTimeout to satisfy the
-    # httpx.TimeoutException contract.
+    # Connect timeouts are raised as ConnectTimeout (a ConnectionError) and
+    # mapped by map_connection_error. The remaining operation timeout covers
+    # read/write without distinguishing which phase expired, so it maps to
+    # ReadTimeout to satisfy the httpx.TimeoutException contract.
     return httpx.ReadTimeout(str(e) or "timed out", request=request)
 
 
