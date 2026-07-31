@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, final
 
 from ._pyqwest import Headers
 
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     )
 
 
+@final
 class Part:
     """A single part of a multipart form, for use with Multipart."""
 
@@ -61,6 +62,7 @@ class Part:
         return self._headers
 
 
+@final
 class Multipart:
     """Multipart form request content for asynchronous requests. For
     synchronous requests, use SyncMultipart.
@@ -102,6 +104,7 @@ class Multipart:
         return list(self._parts)
 
 
+@final
 class SyncPart:
     """A single part of a multipart form, for use with SyncMultipart."""
 
@@ -146,6 +149,7 @@ class SyncPart:
         return self._headers
 
 
+@final
 class SyncMultipart:
     """Multipart form request content for synchronous requests. For
     asynchronous requests, use Multipart.

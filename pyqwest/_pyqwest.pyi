@@ -12,7 +12,15 @@ from collections.abc import (
 )
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Literal, Protocol, TypeAlias, TypeVar, overload, runtime_checkable
+from typing import (
+    Literal,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    final,
+    overload,
+    runtime_checkable,
+)
 
 from opentelemetry.metrics import MeterProvider
 from opentelemetry.trace import TracerProvider
@@ -33,6 +41,7 @@ _SyncRequestContent: TypeAlias = (
 _Buffer: TypeAlias = bytes | memoryview | bytearray
 _QueryParams: TypeAlias = dict[str, str | None] | Iterable[tuple[str, str | None]]
 
+@final
 class Headers:
     """Container of HTTP headers.
 
@@ -200,6 +209,7 @@ class Headers:
             key: The header name.
         """
 
+@final
 class HTTPVersion:
     """An enumeration of HTTP versions."""
 
@@ -219,6 +229,7 @@ class HTTPVersion:
     def __gt__(self, other: object) -> bool: ...
     def __ge__(self, other: object) -> bool: ...
 
+@final
 class Client:
     def __init__(self, transport: Transport | None = None) -> None:
         """Creates a new asynchronous HTTP client.
@@ -488,6 +499,7 @@ class Transport(Protocol):
     def execute(self, request: Request) -> Awaitable[Response]:
         """Executes a request."""
 
+@final
 class HTTPTransport:
     """An HTTP transport implementation using reqwest."""
 
@@ -605,6 +617,7 @@ def get_default_transport() -> HTTPTransport:
     ```
     """
 
+@final
 class Request:
     """An HTTP request."""
 
@@ -647,6 +660,7 @@ class Request:
     @property
     def _json(self) -> bool: ...
 
+@final
 class Response:
     """An HTTP response."""
 
@@ -722,6 +736,7 @@ class Response:
         it is not necessary to explicitly close the response.
         """
 
+@final
 class SyncClient:
     """A synchronous HTTP client.
 
@@ -977,6 +992,7 @@ class SyncTransport(Protocol):
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
         """Executes a request."""
 
+@final
 class SyncHTTPTransport:
     """An HTTP transport implementation using reqwest."""
 
@@ -1089,6 +1105,7 @@ def get_default_sync_transport() -> SyncHTTPTransport:
     ```
     """
 
+@final
 class SyncRequest:
     """An HTTP request."""
 
@@ -1131,6 +1148,7 @@ class SyncRequest:
     @property
     def _json(self) -> bool: ...
 
+@final
 class SyncResponse:
     """An HTTP response."""
 
@@ -1206,6 +1224,7 @@ class SyncResponse:
         it is not necessary to explicitly close the response.
         """
 
+@final
 class FullResponse:
     """A fully buffered HTTP response."""
 
@@ -1250,12 +1269,15 @@ class FullResponse:
         The content-type header is not checked when using this method.
         """
 
+@final
 class ReadError(Exception):
     """An error representing a read error during response reading."""
 
+@final
 class WriteError(Exception):
     """An error representing a write error during request sending."""
 
+@final
 class HTTPHeaderName:
     """An enum type corresponding to HTTP header names."""
 
