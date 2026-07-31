@@ -14,6 +14,12 @@ impl EmptyAwaitable {
         slf
     }
 
+    // Python < 3.12 wraps awaitables with `yield from`, which requires the
+    // result of `__await__` to also implement `__iter__`, not just `__next__`.
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
     #[allow(clippy::unused_self)]
     fn __next__(&self) -> Option<()> {
         None
@@ -29,6 +35,10 @@ pub(super) struct ValueAwaitable {
 #[pymethods]
 impl ValueAwaitable {
     fn __await__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
 
@@ -51,6 +61,10 @@ pub(super) struct ErrorAwaitable {
 #[pymethods]
 impl ErrorAwaitable {
     fn __await__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from pyqwest import FullResponse, Headers, HTTPVersion, Response, SyncResponse
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Generator, Iterator
 
 
 @pytest.mark.asyncio
@@ -96,6 +97,39 @@ def test_sync_response_content_iterator():
     for chunk in response.content:
         parts.append(chunk)
     assert parts == [b"Part 1, ", b"Part 2."]
+
+
+def yield_from_await(awaitable: Awaitable[Any]) -> Generator[Any, None, Any]:
+    # Awaits like asyncio.ensure_future on Python < 3.12, which requires the
+    # result of __await__ to be iterable, not just an iterator as plain await.
+    return (yield from awaitable.__await__())
+
+
+def test_response_content_awaitable_supports_yield_from():
+    content = Response(status=200, content=b"Sample body").content
+    with pytest.raises(StopIteration) as exc_info:
+        yield_from_await(content.__anext__()).send(None)
+    assert bytes(exc_info.value.value) == b"Sample body"
+    with pytest.raises(StopAsyncIteration):
+        yield_from_await(content.__anext__()).send(None)
+
+
+def test_response_empty_content_awaitable_supports_yield_from():
+    content = Response(status=200).content
+    with pytest.raises(StopAsyncIteration):
+        yield_from_await(content.__anext__()).send(None)
+
+
+def test_response_aclose_awaitable_supports_yield_from():
+    response = Response(status=200)
+    with pytest.raises(StopIteration):
+        yield_from_await(response.aclose()).send(None)
+
+
+@pytest.mark.asyncio
+async def test_response_content_awaitable_ensure_future():
+    content = Response(status=200, content=b"Sample body").content
+    assert bytes(await asyncio.ensure_future(content.__anext__())) == b"Sample body"
 
 
 def test_full_response_decode_utf8_no_content_type():
