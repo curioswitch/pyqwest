@@ -17,6 +17,7 @@ from pyqwest import (
     SyncRequest,
     SyncResponse,
     SyncTransport,
+    TooManyRedirects,
     Transport,
 )
 from pyqwest._pyqwest import set_sync_timeout
@@ -30,6 +31,10 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
 
     This can be used with any existing code using httpx.AsyncClient, and will enable
     use of bidirectional streaming and response trailers.
+
+    Redirects are handled by httpx.AsyncClient, which respects its own
+    follow_redirects setting, so the pyqwest transport should be left with
+    follow_redirects disabled, as it is by default.
     """
 
     _transport: Transport
@@ -64,6 +69,8 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except TooManyRedirects as e:
+            raise httpx.TooManyRedirects(str(e), request=request) from e
 
         def get_trailers() -> httpx.Headers:
             return httpx.Headers(tuple(response.trailers.items()))
@@ -143,6 +150,10 @@ class PyqwestTransport(httpx.BaseTransport):
 
     This can be used with any existing code using httpx.Client, and will enable
     use of bidirectional streaming and response trailers.
+
+    Redirects are handled by httpx.Client, which respects its own follow_redirects
+    setting, so the pyqwest transport should be left with follow_redirects disabled,
+    as it is by default.
     """
 
     _transport: SyncTransport
@@ -175,6 +186,8 @@ class PyqwestTransport(httpx.BaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except TooManyRedirects as e:
+            raise httpx.TooManyRedirects(str(e), request=request) from e
         finally:
             if timeout_manager is not None:
                 timeout_manager.__exit__(None, None, None)

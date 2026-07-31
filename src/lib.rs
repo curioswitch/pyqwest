@@ -59,7 +59,7 @@ mod pyqwest {
     #[pymodule_export]
     use headers::Headers;
     #[pymodule_export]
-    use pyerrors::{ReadError, StreamError, WriteError};
+    use pyerrors::{ReadError, StreamError, TooManyRedirects, WriteError};
     #[pymodule_export]
     use shared::backoff::Backoff;
     #[pymodule_export]

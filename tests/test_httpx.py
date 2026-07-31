@@ -251,6 +251,43 @@ def test_sync_timeout() -> None:
         release.set()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_async_redirects_handled_by_httpx(url: str) -> None:
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            res = await client.get(f"{url}/redirect")
+            assert res.status_code == 302
+            assert res.headers["location"] == "/echo"
+            assert res.history == []
+
+            res = await client.get(f"{url}/redirect?n=3", follow_redirects=True)
+            assert res.status_code == 200
+            assert len(res.history) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_sync_redirects_handled_by_httpx(url: str) -> None:
+    def run() -> None:
+        with SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with httpx.Client(transport=transport) as client:
+                res = client.get(f"{url}/redirect")
+                assert res.status_code == 302
+                assert res.headers["location"] == "/echo"
+                assert res.history == []
+
+                res = client.get(f"{url}/redirect?n=3", follow_redirects=True)
+                assert res.status_code == 200
+                assert len(res.history) == 3
+
+    await asyncio.to_thread(run)
+
+
 def access_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [record for record in caplog.records if record.name == "pyqwest.access"]
 
