@@ -195,7 +195,7 @@ async def test_cookie_store_sync_disabled(url: str) -> None:
 
 @pytest.mark.asyncio
 async def test_redirects_disabled(url: str) -> None:
-    async with HTTPTransport() as transport:
+    async with HTTPTransport(follow_redirects=False) as transport:
         res = await Client(transport).get(f"{url}/redirect")
         assert res.status == 302
         assert res.headers["location"] == "/echo"
@@ -203,7 +203,7 @@ async def test_redirects_disabled(url: str) -> None:
 
 @pytest.mark.asyncio
 async def test_follow_redirects(url: str) -> None:
-    async with HTTPTransport(follow_redirects=True) as transport:
+    async with HTTPTransport() as transport:
         res = await Client(transport).get(f"{url}/redirect?n=3")
         assert res.status == 200
         assert res.headers["x-echo-method"] == "GET"
@@ -211,14 +211,14 @@ async def test_follow_redirects(url: str) -> None:
 
 @pytest.mark.asyncio
 async def test_follow_redirects_too_many(url: str) -> None:
-    async with HTTPTransport(follow_redirects=True, max_redirects=2) as transport:
+    async with HTTPTransport(max_redirects=2) as transport:
         with pytest.raises(TooManyRedirects):
             await Client(transport).get(f"{url}/redirect?n=5")
 
 
 @pytest.mark.asyncio
 async def test_redirects_disabled_sync(url: str) -> None:
-    with SyncHTTPTransport() as transport:
+    with SyncHTTPTransport(follow_redirects=False) as transport:
         res = await asyncio.to_thread(SyncClient(transport).get, f"{url}/redirect")
         assert res.status == 302
         assert res.headers["location"] == "/echo"
@@ -226,7 +226,7 @@ async def test_redirects_disabled_sync(url: str) -> None:
 
 @pytest.mark.asyncio
 async def test_follow_redirects_sync(url: str) -> None:
-    with SyncHTTPTransport(follow_redirects=True) as transport:
+    with SyncHTTPTransport() as transport:
         res = await asyncio.to_thread(SyncClient(transport).get, f"{url}/redirect?n=3")
         assert res.status == 200
         assert res.headers["x-echo-method"] == "GET"
@@ -235,7 +235,7 @@ async def test_follow_redirects_sync(url: str) -> None:
 @pytest.mark.asyncio
 async def test_follow_redirects_too_many_sync(url: str) -> None:
     with (
-        SyncHTTPTransport(follow_redirects=True, max_redirects=2) as transport,
+        SyncHTTPTransport(max_redirects=2) as transport,
         pytest.raises(TooManyRedirects),
     ):
         await asyncio.to_thread(SyncClient(transport).get, f"{url}/redirect?n=5")

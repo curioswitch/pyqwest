@@ -333,16 +333,17 @@ setting by passing `timeout` for sync clients or using `asyncio.wait_for` or
 
 ### Redirects
 
-Redirect responses are returned as-is by default, so a `301` or `302` is visible to your
-code just like any other response. Set `follow_redirects` on the transport to follow them
-instead, optionally adjusting `max_redirects`, which defaults to 10.
+By default, transports follow redirects automatically up to a maximum of 10, which can be
+configured with `max_redirects`.
+To instead receive `301` or `302` responses directly, set `follow_redirects=False`.
 
 === "async"
 
     ```python
-    async with HTTPTransport(follow_redirects=True, max_redirects=5) as transport:
+    async with HTTPTransport(follow_redirects=False) as transport:
         client = Client(transport)
-        application = MyApplication(client)
+        res = await client.get("/redirectonce")
+        assert res.status == 301
     ```
 
 === "sync"
@@ -350,14 +351,16 @@ instead, optionally adjusting `max_redirects`, which defaults to 10.
     ```python
     with SyncHTTPTransport(follow_redirects=True, max_redirects=5) as transport:
         client = SyncClient(transport)
-        application = MyApplication(client)
+        res = client.get("/redirectonce")
+        assert res.status == 301
     ```
 
 A request that exceeds `max_redirects` fails with `pyqwest.TooManyRedirects`.
 
-When using pyqwest as an httpx transport, leave `follow_redirects` disabled - httpx clients
-handle redirects themselves, respecting their own `follow_redirects` argument and recording
-the chain in `response.history`.
+When using pyqwest as an httpx transport, leave `follow_redirects` disabled so HTTPX
+can handle them as usual.
+
+The default transport / client follow redirects by default.
 
 ## Logging
 

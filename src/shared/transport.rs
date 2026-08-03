@@ -176,7 +176,7 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 enable_zstd: true,
                 use_system_dns: false,
                 enable_cookie_store: false,
-                follow_redirects: false,
+                follow_redirects: true,
                 max_redirects: DEFAULT_MAX_REDIRECTS,
             })
             .unwrap();

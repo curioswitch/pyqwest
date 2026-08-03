@@ -32,9 +32,9 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
     This can be used with any existing code using httpx.AsyncClient, and will enable
     use of bidirectional streaming and response trailers.
 
-    Redirects are handled by httpx.AsyncClient, which respects its own
-    follow_redirects setting, so the pyqwest transport should be left with
-    follow_redirects disabled, as it is by default.
+    By default, [pyqwest.HTTPTransport][] follows redirects internally. To have
+    HTTPX handle it instead, for example to set `response.history`, configure
+    the pyqwest transport with `follow_redirects=False`.
     """
 
     _transport: Transport
@@ -151,9 +151,9 @@ class PyqwestTransport(httpx.BaseTransport):
     This can be used with any existing code using httpx.Client, and will enable
     use of bidirectional streaming and response trailers.
 
-    Redirects are handled by httpx.Client, which respects its own follow_redirects
-    setting, so the pyqwest transport should be left with follow_redirects disabled,
-    as it is by default.
+    By default, [pyqwest.SyncHTTPTransport][] follows redirects internally. To have
+    HTTPX handle it instead, for example to set `response.history`, configure
+    the pyqwest transport with `follow_redirects=False`.
     """
 
     _transport: SyncTransport

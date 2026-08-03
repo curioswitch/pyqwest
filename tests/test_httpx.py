@@ -255,7 +255,7 @@ def test_sync_timeout() -> None:
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_async_redirects_handled_by_httpx(url: str) -> None:
-    async with HTTPTransport() as pyqwest_transport:
+    async with HTTPTransport(follow_redirects=False) as pyqwest_transport:
         transport = AsyncPyqwestTransport(pyqwest_transport)
         async with httpx.AsyncClient(transport=transport) as client:
             res = await client.get(f"{url}/redirect")
@@ -273,7 +273,7 @@ async def test_async_redirects_handled_by_httpx(url: str) -> None:
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_sync_redirects_handled_by_httpx(url: str) -> None:
     def run() -> None:
-        with SyncHTTPTransport() as pyqwest_transport:
+        with SyncHTTPTransport(follow_redirects=False) as pyqwest_transport:
             transport = PyqwestTransport(pyqwest_transport)
             with httpx.Client(transport=transport) as client:
                 res = client.get(f"{url}/redirect")
