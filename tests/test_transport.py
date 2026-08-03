@@ -239,3 +239,47 @@ async def test_follow_redirects_too_many_sync(url: str) -> None:
         pytest.raises(TooManyRedirects),
     ):
         await asyncio.to_thread(SyncClient(transport).get, f"{url}/redirect?n=5")
+
+
+@pytest.mark.asyncio
+async def test_request_body_task_cancelled_on_dropped_response(url: str) -> None:
+    body_closed = asyncio.Event()
+
+    async def content() -> AsyncIterator[bytes]:
+        try:
+            yield b"hello"
+            await asyncio.Event().wait()
+        finally:
+            body_closed.set()
+
+    async with HTTPTransport() as transport:
+        res = await transport.execute(Request("POST", f"{url}/echo", content=content()))
+        assert res.status == 200
+        # Dropping the response without closing it must still cancel the
+        # request body task, or it would hang on the generator forever.
+        del res
+        await asyncio.wait_for(body_closed.wait(), timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_request_body_task_cancelled_on_cancelled_execute(url: str) -> None:
+    body_started = asyncio.Event()
+    body_closed = asyncio.Event()
+
+    async def content() -> AsyncIterator[bytes]:
+        try:
+            body_started.set()
+            await asyncio.Event().wait()
+            yield b""
+        finally:
+            body_closed.set()
+
+    async with HTTPTransport() as transport:
+        fut = asyncio.ensure_future(
+            transport.execute(Request("POST", f"{url}/echo", content=content()))
+        )
+        await body_started.wait()
+        fut.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await fut
+        await asyncio.wait_for(body_closed.wait(), timeout=5)

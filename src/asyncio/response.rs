@@ -32,7 +32,7 @@ pub(crate) struct Response {
     pub(super) head: ResponseHead,
     content: Content,
     trailers: Py<Headers>,
-    request_iter_task: ArcSwapOption<Py<PyAny>>,
+    request_iter_task: RequestIterTask,
 
     constants: Constants,
 }
@@ -47,7 +47,7 @@ impl Response {
                 ContentGenerator::new(ResponseBody::pending(trailers.clone_ref(py))),
             )?),
             trailers,
-            request_iter_task: ArcSwapOption::empty(),
+            request_iter_task: RequestIterTask::empty(constants.clone()),
             constants,
         })
     }
@@ -66,10 +66,8 @@ impl Response {
         }
     }
 
-    pub(super) fn set_request_iter_task(&self, task: &Arc<ArcSwapOption<Py<PyAny>>>) {
-        if let Some(task) = task.swap(None) {
-            self.request_iter_task.store(Some(task));
-        }
+    pub(super) fn set_request_iter_task(&self, task: Arc<Py<PyAny>>) {
+        self.request_iter_task.store(task);
     }
 
     pub(super) async fn into_full_response(self) -> PyResult<RustFullResponse> {
@@ -115,7 +113,7 @@ impl Response {
             head: ResponseHead::new(py, status, http_version, headers)?,
             content: Content::Custom(content.unbind()),
             trailers,
-            request_iter_task: ArcSwapOption::empty(),
+            request_iter_task: RequestIterTask::empty(constants.clone()),
             constants,
         })
     }
@@ -176,7 +174,7 @@ impl Response {
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        if let Some(task) = self.request_iter_task.swap(None) {
+        if let Some(task) = self.request_iter_task.take() {
             task.call_method0(py, &self.constants.cancel)?;
         }
         match &self.content {
@@ -213,7 +211,56 @@ impl Response {
     }
 
     fn _set_request_iter_task(&self, task: Py<PyAny>) {
-        self.request_iter_task.store(Some(Arc::from(task)));
+        self.request_iter_task.store(Arc::from(task));
+    }
+}
+
+/// Holder of the request body task of a streamed execution, cancelling it on
+/// drop if the response was never closed.
+struct RequestIterTask {
+    task: ArcSwapOption<Py<PyAny>>,
+    constants: Constants,
+}
+
+impl RequestIterTask {
+    fn empty(constants: Constants) -> Self {
+        RequestIterTask {
+            task: ArcSwapOption::empty(),
+            constants,
+        }
+    }
+
+    fn store(&self, task: Arc<Py<PyAny>>) {
+        self.task.store(Some(task));
+    }
+
+    fn take(&self) -> Option<Arc<Py<PyAny>>> {
+        self.task.swap(None)
+    }
+}
+
+impl Drop for RequestIterTask {
+    fn drop(&mut self) {
+        let Some(task) = self.task.swap(None) else {
+            return;
+        };
+        // SAFETY - the task is populated in the response future's done callback,
+        // meaning a dropped Response is always during Python garbage collection.
+        // This attach is reentrant and cannot happen on a tokio thread as a result.
+        Python::attach(|py| {
+            let task = task.bind(py);
+            // Deallocation may run on any thread holding the GIL, so schedule
+            // the cancellation on the task's event loop instead of calling it
+            // directly. Ignore errors from an already closed loop.
+            let _ = task
+                .call_method0(&self.constants.get_loop)
+                .and_then(|event_loop| {
+                    event_loop.call_method1(
+                        &self.constants.call_soon_threadsafe,
+                        (task.getattr(&self.constants.cancel)?,),
+                    )
+                });
+        });
     }
 }
 

@@ -27,6 +27,8 @@ pub(crate) struct ConstantsInner {
     pub aclose: Py<PyString>,
     /// The string "`add_done_callback`".
     pub add_done_callback: Py<PyString>,
+    /// The string "`call_soon_threadsafe`".
+    pub call_soon_threadsafe: Py<PyString>,
     /// The string "cancel".
     pub cancel: Py<PyString>,
     /// The string "`create_task`".
@@ -37,6 +39,8 @@ pub(crate) struct ConstantsInner {
     pub execute: Py<PyString>,
     /// The string "`execute_sync`".
     pub execute_sync: Py<PyString>,
+    /// The string "`get_loop`".
+    pub get_loop: Py<PyString>,
     /// The string "result".
     pub result: Py<PyString>,
 
@@ -524,11 +528,13 @@ impl Constants {
                 __aiter__: PyString::new(py, "__aiter__").unbind(),
                 aclose: PyString::new(py, "aclose").unbind(),
                 add_done_callback: PyString::new(py, "add_done_callback").unbind(),
+                call_soon_threadsafe: PyString::new(py, "call_soon_threadsafe").unbind(),
                 cancel: PyString::new(py, "cancel").unbind(),
                 create_task: PyString::new(py, "create_task").unbind(),
                 exception: PyString::new(py, "exception").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
+                get_loop: PyString::new(py, "get_loop").unbind(),
                 result: PyString::new(py, "result").unbind(),
 
                 close_request_iterator: glue.getattr("close_request_iterator")?.unbind(),

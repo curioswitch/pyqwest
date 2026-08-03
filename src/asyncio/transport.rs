@@ -170,7 +170,6 @@ impl HttpTransport {
         let fut = future_into_py(py, {
             let client = client.clone();
             let operation = operation.clone();
-            let request_iter_task = request_iter_task.clone();
             async move {
                 let res = client
                     .execute(request_rs)
@@ -178,7 +177,6 @@ impl HttpTransport {
                     .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
                 operation.fill_response(&res);
                 response.fill(res).await;
-                response.set_request_iter_task(&request_iter_task);
                 Ok(response)
             }
         })?;
@@ -266,10 +264,22 @@ struct EndOperationCallback {
 #[pymethods]
 impl EndOperationCallback {
     fn __call__(&self, py: Python<'_>, fut: &Bound<'_, PyAny>) -> PyResult<()> {
-        if let Some(task) = self.request_iter_task.swap(None) {
-            task.call_method0(py, &self.constants.cancel)?;
-        }
         let res = fut.call_method0(&self.constants.result);
+        if let Some(task) = self.request_iter_task.swap(None) {
+            let response = res
+                .as_ref()
+                .ok()
+                .and_then(|res| res.cast::<Response>().ok());
+            match response {
+                // Move the request iterator task to the response being returned in this future
+                // so it can be canceled when the response is closed.
+                Some(response) => response.get().set_request_iter_task(task),
+                None => {
+                    // Response already failed, cancel the request iterator here.
+                    task.call_method0(py, &self.constants.cancel)?;
+                }
+            }
+        }
         self.operation.end(py, res.as_ref().err())
     }
 }
