@@ -260,7 +260,9 @@ def convert_headers(request: httpx.Request) -> Headers:
     # httpx adds a host header matching the URL to every request, but the
     # transport derives it from the URL itself (:authority on HTTP/2, where a
     # redundant literal host field is rejected by some servers). Only forward
-    # host when the user overrode it to a different value.
+    # host when the user overrode it to a different value. There isn't any
+    # way to detect if the user explicitly set the host header at this layer
+    # so the best we can do is compare it to the URL.
 
     # HTTP defines host as case-insensitive
     url_host = request.url.netloc.decode("ascii").lower()
