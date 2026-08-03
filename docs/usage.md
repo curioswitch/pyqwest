@@ -360,8 +360,6 @@ A request that exceeds `max_redirects` fails with `pyqwest.TooManyRedirects`.
 When using pyqwest as an httpx transport, you may prefer to disable `follow_redirects`
 so HTTPX handles them as usual, notably filling `response.history`.
 
-The default transport / client follow redirects by default.
-
 ## Logging
 
 pyqwest integrates with Python's standard [`logging`](https://docs.python.org/3/library/logging.html)
