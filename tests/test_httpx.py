@@ -314,11 +314,14 @@ async def test_async_host_header() -> None:
     async with httpx.AsyncClient(transport=transport) as client:
         res = await client.get("http://localhost/")
         assert res.status_code == 200
+        res = await client.get("http://localhost/", headers={"host": "LOCALHOST"})
+        assert res.status_code == 200
         res = await client.get("http://localhost/", headers={"host": "example.com"})
         assert res.status_code == 200
 
     assert "host" not in recording.headers[0]
-    assert recording.headers[1]["host"] == "example.com"
+    assert "host" not in recording.headers[1]
+    assert recording.headers[2]["host"] == "example.com"
 
 
 def test_sync_host_header() -> None:
@@ -327,11 +330,14 @@ def test_sync_host_header() -> None:
     with httpx.Client(transport=transport) as client:
         res = client.get("http://localhost/")
         assert res.status_code == 200
+        res = client.get("http://localhost/", headers={"host": "LOCALHOST"})
+        assert res.status_code == 200
         res = client.get("http://localhost/", headers={"host": "example.com"})
         assert res.status_code == 200
 
     assert "host" not in recording.headers[0]
-    assert recording.headers[1]["host"] == "example.com"
+    assert "host" not in recording.headers[1]
+    assert recording.headers[2]["host"] == "example.com"
 
 
 def refused_url() -> str:
