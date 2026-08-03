@@ -100,8 +100,8 @@ def test_sync_response_content_iterator():
 
 
 def yield_from_await(awaitable: Awaitable[Any]) -> Generator[Any, None, Any]:
-    # Awaits like asyncio.ensure_future on Python < 3.12, which requires the
-    # result of __await__ to be iterable, not just an iterator as plain await.
+    # Python < 3.12 use yield from on an awaitable's iterator in methods like
+    # ensure_future, we test compatibility with that pattern.
     return (yield from awaitable.__await__())
 
 

@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 import threading
 from typing import TYPE_CHECKING
 
 import httpx
 import pytest
 
+<<<<<<< HEAD
 from pyqwest import HTTPTransport, Request, Response, SyncHTTPTransport, Transport
+=======
+from pyqwest import ConnectTimeout, HTTPTransport, SyncHTTPTransport
+>>>>>>> b94c9e0de0a32ca43c5f10d4bd2342f4cd0948ca
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
 from pyqwest.httpx._transport import convert_headers
 from pyqwest.testing import ASGITransport, WSGITransport
@@ -157,7 +162,7 @@ async def test_async_timeout_headers() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(app))
     try:
         async with httpx.AsyncClient(transport=transport, timeout=0.1) as client:
-            with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+            with pytest.raises(httpx.ReadTimeout):
                 await client.get("http://localhost/")
     finally:
         release.set()
@@ -196,7 +201,7 @@ async def test_async_timeout_response_content() -> None:
         ):
             assert res.status_code == 200
             content = b""
-            with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+            with pytest.raises(httpx.ReadTimeout):
                 async for chunk in res.aiter_raw():
                     content += chunk
             assert content == b"partial"
@@ -245,7 +250,7 @@ def test_sync_timeout() -> None:
     try:
         with (
             httpx.Client(transport=transport, timeout=0.1) as client,
-            pytest.raises(TimeoutError),
+            pytest.raises(httpx.ReadTimeout),
         ):
             client.get("http://localhost/")
     finally:
@@ -304,6 +309,71 @@ async def test_async_host_header_not_forwarded() -> None:
 
     assert "host" not in recording.requests[0].headers
     assert recording.requests[1].headers["host"] == "example.com"
+def refused_url() -> str:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{s.getsockname()[1]}/"
+
+
+# A non-routable address, so connection attempts hang until timeout.
+BLACKHOLE_HOST = "10.255.255.1"
+BLACKHOLE_URL = f"http://{BLACKHOLE_HOST}:81/"
+
+
+def require_blackhole() -> None:
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        try:
+            probe.connect((BLACKHOLE_HOST, 81))
+        except TimeoutError:
+            return
+        except OSError:
+            pass
+    pytest.skip(f"network does not blackhole {BLACKHOLE_HOST}")
+
+
+@pytest.mark.asyncio
+async def test_async_connect_error() -> None:
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(httpx.ConnectError) as excinfo:
+                await client.get(refused_url())
+    assert isinstance(excinfo.value.__cause__, ConnectionError)
+
+
+@pytest.mark.asyncio
+async def test_async_connect_timeout() -> None:
+    require_blackhole()
+    async with HTTPTransport(connect_timeout=0.2) as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(httpx.ConnectTimeout) as excinfo:
+                await client.get(BLACKHOLE_URL)
+    assert isinstance(excinfo.value.__cause__, ConnectTimeout)
+
+
+def test_sync_connect_error() -> None:
+    with SyncHTTPTransport() as pyqwest_transport:
+        transport = PyqwestTransport(pyqwest_transport)
+        with (
+            httpx.Client(transport=transport) as client,
+            pytest.raises(httpx.ConnectError) as excinfo,
+        ):
+            client.get(refused_url())
+    assert isinstance(excinfo.value.__cause__, ConnectionError)
+
+
+def test_sync_connect_timeout() -> None:
+    require_blackhole()
+    with SyncHTTPTransport(connect_timeout=0.2) as pyqwest_transport:
+        transport = PyqwestTransport(pyqwest_transport)
+        with (
+            httpx.Client(transport=transport) as client,
+            pytest.raises(httpx.ConnectTimeout) as excinfo,
+        ):
+            client.get(BLACKHOLE_URL)
+    assert isinstance(excinfo.value.__cause__, ConnectTimeout)
 
 
 def access_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:

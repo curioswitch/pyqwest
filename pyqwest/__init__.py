@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = [
     "Client",
+    "ConnectTimeout",
     "FullResponse",
     "HTTPHeaderName",
     "HTTPTransport",
@@ -30,7 +31,7 @@ __all__ = [
 
 from . import _pyqwest
 from ._coro import Client, Response
-from ._errors import StreamError, StreamErrorCode
+from ._errors import ConnectTimeout, StreamError, StreamErrorCode
 from ._multipart import Multipart, Part, SyncMultipart, SyncPart
 from ._pyqwest import (
     FullResponse,

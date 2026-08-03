@@ -64,6 +64,10 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except ConnectionError as e:
+            raise map_connection_error(e, request) from e
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            raise map_timeout_error(e, request) from e
 
         def get_trailers() -> httpx.Headers:
             return httpx.Headers(tuple(response.trailers.items()))
@@ -133,6 +137,8 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
                     yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            raise map_timeout_error(e) from e
 
     async def aclose(self) -> None:
         await self._response.aclose()
@@ -175,6 +181,10 @@ class PyqwestTransport(httpx.BaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except ConnectionError as e:
+            raise map_connection_error(e, request) from e
+        except TimeoutError as e:
+            raise map_timeout_error(e, request) from e
         finally:
             if timeout_manager is not None:
                 timeout_manager.__exit__(None, None, None)
@@ -229,6 +239,8 @@ class IteratorByteStream(httpx.SyncByteStream):
                 yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
+        except TimeoutError as e:
+            raise map_timeout_error(e) from e
 
     def close(self) -> None:
         self._response.close()
@@ -287,6 +299,24 @@ def remaining_time(deadline: float | None) -> float | None:
     if deadline is None:
         return None
     return max(deadline - asyncio.get_running_loop().time(), 0.0)
+
+
+def map_connection_error(
+    e: ConnectionError, request: httpx.Request | None = None
+) -> httpx.ConnectError | httpx.ConnectTimeout:
+    if isinstance(e, TimeoutError):
+        return httpx.ConnectTimeout(str(e) or "timed out", request=request)
+    return httpx.ConnectError(str(e), request=request)
+
+
+def map_timeout_error(
+    e: BaseException, request: httpx.Request | None = None
+) -> httpx.ReadTimeout:
+    # Connect timeouts are raised as ConnectTimeout (a ConnectionError) and
+    # mapped by map_connection_error. The remaining operation timeout covers
+    # read/write without distinguishing which phase expired, so it maps to
+    # ReadTimeout to satisfy the httpx.TimeoutException contract.
+    return httpx.ReadTimeout(str(e) or "timed out", request=request)
 
 
 def map_stream_error(e: StreamError) -> httpx.RemoteProtocolError:

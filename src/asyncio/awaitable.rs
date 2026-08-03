@@ -14,8 +14,6 @@ impl EmptyAwaitable {
         slf
     }
 
-    // Python < 3.12 wraps awaitables with `yield from`, which requires the
-    // result of `__await__` to also implement `__iter__`, not just `__next__`.
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
