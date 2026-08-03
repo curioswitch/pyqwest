@@ -7,6 +7,7 @@ use pyo3::{
 create_exception!(pyqwest, ReadError, PyException);
 create_exception!(pyqwest, WriteError, PyException);
 create_exception!(pyqwest, TooManyRedirects, PyException);
+import_exception!(pyqwest._errors, ConnectTimeout);
 import_exception!(pyqwest._errors, StreamError);
 
 pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
@@ -19,7 +20,11 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
 
     let msg = format!("{msg}: {:+}", errors::fmt(e));
     if e.is_connect() {
-        PyConnectionError::new_err(msg)
+        if e.is_timeout() {
+            ConnectTimeout::new_err(msg)
+        } else {
+            PyConnectionError::new_err(msg)
+        }
     } else if e.is_timeout() {
         PyTimeoutError::new_err(msg)
     } else if e.is_redirect() {
