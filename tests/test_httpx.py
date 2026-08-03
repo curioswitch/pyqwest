@@ -338,7 +338,7 @@ async def test_sync_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
                 httpx.Client(transport=transport) as client,
                 pytest.raises(httpx.TooManyRedirects),
             ):
-                res = client.get(f"{url}/redirect?n=5")
+                client.get(f"{url}/redirect?n=5")
 
     await asyncio.to_thread(run)
 
