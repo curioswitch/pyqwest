@@ -17,6 +17,7 @@ from pyqwest import (
     SyncRequest,
     SyncResponse,
     SyncTransport,
+    TooManyRedirects,
     Transport,
 )
 from pyqwest._pyqwest import set_sync_timeout
@@ -30,6 +31,10 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
 
     This can be used with any existing code using httpx.AsyncClient, and will enable
     use of bidirectional streaming and response trailers.
+
+    By default, [pyqwest.HTTPTransport][] follows redirects internally. To have
+    HTTPX handle it instead, for example to set `response.history`, configure
+    the pyqwest transport with `follow_redirects=False`.
     """
 
     _transport: Transport
@@ -64,6 +69,8 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except TooManyRedirects as e:
+            raise httpx.TooManyRedirects(str(e), request=request) from e
         except ConnectionError as e:
             raise map_connection_error(e, request) from e
         except (TimeoutError, asyncio.TimeoutError) as e:
@@ -149,6 +156,10 @@ class PyqwestTransport(httpx.BaseTransport):
 
     This can be used with any existing code using httpx.Client, and will enable
     use of bidirectional streaming and response trailers.
+
+    By default, [pyqwest.SyncHTTPTransport][] follows redirects internally. To have
+    HTTPX handle it instead, for example to set `response.history`, configure
+    the pyqwest transport with `follow_redirects=False`.
     """
 
     _transport: SyncTransport
@@ -181,6 +192,8 @@ class PyqwestTransport(httpx.BaseTransport):
             )
         except StreamError as e:
             raise map_stream_error(e) from e
+        except TooManyRedirects as e:
+            raise httpx.TooManyRedirects(str(e), request=request) from e
         except ConnectionError as e:
             raise map_connection_error(e, request) from e
         except TimeoutError as e:

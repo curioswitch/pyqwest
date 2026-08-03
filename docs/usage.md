@@ -331,6 +331,35 @@ setting by passing `timeout` for sync clients or using `asyncio.wait_for` or
     response = client.get("https://pyqwest.dev", timeout=2.0)
     ```
 
+### Redirects
+
+By default, transports follow redirects automatically up to a maximum of 10, which can be
+configured with `max_redirects`.
+To instead receive `301` or `302` responses directly, set `follow_redirects=False`.
+
+=== "async"
+
+    ```python
+    async with HTTPTransport(follow_redirects=False) as transport:
+        client = Client(transport)
+        res = await client.get("/redirectonce")
+        assert res.status == 301
+    ```
+
+=== "sync"
+
+    ```python
+    with SyncHTTPTransport(follow_redirects=False) as transport:
+        client = SyncClient(transport)
+        res = client.get("/redirectonce")
+        assert res.status == 301
+    ```
+
+A request that exceeds `max_redirects` fails with `pyqwest.TooManyRedirects`.
+
+When using pyqwest as an httpx transport, you may prefer to disable `follow_redirects`
+so HTTPX handles them as usual, notably filling `response.history`.
+
 ## Logging
 
 pyqwest integrates with Python's standard [`logging`](https://docs.python.org/3/library/logging.html)

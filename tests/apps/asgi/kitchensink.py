@@ -159,6 +159,25 @@ async def _get_cookie(
     await send({"type": "http.response.body", "body": cookie, "more_body": False})
 
 
+async def _redirect(
+    scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    # /redirect?n=3 redirects to /redirect?n=2 and so on until finally
+    # redirecting to /echo.
+    query = scope["query_string"].decode()
+    remaining = int(query.removeprefix("n=")) if query.startswith("n=") else 1
+    location = f"/redirect?n={remaining - 1}" if remaining > 1 else "/echo"
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 302,
+            "headers": [(b"location", location.encode())],
+            "trailers": False,
+        }
+    )
+    await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+
 async def app(
     scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
@@ -176,6 +195,8 @@ async def app(
             await _set_cookie(scope, receive, send)
         case "/get-cookie":
             await _get_cookie(scope, receive, send)
+        case "/redirect":
+            await _redirect(scope, receive, send)
         case _:
             await send(
                 {

@@ -11,7 +11,9 @@ use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
-use crate::shared::transport::{get_default_reqwest_client, new_reqwest_client, ClientParams};
+use crate::shared::transport::{
+    get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
+};
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
 
@@ -53,6 +55,8 @@ impl SyncHttpTransport {
         enable_zstd = true,
         use_system_dns = false,
         enable_cookie_store = false,
+        follow_redirects = true,
+        max_redirects = DEFAULT_MAX_REDIRECTS,
         enable_otel = true,
         meter_provider = None,
         tracer_provider = None,
@@ -76,6 +80,8 @@ impl SyncHttpTransport {
         enable_zstd: bool,
         use_system_dns: bool,
         enable_cookie_store: bool,
+        follow_redirects: bool,
+        max_redirects: usize,
         enable_otel: bool,
         meter_provider: Option<Bound<'_, PyAny>>,
         tracer_provider: Option<Bound<'_, PyAny>>,
@@ -98,6 +104,8 @@ impl SyncHttpTransport {
             enable_zstd,
             use_system_dns,
             enable_cookie_store,
+            follow_redirects,
+            max_redirects,
         })?;
         let constants = Constants::get(py)?;
         Ok(Self {

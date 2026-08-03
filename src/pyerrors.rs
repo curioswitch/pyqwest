@@ -6,6 +6,7 @@ use pyo3::{
 
 create_exception!(pyqwest, ReadError, PyException);
 create_exception!(pyqwest, WriteError, PyException);
+create_exception!(pyqwest, TooManyRedirects, PyException);
 import_exception!(pyqwest._errors, ConnectTimeout);
 import_exception!(pyqwest._errors, StreamError);
 
@@ -26,6 +27,8 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
         }
     } else if e.is_timeout() {
         PyTimeoutError::new_err(msg)
+    } else if e.is_redirect() {
+        TooManyRedirects::new_err(msg)
     } else if e.is_request() {
         WriteError::new_err(msg)
     } else if e.is_body() {

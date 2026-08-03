@@ -523,6 +523,8 @@ class HTTPTransport:
         enable_zstd: bool = True,
         use_system_dns: bool = False,
         enable_cookie_store: bool = False,
+        follow_redirects: bool = True,
+        max_redirects: int = 10,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
@@ -569,6 +571,13 @@ class HTTPTransport:
             enable_cookie_store: Whether to enable automatic cookie storage and sending. When enabled,
                           the transport will automatically store cookies from responses and send
                           them with subsequent requests.
+            follow_redirects: Whether to automatically follow redirect responses. When disabled,
+                              which is the default, redirect responses are returned as-is.
+                              Leave this disabled when the transport is used through
+                              pyqwest.httpx, because httpx clients apply their own
+                              follow_redirects setting and track redirects in response.history.
+            max_redirects: Maximum number of redirects to follow when follow_redirects is enabled.
+                           A request exceeding it fails with TooManyRedirects.
         """
 
     def __aenter__(self) -> Awaitable[HTTPTransport]:
@@ -1016,6 +1025,8 @@ class SyncHTTPTransport:
         enable_zstd: bool = True,
         use_system_dns: bool = False,
         enable_cookie_store: bool = False,
+        follow_redirects: bool = True,
+        max_redirects: int = 10,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
@@ -1062,6 +1073,13 @@ class SyncHTTPTransport:
             enable_cookie_store: Whether to enable automatic cookie storage and sending. When enabled,
                           the transport will automatically store cookies from responses and send
                           them with subsequent requests.
+            follow_redirects: Whether to automatically follow redirect responses. When disabled,
+                              which is the default, redirect responses are returned as-is.
+                              Leave this disabled when the transport is used through
+                              pyqwest.httpx, because httpx clients apply their own
+                              follow_redirects setting and track redirects in response.history.
+            max_redirects: Maximum number of redirects to follow when follow_redirects is enabled.
+                           A request exceeding it fails with TooManyRedirects.
         """
 
     def __enter__(self) -> SyncHTTPTransport:
@@ -1276,6 +1294,10 @@ class ReadError(Exception):
 @final
 class WriteError(Exception):
     """An error representing a write error during request sending."""
+
+@final
+class TooManyRedirects(Exception):
+    """An error raised when a request exceeded the transport's max_redirects."""
 
 @final
 class HTTPHeaderName:

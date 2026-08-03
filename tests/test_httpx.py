@@ -340,6 +340,97 @@ def test_sync_host_header() -> None:
     assert recording.headers[2]["host"] == "example.com"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_async_redirects_handled_by_pyqwest(url: str) -> None:
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            res = await client.get(f"{url}/redirect")
+            assert res.status_code == 200
+            assert res.history == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_sync_redirects_handled_by_pyqwest(url: str) -> None:
+    def run() -> None:
+        with SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with httpx.Client(transport=transport) as client:
+                res = client.get(f"{url}/redirect")
+                assert res.status_code == 200
+                assert res.history == []
+
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_async_redirects_handled_by_httpx(url: str) -> None:
+    async with HTTPTransport(follow_redirects=False) as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            res = await client.get(f"{url}/redirect")
+            assert res.status_code == 302
+            assert res.headers["location"] == "/echo"
+            assert res.history == []
+
+            res = await client.get(f"{url}/redirect?n=3", follow_redirects=True)
+            assert res.status_code == 200
+            assert len(res.history) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_sync_redirects_handled_by_httpx(url: str) -> None:
+    def run() -> None:
+        with SyncHTTPTransport(follow_redirects=False) as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with httpx.Client(transport=transport) as client:
+                res = client.get(f"{url}/redirect")
+                assert res.status_code == 302
+                assert res.headers["location"] == "/echo"
+                assert res.history == []
+
+                res = client.get(f"{url}/redirect?n=3", follow_redirects=True)
+                assert res.status_code == 200
+                assert len(res.history) == 3
+
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_async_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
+    async with HTTPTransport(max_redirects=1) as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(httpx.TooManyRedirects):
+                await client.get(f"{url}/redirect?n=5")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_sync_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
+    def run() -> None:
+        with SyncHTTPTransport(max_redirects=1) as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with (
+                httpx.Client(transport=transport) as client,
+                pytest.raises(httpx.TooManyRedirects),
+            ):
+                client.get(f"{url}/redirect?n=5")
+
+    await asyncio.to_thread(run)
+
+
 def refused_url() -> str:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

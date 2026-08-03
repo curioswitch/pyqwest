@@ -18,6 +18,9 @@ use crate::{
 
 static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();
 
+/// The number of redirects followed by default when redirects are enabled.
+pub(crate) const DEFAULT_MAX_REDIRECTS: usize = 10;
+
 pub(crate) struct ClientParams<'a> {
     pub(crate) tls_ca_cert: Option<&'a [u8]>,
     pub(crate) tls_include_system_certs: bool,
@@ -36,6 +39,8 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) enable_zstd: bool,
     pub(crate) use_system_dns: bool,
     pub(crate) enable_cookie_store: bool,
+    pub(crate) follow_redirects: bool,
+    pub(crate) max_redirects: usize,
 }
 
 pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Client, bool)> {
@@ -108,6 +113,11 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
     builder = builder.zstd(params.enable_zstd);
     builder = builder.hickory_dns(!params.use_system_dns);
     builder = builder.cookie_store(params.enable_cookie_store);
+    builder = builder.redirect(if params.follow_redirects {
+        reqwest::redirect::Policy::limited(params.max_redirects)
+    } else {
+        reqwest::redirect::Policy::none()
+    });
 
     let client = if http3 {
         // Workaround https://github.com/seanmonstar/reqwest/issues/2910
@@ -166,6 +176,8 @@ pub(crate) fn get_default_reqwest_client(py: Python<'_>) -> reqwest::Client {
                 enable_zstd: true,
                 use_system_dns: false,
                 enable_cookie_store: false,
+                follow_redirects: true,
+                max_redirects: DEFAULT_MAX_REDIRECTS,
             })
             .unwrap();
             client
