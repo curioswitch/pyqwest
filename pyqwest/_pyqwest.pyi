@@ -1025,7 +1025,7 @@ class SyncHTTPTransport:
         enable_zstd: bool = True,
         use_system_dns: bool = False,
         enable_cookie_store: bool = False,
-        follow_redirects: bool = False,
+        follow_redirects: bool = True,
         max_redirects: int = 10,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
