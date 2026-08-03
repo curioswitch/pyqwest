@@ -349,7 +349,7 @@ To instead receive `301` or `302` responses directly, set `follow_redirects=Fals
 === "sync"
 
     ```python
-    with SyncHTTPTransport(follow_redirects=True, max_redirects=5) as transport:
+    with SyncHTTPTransport(follow_redirects=False) as transport:
         client = SyncClient(transport)
         res = client.get("/redirectonce")
         assert res.status == 301
@@ -357,8 +357,8 @@ To instead receive `301` or `302` responses directly, set `follow_redirects=Fals
 
 A request that exceeds `max_redirects` fails with `pyqwest.TooManyRedirects`.
 
-When using pyqwest as an httpx transport, leave `follow_redirects` disabled so HTTPX
-can handle them as usual.
+When using pyqwest as an httpx transport, you may prefer to disable `follow_redirects`
+so HTTPX handles them as usual, notably filling `response.history`.
 
 The default transport / client follow redirects by default.
 
