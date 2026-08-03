@@ -261,16 +261,18 @@ def convert_headers(request: httpx.Request) -> Headers:
     # transport derives it from the URL itself (:authority on HTTP/2, where a
     # redundant literal host field is rejected by some servers). Only forward
     # host when the user overrode it to a different value.
-    default_host = request.url.netloc.decode("ascii").lower()
-    headers = []
+
+    # HTTP defines host as case-insensitive
+    url_host = request.url.netloc.decode("ascii").lower()
+    headers = Headers()
     for name, value in request.headers.multi_items():
         lower_name = name.lower()
         if lower_name in TRANSPORT_HEADERS:
             continue
-        if lower_name == "host" and value.lower() == default_host:
+        if lower_name == "host" and value.lower() == url_host:
             continue
-        headers.append((name, value))
-    return Headers(headers)
+        headers.add(name, value)
+    return headers
 
 
 def convert_timeout(extensions: dict) -> float | None:

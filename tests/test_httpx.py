@@ -9,11 +9,17 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 
-<<<<<<< HEAD
-from pyqwest import HTTPTransport, Request, Response, SyncHTTPTransport, Transport
-=======
-from pyqwest import ConnectTimeout, HTTPTransport, SyncHTTPTransport
->>>>>>> b94c9e0de0a32ca43c5f10d4bd2342f4cd0948ca
+from pyqwest import (
+    ConnectTimeout,
+    Headers,
+    HTTPTransport,
+    Request,
+    Response,
+    SyncHTTPTransport,
+    SyncRequest,
+    SyncResponse,
+    Transport,
+)
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
 from pyqwest.httpx._transport import convert_headers
 from pyqwest.testing import ASGITransport, WSGITransport
@@ -290,15 +296,19 @@ def test_convert_headers_strips_transport_headers() -> None:
 
 class RecordingTransport(Transport):
     def __init__(self) -> None:
-        self.requests: list[Request] = []
+        self.headers: list[Headers] = []
 
     async def execute(self, request: Request) -> Response:
-        self.requests.append(request)
+        self.headers.append(request.headers)
         return Response(status=200)
+
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        self.headers.append(request.headers)
+        return SyncResponse(status=200)
 
 
 @pytest.mark.asyncio
-async def test_async_host_header_not_forwarded() -> None:
+async def test_async_host_header() -> None:
     recording = RecordingTransport()
     transport = AsyncPyqwestTransport(recording)
     async with httpx.AsyncClient(transport=transport) as client:
@@ -307,8 +317,23 @@ async def test_async_host_header_not_forwarded() -> None:
         res = await client.get("http://localhost/", headers={"host": "example.com"})
         assert res.status_code == 200
 
-    assert "host" not in recording.requests[0].headers
-    assert recording.requests[1].headers["host"] == "example.com"
+    assert "host" not in recording.headers[0]
+    assert recording.headers[1]["host"] == "example.com"
+
+
+def test_sync_host_header() -> None:
+    recording = RecordingTransport()
+    transport = PyqwestTransport(recording)
+    with httpx.Client(transport=transport) as client:
+        res = client.get("http://localhost/")
+        assert res.status_code == 200
+        res = client.get("http://localhost/", headers={"host": "example.com"})
+        assert res.status_code == 200
+
+    assert "host" not in recording.headers[0]
+    assert recording.headers[1]["host"] == "example.com"
+
+
 def refused_url() -> str:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
