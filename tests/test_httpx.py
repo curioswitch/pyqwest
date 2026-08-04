@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import socket
+import struct
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
 import pytest
@@ -13,12 +15,14 @@ from pyqwest import (
     ConnectTimeout,
     Headers,
     HTTPTransport,
+    ReadError,
     Request,
     Response,
     SyncHTTPTransport,
     SyncRequest,
     SyncResponse,
     Transport,
+    WriteError,
 )
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
 from pyqwest.httpx._transport import convert_headers
@@ -26,7 +30,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import AsyncIterator, Iterable
+    from collections.abc import AsyncIterator, Iterable, Iterator
 
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, Scope
 
@@ -535,3 +539,152 @@ async def test_sync_access_log(url: str, caplog: pytest.LogCaptureFixture) -> No
     records = access_records(caplog)
     assert len(records) == 1
     assert records[0].getMessage() == f'HTTP Request: GET {url}/echo "HTTP/1.1 200 OK"'
+
+
+@contextlib.contextmanager
+def resetting_server(response: bytes) -> Iterator[str]:
+    """Serves `response`, then resets the connection instead of closing it."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+
+    def serve() -> None:
+        with listener, contextlib.closing(listener.accept()[0]) as conn:
+            conn.recv(65536)
+            conn.sendall(response)
+            # SO_LINGER with a zero timeout makes close() send RST rather than
+            # FIN, so the peer sees a connection reset.
+            conn.setsockopt(
+                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+            )
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{port}/"
+    finally:
+        thread.join(timeout=5)
+
+
+# Promises more body than is sent, so the reset truncates the response.
+TRUNCATED_RESPONSE = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial"
+
+
+@pytest.mark.asyncio
+async def test_async_response_reset() -> None:
+    with resetting_server(TRUNCATED_RESPONSE) as url:
+        async with HTTPTransport() as pyqwest_transport:
+            transport = AsyncPyqwestTransport(pyqwest_transport)
+            async with httpx.AsyncClient(transport=transport) as client:
+                with pytest.raises(httpx.ReadError) as excinfo:
+                    await client.get(url)
+    assert isinstance(excinfo.value.__cause__, ReadError)
+
+
+@pytest.mark.asyncio
+async def test_sync_response_reset() -> None:
+    def run() -> None:
+        with (
+            resetting_server(TRUNCATED_RESPONSE) as url,
+            SyncHTTPTransport() as pyqwest_transport,
+        ):
+            transport = PyqwestTransport(pyqwest_transport)
+            with (
+                httpx.Client(transport=transport) as client,
+                pytest.raises(httpx.ReadError) as excinfo,
+            ):
+                client.get(url)
+        assert isinstance(excinfo.value.__cause__, ReadError)
+
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_async_request_body_error(url: str) -> None:
+    async def content() -> AsyncIterator[bytes]:
+        yield cast("bytes", 10)
+
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            # Can surface on either side depending on timing.
+            with pytest.raises((httpx.WriteError, httpx.ReadError)) as excinfo:
+                await client.post(f"{url}/echo", content=content())
+    assert isinstance(excinfo.value.__cause__, (WriteError, ReadError))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
+@pytest.mark.parametrize("http_version", ["h1"], indirect=True)
+async def test_sync_request_body_error(url: str) -> None:
+    def content() -> Iterator[bytes]:
+        yield cast("bytes", 10)
+
+    def run() -> None:
+        with SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with (
+                httpx.Client(transport=transport) as client,
+                pytest.raises((httpx.WriteError, httpx.ReadError)) as excinfo,
+            ):
+                client.post(f"{url}/echo", content=content())
+        assert isinstance(excinfo.value.__cause__, (WriteError, ReadError))
+
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+async def test_async_unsupported_scheme() -> None:
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(httpx.UnsupportedProtocol):
+                await client.get("ftp://127.0.0.1:1/")
+
+
+@pytest.mark.asyncio
+async def test_sync_unsupported_scheme() -> None:
+    def run() -> None:
+        with SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with (
+                httpx.Client(transport=transport) as client,
+                pytest.raises(httpx.UnsupportedProtocol),
+            ):
+                client.get("ftp://127.0.0.1:1/")
+
+    await asyncio.to_thread(run)
+
+
+@pytest.mark.asyncio
+async def test_async_malformed_request() -> None:
+    url = refused_url()
+    async with HTTPTransport() as pyqwest_transport:
+        transport = AsyncPyqwestTransport(pyqwest_transport)
+        async with httpx.AsyncClient(transport=transport) as client:
+            # Rejected while building the request, so nothing is ever sent and
+            # the refused port is never connected to.
+            with pytest.raises(httpx.LocalProtocolError) as excinfo:
+                await client.get(url, headers={"bad name": "value"})
+            assert isinstance(excinfo.value.__cause__, ValueError)
+            with pytest.raises(httpx.LocalProtocolError):
+                await client.request("BAD METHOD", url)
+
+
+@pytest.mark.asyncio
+async def test_sync_malformed_request() -> None:
+    def run() -> None:
+        url = refused_url()
+        with SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with httpx.Client(transport=transport) as client:
+                with pytest.raises(httpx.LocalProtocolError) as excinfo:
+                    client.get(url, headers={"bad name": "value"})
+                assert isinstance(excinfo.value.__cause__, ValueError)
+                with pytest.raises(httpx.LocalProtocolError):
+                    client.request("BAD METHOD", url)
+
+    await asyncio.to_thread(run)

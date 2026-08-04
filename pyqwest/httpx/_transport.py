@@ -10,6 +10,7 @@ from h2.events import StreamReset
 
 from pyqwest import (
     Headers,
+    ReadError,
     Request,
     Response,
     StreamError,
@@ -19,6 +20,7 @@ from pyqwest import (
     SyncTransport,
     TooManyRedirects,
     Transport,
+    WriteError,
 )
 from pyqwest._pyqwest import set_sync_timeout
 
@@ -48,24 +50,25 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
         self._transport = transport
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        request_headers = convert_headers(request)
-        request_content = async_request_content(request.stream)
+        check_scheme(request)
         timeout = convert_timeout(request.extensions)
         deadline = None
         if timeout is not None:
             deadline = asyncio.get_running_loop().time() + timeout
 
         try:
+            pyqwest_request = Request(
+                request.method,
+                str(request.url),
+                headers=convert_headers(request),
+                content=async_request_content(request.stream),
+            )
+        except ValueError as e:
+            raise map_value_error(e, request) from e
+
+        try:
             response = await asyncio.wait_for(
-                self._transport.execute(
-                    Request(
-                        request.method,
-                        str(request.url),
-                        headers=request_headers,
-                        content=request_content,
-                    )
-                ),
-                remaining_time(deadline),
+                self._transport.execute(pyqwest_request), remaining_time(deadline)
             )
         except StreamError as e:
             raise map_stream_error(e) from e
@@ -75,6 +78,8 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
             raise map_connection_error(e, request) from e
         except (TimeoutError, asyncio.TimeoutError) as e:
             raise map_timeout_error(e, request) from e
+        except (ReadError, WriteError) as e:
+            raise map_network_error(e, request) from e
 
         def get_trailers() -> httpx.Headers:
             return httpx.Headers(tuple(response.trailers.items()))
@@ -144,8 +149,12 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
                     yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
+        except ConnectionError as e:
+            raise map_connection_error(e) from e
         except (TimeoutError, asyncio.TimeoutError) as e:
             raise map_timeout_error(e) from e
+        except (ReadError, WriteError) as e:
+            raise map_network_error(e) from e
 
     async def aclose(self) -> None:
         await self._response.aclose()
@@ -173,23 +182,26 @@ class PyqwestTransport(httpx.BaseTransport):
         self._transport = transport
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        request_headers = convert_headers(request)
-        request_content = sync_request_content(request.stream)
+        check_scheme(request)
         timeout = convert_timeout(request.extensions)
+
+        try:
+            pyqwest_request = SyncRequest(
+                request.method,
+                str(request.url),
+                headers=convert_headers(request),
+                content=sync_request_content(request.stream),
+            )
+        except ValueError as e:
+            raise map_value_error(e, request) from e
+
         timeout_manager = None
         if timeout is not None:
             timeout_manager = set_sync_timeout(timeout)
             timeout_manager.__enter__()
 
         try:
-            response = self._transport.execute_sync(
-                SyncRequest(
-                    request.method,
-                    str(request.url),
-                    headers=request_headers,
-                    content=request_content,
-                )
-            )
+            response = self._transport.execute_sync(pyqwest_request)
         except StreamError as e:
             raise map_stream_error(e) from e
         except TooManyRedirects as e:
@@ -198,6 +210,8 @@ class PyqwestTransport(httpx.BaseTransport):
             raise map_connection_error(e, request) from e
         except TimeoutError as e:
             raise map_timeout_error(e, request) from e
+        except (ReadError, WriteError) as e:
+            raise map_network_error(e, request) from e
         finally:
             if timeout_manager is not None:
                 timeout_manager.__exit__(None, None, None)
@@ -252,8 +266,12 @@ class IteratorByteStream(httpx.SyncByteStream):
                 yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
+        except ConnectionError as e:
+            raise map_connection_error(e) from e
         except TimeoutError as e:
             raise map_timeout_error(e) from e
+        except (ReadError, WriteError) as e:
+            raise map_network_error(e) from e
 
     def close(self) -> None:
         self._response.close()
@@ -288,6 +306,20 @@ def convert_headers(request: httpx.Request) -> Headers:
             continue
         headers.add(name, value)
     return headers
+
+
+def check_scheme(request: httpx.Request) -> None:
+    # The transport only speaks HTTP, and the underlying client reports anything
+    # else as a generic client build failure, so reject it here with the same
+    # error httpx uses.
+    scheme = request.url.scheme
+    if scheme not in ("http", "https"):
+        msg = (
+            f"Request URL has an unsupported protocol '{scheme}://'."
+            if scheme
+            else "Request URL is missing an 'http://' or 'https://' protocol."
+        )
+        raise httpx.UnsupportedProtocol(msg, request=request)
 
 
 def convert_timeout(extensions: dict) -> float | None:
@@ -334,6 +366,26 @@ def map_timeout_error(
     # read/write without distinguishing which phase expired, so it maps to
     # ReadTimeout to satisfy the httpx.TimeoutException contract.
     return httpx.ReadTimeout(str(e) or "timed out", request=request)
+
+
+def map_value_error(
+    e: ValueError, request: httpx.Request | None = None
+) -> httpx.LocalProtocolError:
+    # The method, URL or headers were rejected while building the request, so
+    # nothing was sent. httpx reports malformed requests as LocalProtocolError.
+    return httpx.LocalProtocolError(str(e), request=request)
+
+
+def map_network_error(
+    e: ReadError | WriteError, request: httpx.Request | None = None
+) -> httpx.ReadError | httpx.WriteError:
+    # pyqwest distinguishes failures while sending the request from failures
+    # while receiving the response, which lines up with the httpx pair. Both
+    # cover transport-level breakage such as a connection reset, so they must
+    # not escape as pyqwest types.
+    if isinstance(e, WriteError):
+        return httpx.WriteError(str(e), request=request)
+    return httpx.ReadError(str(e), request=request)
 
 
 def map_stream_error(e: StreamError) -> httpx.RemoteProtocolError:
