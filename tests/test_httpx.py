@@ -577,9 +577,11 @@ async def test_async_response_reset() -> None:
         async with HTTPTransport() as pyqwest_transport:
             transport = AsyncPyqwestTransport(pyqwest_transport)
             async with httpx.AsyncClient(transport=transport) as client:
-                with pytest.raises(httpx.ReadError) as excinfo:
+                # Usually a read error but timing can make it a write error
+                # especially on Windows.
+                with pytest.raises((httpx.ReadError, httpx.WriteError)) as excinfo:
                     await client.get(url)
-    assert isinstance(excinfo.value.__cause__, ReadError)
+    assert isinstance(excinfo.value.__cause__, (ReadError, WriteError))
 
 
 @pytest.mark.asyncio
@@ -592,10 +594,12 @@ async def test_sync_response_reset() -> None:
             transport = PyqwestTransport(pyqwest_transport)
             with (
                 httpx.Client(transport=transport) as client,
-                pytest.raises(httpx.ReadError) as excinfo,
+                # Usually a read error but timing can make it a write error
+                # especially on Windows.
+                pytest.raises((httpx.ReadError, httpx.WriteError)) as excinfo,
             ):
                 client.get(url)
-        assert isinstance(excinfo.value.__cause__, ReadError)
+        assert isinstance(excinfo.value.__cause__, (ReadError, WriteError))
 
     await asyncio.to_thread(run)
 
