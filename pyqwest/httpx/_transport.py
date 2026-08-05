@@ -379,10 +379,6 @@ def map_value_error(
 def map_network_error(
     e: ReadError | WriteError, request: httpx.Request | None = None
 ) -> httpx.ReadError | httpx.WriteError:
-    # pyqwest distinguishes failures while sending the request from failures
-    # while receiving the response, which lines up with the httpx pair. Both
-    # cover transport-level breakage such as a connection reset, so they must
-    # not escape as pyqwest types.
     if isinstance(e, WriteError):
         return httpx.WriteError(str(e), request=request)
     return httpx.ReadError(str(e), request=request)
