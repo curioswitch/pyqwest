@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 import httpx
 import pytest
+from h2.errors import ErrorCodes
 
 from pyqwest import (
     ConnectTimeout,
@@ -611,9 +612,11 @@ async def test_async_stream_error_keeps_reset_message() -> None:
     async with httpx.AsyncClient(transport=transport) as client:
         with pytest.raises(httpx.RemoteProtocolError) as excinfo:
             await client.get("http://localhost/")
-    # REFUSED_STREAM is code 7; the plain protocol error message has no code.
+    # The plain protocol error message would just be the "boom" above. Compare
+    # against the rendered enum rather than a literal, because IntEnum.__str__
+    # gives the name rather than the number before Python 3.11.
     assert "StreamReset" in str(excinfo.value)
-    assert "error_code:7" in str(excinfo.value)
+    assert f"error_code:{ErrorCodes.REFUSED_STREAM!s}" in str(excinfo.value)
 
 
 def test_sync_stream_error_keeps_reset_message() -> None:
@@ -623,9 +626,11 @@ def test_sync_stream_error_keeps_reset_message() -> None:
         pytest.raises(httpx.RemoteProtocolError) as excinfo,
     ):
         client.get("http://localhost/")
-    # REFUSED_STREAM is code 7; the plain protocol error message has no code.
+    # The plain protocol error message would just be the "boom" above. Compare
+    # against the rendered enum rather than a literal, because IntEnum.__str__
+    # gives the name rather than the number before Python 3.11.
     assert "StreamReset" in str(excinfo.value)
-    assert "error_code:7" in str(excinfo.value)
+    assert f"error_code:{ErrorCodes.REFUSED_STREAM!s}" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
