@@ -12,6 +12,7 @@ __all__ = [
     "Part",
     "Proxy",
     "ReadError",
+    "RemoteProtocolError",
     "Request",
     "Response",
     "StreamError",
@@ -32,7 +33,7 @@ __all__ = [
 
 from . import _pyqwest
 from ._coro import Client, Response
-from ._errors import ConnectTimeout, StreamError, StreamErrorCode
+from ._errors import ConnectTimeout, RemoteProtocolError, StreamError, StreamErrorCode
 from ._multipart import Multipart, Part, SyncMultipart, SyncPart
 from ._pyqwest import (
     FullResponse,

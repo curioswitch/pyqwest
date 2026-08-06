@@ -1456,6 +1456,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
  "mime",
  "pyo3",
  "pyo3-async-runtimes",

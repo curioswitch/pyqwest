@@ -5,7 +5,6 @@ use http::response::Parts;
 use http_body::Frame;
 use http_body_util::BodyExt as _;
 use pyo3::{
-    exceptions::PyRuntimeError,
     types::{PyBytes, PyInt},
     Bound, IntoPyObject, Py, PyErr, PyResult, Python,
 };
@@ -14,7 +13,7 @@ use tokio::sync::{watch, Mutex};
 use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
-    pyerrors::{self, ReadError},
+    pyerrors::{self, RemoteProtocolError, ReadError},
     shared::constants::Constants,
 };
 
@@ -49,7 +48,7 @@ impl ResponseHead {
         let headers = Headers::from_option(py, headers)?;
         Ok(ResponseHead {
             status: http::StatusCode::from_u16(status)
-                .map_err(|e| PyRuntimeError::new_err(format!("Invalid status code: {e}")))?,
+                .map_err(|e| RemoteProtocolError::new_err(format!("Invalid status code: {e}")))?,
             version,
             headers,
         })

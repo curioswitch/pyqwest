@@ -27,6 +27,7 @@ from pyqwest import (
     HTTPTransport,
     HTTPVersion,
     ReadError,
+    RemoteProtocolError,
     StreamError,
     SyncClient,
     SyncHTTPTransport,
@@ -361,7 +362,15 @@ async def test_response_error(
     url = f"{url}/echo"
     headers = [("content-type", "text/plain"), ("x-error-response", "1")]
 
-    with pytest.raises((ReadError, StreamError)) as exc_info:
+    # h2 signals the abort as a stream error, while on h1 it arrives as a
+    # chunked response left unterminated. StreamError subclasses RemoteProtocolError,
+    # but pin it so the h2 path keeps its error code.
+    expected: type[Exception] | tuple[type[Exception], ...] = (
+        StreamError
+        if http_version == HTTPVersion.HTTP2
+        else (RemoteProtocolError, ReadError)
+    )
+    with pytest.raises(expected) as exc_info:
         if isinstance(client, SyncClient):
             await asyncio.to_thread(client.get, url, headers=headers)
         else:

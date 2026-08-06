@@ -31,7 +31,11 @@ class ConnectTimeout(ConnectionError, TimeoutError):
     """An error indicating a timeout while establishing a connection."""
 
 
-class StreamError(Exception):
+class RemoteProtocolError(Exception):
+    """An error indicating the peer violated the HTTP protocol."""
+
+
+class StreamError(RemoteProtocolError):
     """An error representing an HTTP/2+ stream error."""
 
     code: StreamErrorCode

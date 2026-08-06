@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import socket
-import struct
 import threading
 from typing import TYPE_CHECKING, cast
 
@@ -16,8 +14,11 @@ from pyqwest import (
     Headers,
     HTTPTransport,
     ReadError,
+    RemoteProtocolError,
     Request,
     Response,
+    StreamError,
+    StreamErrorCode,
     SyncHTTPTransport,
     SyncRequest,
     SyncResponse,
@@ -27,6 +28,16 @@ from pyqwest import (
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
 from pyqwest.httpx._transport import convert_headers
 from pyqwest.testing import ASGITransport, WSGITransport
+
+from ._util import (
+    BAD_CHUNKED_FRAMING,
+    GARBAGE_RESPONSE,
+    MALFORMED_STATUS_LINE,
+    NO_RESPONSE,
+    TRUNCATED_CHUNKED_RESPONSE,
+    TRUNCATED_RESPONSE,
+    raw_server,
+)
 
 if TYPE_CHECKING:
     import sys
@@ -541,39 +552,87 @@ async def test_sync_access_log(url: str, caplog: pytest.LogCaptureFixture) -> No
     assert records[0].getMessage() == f'HTTP Request: GET {url}/echo "HTTP/1.1 200 OK"'
 
 
-@contextlib.contextmanager
-def resetting_server(response: bytes) -> Iterator[str]:
-    """Serves `response`, then resets the connection instead of closing it."""
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(1)
-    port = listener.getsockname()[1]
-
-    def serve() -> None:
-        with listener, contextlib.closing(listener.accept()[0]) as conn:
-            conn.recv(65536)
-            conn.sendall(response)
-            # SO_LINGER with a zero timeout makes close() send RST rather than
-            # FIN, so the peer sees a connection reset.
-            conn.setsockopt(
-                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
-            )
-
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{port}/"
-    finally:
-        thread.join(timeout=5)
+# Each of these is a way for the peer to break HTTP framing. httpx reports all of
+# them as RemoteProtocolError, so the transports must too.
+PROTOCOL_FAULTS = [
+    pytest.param(NO_RESPONSE, id="no-response"),
+    pytest.param(MALFORMED_STATUS_LINE, id="malformed-status-line"),
+    pytest.param(GARBAGE_RESPONSE, id="garbage-response"),
+    pytest.param(BAD_CHUNKED_FRAMING, id="bad-chunked-framing"),
+    pytest.param(TRUNCATED_RESPONSE, id="truncated-body"),
+    pytest.param(TRUNCATED_CHUNKED_RESPONSE, id="truncated-chunked-body"),
+]
 
 
-# Promises more body than is sent, so the reset truncates the response.
-TRUNCATED_RESPONSE = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial"
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", PROTOCOL_FAULTS)
+async def test_async_protocol_error(response: bytes) -> None:
+    with raw_server(response) as url:
+        async with HTTPTransport() as pyqwest_transport:
+            transport = AsyncPyqwestTransport(pyqwest_transport)
+            async with httpx.AsyncClient(transport=transport) as client:
+                with pytest.raises(httpx.RemoteProtocolError) as excinfo:
+                    await client.get(url)
+    assert isinstance(excinfo.value.__cause__, RemoteProtocolError)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", PROTOCOL_FAULTS)
+async def test_sync_protocol_error(response: bytes) -> None:
+    def run() -> None:
+        with raw_server(response) as url, SyncHTTPTransport() as pyqwest_transport:
+            transport = PyqwestTransport(pyqwest_transport)
+            with (
+                httpx.Client(transport=transport) as client,
+                pytest.raises(httpx.RemoteProtocolError) as excinfo,
+            ):
+                client.get(url)
+        assert isinstance(excinfo.value.__cause__, RemoteProtocolError)
+
+    await asyncio.to_thread(run)
+
+
+class StreamErrorTransport(Transport):
+    """Fails every request with an HTTP/2 stream error."""
+
+    async def execute(self, request: Request) -> Response:
+        raise StreamError("boom", StreamErrorCode.REFUSED_STREAM)
+
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        raise StreamError("boom", StreamErrorCode.REFUSED_STREAM)
+
+
+@pytest.mark.asyncio
+async def test_async_stream_error_keeps_reset_message() -> None:
+    # StreamError subclasses RemoteProtocolError, so it has to stay matched first
+    # to keep the stream reset detail rather than falling back to the plain
+    # protocol error message.
+    transport = AsyncPyqwestTransport(StreamErrorTransport())
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(httpx.RemoteProtocolError) as excinfo:
+            await client.get("http://localhost/")
+    # REFUSED_STREAM is code 7; the plain protocol error message has no code.
+    assert "StreamReset" in str(excinfo.value)
+    assert "error_code:7" in str(excinfo.value)
+
+
+def test_sync_stream_error_keeps_reset_message() -> None:
+    transport = PyqwestTransport(StreamErrorTransport())
+    with (
+        httpx.Client(transport=transport) as client,
+        pytest.raises(httpx.RemoteProtocolError) as excinfo,
+    ):
+        client.get("http://localhost/")
+    # REFUSED_STREAM is code 7; the plain protocol error message has no code.
+    assert "StreamReset" in str(excinfo.value)
+    assert "error_code:7" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
 async def test_async_response_reset() -> None:
-    with resetting_server(TRUNCATED_RESPONSE) as url:
+    # A reset breaks the connection rather than the protocol, so unlike the
+    # truncations above it stays a read error, matching httpx.
+    with raw_server(TRUNCATED_RESPONSE, reset=True) as url:
         async with HTTPTransport() as pyqwest_transport:
             transport = AsyncPyqwestTransport(pyqwest_transport)
             async with httpx.AsyncClient(transport=transport) as client:
@@ -588,7 +647,7 @@ async def test_async_response_reset() -> None:
 async def test_sync_response_reset() -> None:
     def run() -> None:
         with (
-            resetting_server(TRUNCATED_RESPONSE) as url,
+            raw_server(TRUNCATED_RESPONSE, reset=True) as url,
             SyncHTTPTransport() as pyqwest_transport,
         ):
             transport = PyqwestTransport(pyqwest_transport)

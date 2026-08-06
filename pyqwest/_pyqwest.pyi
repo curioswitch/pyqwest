@@ -259,6 +259,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -283,6 +284,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -303,6 +305,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -324,6 +327,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -345,6 +349,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -369,6 +374,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -393,6 +399,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -419,6 +426,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -445,6 +453,7 @@ class Client:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -602,6 +611,7 @@ class HTTPTransport:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -696,6 +706,9 @@ class Response:
             headers: The response headers.
             content: The response content.
             trailers: The response trailers.
+
+        Raises:
+            RemoteProtocolError: If the status is not a valid HTTP status code.
         """
 
     def __aenter__(self) -> Awaitable[Response]:
@@ -780,6 +793,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -806,6 +820,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -829,6 +844,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -852,6 +868,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -875,6 +892,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -901,6 +919,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -927,6 +946,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -955,6 +975,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -983,6 +1004,7 @@ class SyncClient:
         Raises:
             ConnectionError: If the connection fails.
             TimeoutError: If the request times out.
+            RemoteProtocolError: If the peer violates the HTTP protocol.
             ReadError: If an error occurs reading the response.
             WriteError: If an error occurs writing the request.
         """
@@ -1193,6 +1215,9 @@ class SyncResponse:
             headers: The response headers.
             content: The response content.
             trailers: The response trailers.
+
+        Raises:
+            RemoteProtocolError: If the status is not a valid HTTP status code.
         """
 
     def __enter__(self) -> SyncResponse:

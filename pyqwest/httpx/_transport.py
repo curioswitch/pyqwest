@@ -11,6 +11,7 @@ from h2.events import StreamReset
 from pyqwest import (
     Headers,
     ReadError,
+    RemoteProtocolError,
     Request,
     Response,
     StreamError,
@@ -71,7 +72,11 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
                 self._transport.execute(pyqwest_request), remaining_time(deadline)
             )
         except StreamError as e:
+            # Must precede RemoteProtocolError, which it subclasses, to keep the
+            # richer stream error message.
             raise map_stream_error(e) from e
+        except RemoteProtocolError as e:
+            raise map_remote_protocol_error(e, request) from e
         except TooManyRedirects as e:
             raise httpx.TooManyRedirects(str(e), request=request) from e
         except ConnectionError as e:
@@ -149,6 +154,8 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
                     yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
+        except RemoteProtocolError as e:
+            raise map_remote_protocol_error(e) from e
         except ConnectionError as e:
             raise map_connection_error(e) from e
         except (TimeoutError, asyncio.TimeoutError) as e:
@@ -203,7 +210,11 @@ class PyqwestTransport(httpx.BaseTransport):
         try:
             response = self._transport.execute_sync(pyqwest_request)
         except StreamError as e:
+            # Must precede RemoteProtocolError, which it subclasses, to keep the
+            # richer stream error message.
             raise map_stream_error(e) from e
+        except RemoteProtocolError as e:
+            raise map_remote_protocol_error(e, request) from e
         except TooManyRedirects as e:
             raise httpx.TooManyRedirects(str(e), request=request) from e
         except ConnectionError as e:
@@ -266,6 +277,8 @@ class IteratorByteStream(httpx.SyncByteStream):
                 yield bytes(chunk)
         except StreamError as e:
             raise map_stream_error(e) from e
+        except RemoteProtocolError as e:
+            raise map_remote_protocol_error(e) from e
         except ConnectionError as e:
             raise map_connection_error(e) from e
         except TimeoutError as e:
@@ -382,6 +395,13 @@ def map_network_error(
     if isinstance(e, WriteError):
         return httpx.WriteError(str(e), request=request)
     return httpx.ReadError(str(e), request=request)
+
+
+def map_remote_protocol_error(
+    e: RemoteProtocolError, request: httpx.Request | None = None
+) -> httpx.RemoteProtocolError:
+    # The peer sent something that isn't valid HTTP, or cut a message short.
+    return httpx.RemoteProtocolError(str(e), request=request)
 
 
 def map_stream_error(e: StreamError) -> httpx.RemoteProtocolError:
