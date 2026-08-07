@@ -13,7 +13,7 @@ use tokio::sync::{watch, Mutex};
 use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
-    pyerrors::{self, RemoteProtocolError, ReadError},
+    pyerrors::{self, ReadError, RemoteProtocolError},
     shared::constants::Constants,
 };
 

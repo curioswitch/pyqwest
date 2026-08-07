@@ -153,6 +153,8 @@ class AsyncIteratorByteStream(httpx.AsyncByteStream):
                         break
                     yield bytes(chunk)
         except StreamError as e:
+            # Must precede RemoteProtocolError, which it subclasses, to keep the
+            # richer stream error message.
             raise map_stream_error(e) from e
         except RemoteProtocolError as e:
             raise map_remote_protocol_error(e) from e
@@ -276,6 +278,8 @@ class IteratorByteStream(httpx.SyncByteStream):
             for chunk in self._response.content:
                 yield bytes(chunk)
         except StreamError as e:
+            # Must precede RemoteProtocolError, which it subclasses, to keep the
+            # richer stream error message.
             raise map_stream_error(e) from e
         except RemoteProtocolError as e:
             raise map_remote_protocol_error(e) from e
