@@ -9,6 +9,7 @@ import pytest
 
 from pyqwest import Client, ReadError, Request, Response
 from pyqwest.middleware.retry import RetryTransport
+from pyqwest.middleware.retry._async import RetryingRequestContent
 from pyqwest.testing import ASGITransport
 
 if TYPE_CHECKING:
@@ -69,8 +70,7 @@ def app():
     return App()
 
 
-@pytest.fixture
-def client(app: App):
+def make_client(app: App, **kwargs) -> Client:
     return Client(
         RetryTransport(
             ASGITransport(app),
@@ -78,8 +78,14 @@ def client(app: App):
             randomization_factor=0.0,
             multiplier=3.0,
             max_interval=0.05,
+            **kwargs,
         )
     )
+
+
+@pytest.fixture
+def client(app: App):
+    return make_client(app)
 
 
 def assert_duration_at_least(start: float, end: float, expected: float) -> None:
@@ -182,6 +188,101 @@ async def test_retry_content_iterator(app: App, client: Client) -> None:
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_retry_content_iterator_within_buffer_limit(app: App) -> None:
+    async def content():
+        yield b"Hello "
+        yield b"world!"
+
+    client = make_client(app, max_buffered_body_size=12)
+    app.status = [500, 200]
+    res = await client.put("http://localhost", content=content())
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_no_retry_content_iterator_exceeding_buffer_limit(app: App) -> None:
+    async def content():
+        yield b"Hello "
+        yield b"world!"
+
+    client = make_client(app, max_buffered_body_size=11)
+    app.status = [500, 200]
+    res = await client.put("http://localhost", content=content())
+    # The body could not be buffered for replay, so the error is surfaced as-is,
+    # but the body itself was still sent in full.
+    assert res.status == 500
+    assert app.count == 1
+    assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_no_retry_content_iterator_buffering_disabled(app: App) -> None:
+    async def content():
+        yield b"Hello "
+        yield b"world!"
+
+    client = make_client(app, max_buffered_body_size=0)
+    app.status = [500, 200]
+    res = await client.put("http://localhost", content=content())
+    assert res.status == 500
+    assert app.count == 1
+    assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_retry_empty_content_iterator_buffering_disabled(app: App) -> None:
+    async def content():
+        for chunk in ():
+            yield chunk
+
+    client = make_client(app, max_buffered_body_size=0)
+    app.status = [500, 200]
+    res = await client.put("http://localhost", content=content())
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b""
+
+
+@pytest.mark.asyncio
+async def test_retry_fixed_content_ignores_buffer_limit(app: App) -> None:
+    # bytes content is already fully in memory, so it is replayed regardless.
+    client = make_client(app, max_buffered_body_size=0)
+    app.status = [500, 200]
+    res = await client.put("http://localhost", content=b"Hello world!")
+    assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b"Hello world!"
+
+
+async def _aiter(chunks: list[bytes]):
+    for chunk in chunks:
+        yield chunk
+
+
+async def _collect(content) -> list[bytes]:
+    return [chunk async for chunk in content]
+
+
+@pytest.mark.asyncio
+async def test_retrying_request_content_bounds_buffer() -> None:
+    content = RetryingRequestContent(_aiter([b"aaaa", b"bbbb"]), 4)
+    assert await _collect(content.get()) == [b"aaaa", b"bbbb"]
+    assert not content.replayable
+    # The partial buffer is released once replay is off the table.
+    assert not content._buffer
+
+
+@pytest.mark.asyncio
+async def test_retrying_request_content_replays_within_limit() -> None:
+    content = RetryingRequestContent(_aiter([b"aaaa", b"bbbb"]), 8)
+    assert await _collect(content.get()) == [b"aaaa", b"bbbb"]
+    assert content.replayable
+    assert await _collect(content.get()) == [b"aaaabbbb"]
 
 
 @pytest.mark.asyncio

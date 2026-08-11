@@ -224,6 +224,30 @@ or `should_retry_response` to fit your needs, for example matching against `requ
         client.get("http://localhost/unsafe-method")  # will not retry
     ```
 
+A request body that is not `bytes`, for example a generator of chunks or a file being
+streamed, is buffered in memory as it is sent so it can be replayed if the request is
+retried. For large uploads, this means memory usage grows with the size of the body even
+when no retry ends up happening. Pass `max_buffered_body_size` to bound the buffer. Once a
+body grows past the limit, buffering stops and that request is no longer replayed, so an
+error that would have been retried is surfaced as-is. Smaller bodies still retry as usual,
+and `bytes` bodies are unaffected since they are already fully in memory.
+
+=== "async"
+
+    ```python
+    # buffer at most 1MB of a streamed body for replay
+    transport = RetryTransport(HTTPTransport(), max_buffered_body_size=1024 * 1024)
+    ```
+
+=== "sync"
+
+    ```python
+    # buffer at most 1MB of a streamed body for replay
+    transport = SyncRetryTransport(
+        SyncHTTPTransport(), max_buffered_body_size=1024 * 1024
+    )
+    ```
+
 ### Proxies
 
 The transport can be configured to send all requests through a proxy by passing its URL.

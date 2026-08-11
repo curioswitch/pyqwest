@@ -27,6 +27,11 @@ class SyncRetryTransport(SyncTransport):
     The default behavior can be overridden by subclassing this class and overriding the
     `should_retry_request` and `should_retry_response` methods to suit any need.
 
+    A request body that is not `bytes` is buffered in memory as it is sent so it can be
+    replayed on a retry. Pass `max_buffered_body_size` to bound that buffer: once a body
+    exceeds the limit, buffering stops and the request is no longer replayed, so an error
+    that would have been retried is surfaced as-is. By default the buffer is unbounded.
+
     Examples:
         ```python
         from pyqwest import SyncClient, SyncHTTPTransport, SyncRequest
@@ -50,6 +55,7 @@ class SyncRetryTransport(SyncTransport):
     _multiplier: float
     _max_interval: float
     _max_retries: int
+    _max_buffered_body_size: int | None
 
     def __init__(
         self,
@@ -59,6 +65,7 @@ class SyncRetryTransport(SyncTransport):
         multiplier: float = 1.5,
         max_interval: float = 60.0,
         max_retries: int = 4,
+        max_buffered_body_size: int | None = None,
     ) -> None:
         self._transport = transport
         self._initial_interval = initial_interval
@@ -66,6 +73,7 @@ class SyncRetryTransport(SyncTransport):
         self._multiplier = multiplier
         self._max_interval = max_interval
         self._max_retries = max_retries
+        self._max_buffered_body_size = max_buffered_body_size
 
     @final
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
@@ -82,6 +90,7 @@ class SyncRetryTransport(SyncTransport):
         get_content: Callable[[], bytes | Iterator[bytes]]
 
         content = request.content
+        retrying_content: RetryingRequestContent | None = None
         if isinstance(content, bytes):
 
             def _get_content() -> bytes:
@@ -89,7 +98,9 @@ class SyncRetryTransport(SyncTransport):
 
             get_content = _get_content
         else:
-            retrying_content = RetryingRequestContent(content)
+            retrying_content = RetryingRequestContent(
+                content, self._max_buffered_body_size
+            )
             get_content = retrying_content.get
 
         resp: SyncResponse | Exception
@@ -109,6 +120,10 @@ class SyncRetryTransport(SyncTransport):
         retries = 0
         while True:
             if not self.should_retry_response(request, resp):
+                break
+            if retrying_content is not None and not retrying_content.replayable:
+                # The body outgrew max_buffered_body_size, so it cannot be sent again.
+                # Surface the original response or error instead of retrying.
                 break
             if isinstance(resp, SyncResponse):
                 resp.close()
@@ -170,13 +185,32 @@ class SyncRetryTransport(SyncTransport):
 
 
 class RetryingRequestContent:
-    def __init__(self, content: Iterator[bytes]) -> None:
+    def __init__(
+        self, content: Iterator[bytes], max_buffer_size: int | None = None
+    ) -> None:
         self._content = content
+        self._max_buffer_size = max_buffer_size
         self._buffer = bytearray()
+        self._replayable = True
+
+    @property
+    def replayable(self) -> bool:
+        """Whether everything sent so far is buffered and can be sent again."""
+        return self._replayable
 
     def get(self) -> Iterator[bytes]:
         if self._buffer:
             yield bytes(self._buffer)
         for chunk in self._content:
-            self._buffer.extend(chunk)
+            if self._replayable:
+                if (
+                    self._max_buffer_size is not None
+                    and len(self._buffer) + len(chunk) > self._max_buffer_size
+                ):
+                    # Past the limit, stop recording and release what was recorded;
+                    # the body can no longer be replayed.
+                    self._replayable = False
+                    self._buffer = bytearray()
+                else:
+                    self._buffer.extend(chunk)
             yield chunk
