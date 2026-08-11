@@ -62,12 +62,19 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
         }
     }
     if let Some(ca_cert) = params.tls_ca_cert {
-        let cert = reqwest::Certificate::from_pem(ca_cert)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse CA certificate: {e}")))?;
+        // from_pem_bundle parses eagerly, unlike from_pem which defers parsing until the client is
+        // built and silently trusts nothing when the input contains no PEM certificate block.
+        let certs = reqwest::Certificate::from_pem_bundle(ca_cert)
+            .map_err(|e| PyValueError::new_err(format!("Failed to parse CA certificate: {e}")))?;
+        if certs.is_empty() {
+            return Err(PyValueError::new_err(
+                "tls_ca_cert did not contain any PEM certificates",
+            ));
+        }
         if params.tls_include_system_certs {
-            builder = builder.tls_certs_merge([cert]);
+            builder = builder.tls_certs_merge(certs);
         } else {
-            builder = builder.tls_certs_only([cert]);
+            builder = builder.tls_certs_only(certs);
         }
     } else if !params.tls_include_system_certs {
         builder = builder.tls_certs_only([]);
