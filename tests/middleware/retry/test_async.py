@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pyqwest import Client, ReadError, Request, Response
-from pyqwest.middleware.retry import RetryTransport
+from pyqwest import Transport as BaseTransport
+from pyqwest.middleware.retry import RetryMode, RetryTransport
 from pyqwest.testing import ASGITransport
 
 if TYPE_CHECKING:
@@ -64,6 +65,21 @@ class App:
         )
 
 
+class ConfiguredRetryTransport(RetryTransport):
+    def __init__(self, transport: BaseTransport, mode: bool | RetryMode) -> None:
+        self._mode = mode
+        super().__init__(
+            transport,
+            initial_interval=0.01,
+            randomization_factor=0.0,
+            multiplier=3.0,
+            max_interval=0.05,
+        )
+
+    def should_retry_request(self, request: Request) -> bool | RetryMode:
+        return self._mode
+
+
 @pytest.fixture
 def app():
     return App()
@@ -88,6 +104,25 @@ def assert_duration_at_least(start: float, end: float, expected: float) -> None:
         return
     duration = end - start
     assert duration >= expected, f"Duration {duration} is less than expected {expected}"
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("GET", RetryMode.BUFFERED),
+        ("HEAD", RetryMode.BUFFERED),
+        ("PUT", RetryMode.BUFFERED),
+        ("DELETE", RetryMode.BUFFERED),
+        ("POST", RetryMode.UNBUFFERED),
+    ],
+)
+def test_default_retry_mode(app: App, method: str, expected: RetryMode) -> None:
+    assert (
+        RetryTransport(ASGITransport(app)).should_retry_request(
+            Request(method, "http://localhost")
+        )
+        is expected
+    )
 
 
 @pytest.mark.asyncio
@@ -185,6 +220,124 @@ async def test_retry_content_iterator(app: App, client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "expected_status", "expected_count"),
+    [(True, 200, 2), (RetryMode.BUFFERED, 200, 2), (False, 500, 1)],
+)
+async def test_buffered_retry_mode_compatibility(
+    app: App, mode: bool | RetryMode, expected_status: int, expected_count: int
+) -> None:
+    app.status = [500, 200]
+
+    async def content():
+        yield b"Hello world!"
+
+    client = Client(ConfiguredRetryTransport(ASGITransport(app), mode))
+    async with client.stream("PUT", "http://localhost", content=content()) as res:
+        assert res.status == expected_status
+    assert app.count == expected_count
+    assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_unbuffered_bytes_follow_normal_retry_policy(app: App) -> None:
+    app.status = [500, 200]
+    client = Client(ConfiguredRetryTransport(ASGITransport(app), RetryMode.UNBUFFERED))
+    async with client.stream("PUT", "http://localhost", content=b"Hello world!") as res:
+        assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_unbuffered_bytes_retry_io_errors(app: App) -> None:
+    app.timeouts = 1
+    client = Client(ConfiguredRetryTransport(ASGITransport(app), RetryMode.UNBUFFERED))
+    async with client.stream("PUT", "http://localhost", content=b"Hello world!") as res:
+        assert res.status == 200
+    assert app.count == 2
+    assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_unbuffered_stream_only_retries_connection_errors(app: App) -> None:
+    closed = False
+
+    async def content():
+        nonlocal closed
+        try:
+            yield b"Hello world!"
+        finally:
+            closed = True
+
+    app.status = [500, 200]
+    client = Client(ConfiguredRetryTransport(ASGITransport(app), RetryMode.UNBUFFERED))
+    async with client.stream("PUT", "http://localhost", content=content()) as res:
+        assert res.status == 500
+    assert app.count == 1
+    assert app.read_content == b"Hello world!"
+    assert closed
+
+
+@pytest.mark.asyncio
+async def test_unbuffered_stream_closed_when_response_does_not_read_request() -> None:
+    class Content:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def __aiter__(self) -> Content:
+            return self
+
+        async def __anext__(self) -> bytes:
+            return b"Hello world!"
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    async def app(
+        _scope: Scope, _receive: ASGIReceiveCallable, send: ASGISendCallable
+    ) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [],
+                "trailers": False,
+            }
+        )
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+    content = Content()
+    client = Client(ConfiguredRetryTransport(ASGITransport(app), RetryMode.UNBUFFERED))
+    async with client.stream("PUT", "http://localhost", content=content) as res:
+        assert res.status == 200
+    assert content.closed
+
+
+@pytest.mark.asyncio
+async def test_post_response_retry_loop_handles_exceptions() -> None:
+    class Transport(BaseTransport):
+        def __init__(self) -> None:
+            self.count = 0
+
+        async def execute(self, request: Request) -> Response:
+            self.count += 1
+            if self.count == 1:
+                return Response(status=500, content=b"")
+            if self.count == 2:
+                raise ConnectionError
+            return Response(status=200, content=b"")
+
+    transport = Transport()
+    client = Client(
+        RetryTransport(transport, initial_interval=0.0, randomization_factor=0.0)
+    )
+    async with client.stream("GET", "http://localhost") as res:
+        assert res.status == 200
+    assert transport.count == 3
+
+
+@pytest.mark.asyncio
 async def test_retry_timeout(app: App, client: Client) -> None:
     app.status = [200, 200]
     app.timeouts = 1
@@ -243,8 +396,8 @@ async def test_retry_connection_error_content_iterator(
 
     app.status = [200, 200]
     app.connection_errors = 1
-    res = await client.post("http://localhost", content=content())
-    assert res.status == 200
+    async with client.stream("POST", "http://localhost", content=content()) as res:
+        assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
     assert read_attempts == [2]

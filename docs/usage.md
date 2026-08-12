@@ -184,44 +184,59 @@ pyqwest includes the following middleware.
 
 Retry middleware automatically reissues requests on errors. The default behavior is to
 retry known-safe errors, which include connection errors and transient error responses for
-non-idempotent methods. The conditions for determining a request or response is retryable
-can be customized by subclassing the middleware class and implementing `should_retry_request`
-or `should_retry_response` to fit your needs, for example matching against `request.url`.
+GET, HEAD, PUT, and DELETE. Whether a request or response is retryable can be customized by
+subclassing the middleware class and implementing `should_retry_request` or
+`should_retry_response`, for example to match against `request.url`.
+
+`should_retry_request` may return `False` to disable retries, `True` to retry if
+`should_retry_response` also returns `True`, or a `RetryMode` explicitly.
+`RetryMode.BUFFERED` retains streamed request content in memory as it is sent so it can be
+replayed. This can increase peak memory usage by the full size of the body even when the
+first attempt succeeds. `RetryMode.UNBUFFERED` retains no streamed content. Content provided
+as `bytes` is already replayable, so it follows the normal response retry policy in either
+mode.
+
+The default behavior retries connection errors for every HTTP method, and I/O errors
+or transient 429/5xx responses only for GET, HEAD, PUT, and DELETE.
 
 === "async"
 
     ```python
     from pyqwest import Client, HTTPTransport, Request
-        from pyqwest.middleware.retry import RetryTransport
+    from pyqwest.middleware.retry import RetryMode, RetryTransport
 
 
-        class MyRetryTransport(RetryTransport):
-            def should_retry_request(self, request: Request) -> bool:
-                return not request.url.endswith("/unsafe-method")
+    class MyRetryTransport(RetryTransport):
+        def should_retry_request(self, request: Request) -> bool | RetryMode:
+            if request.url.endswith("/unsafe-method"):
+                return False
+            return RetryMode.UNBUFFERED
 
 
-        client = Client(transport=MyRetryTransport(HTTPTransport()))
-        await client.get(
-            "http://localhost/safe-method"
-        )  # will retry on transient errors
-        await client.get("http://localhost/unsafe-method")  # will not retry
+    client = Client(transport=MyRetryTransport(HTTPTransport()))
+    await client.get(
+        "http://localhost/safe-method"
+    )  # will retry on transient errors
+    await client.get("http://localhost/unsafe-method")  # will not retry
     ```
 
 === "sync"
 
     ```python
     from pyqwest import SyncClient, SyncHTTPTransport, SyncRequest
-        from pyqwest.middleware.retry import SyncRetryTransport
+    from pyqwest.middleware.retry import RetryMode, SyncRetryTransport
 
 
-        class MyRetryTransport(SyncRetryTransport):
-            def should_retry_request(self, request: SyncRequest) -> bool:
-                return not request.url.endswith("/unsafe-method")
+    class MyRetryTransport(SyncRetryTransport):
+        def should_retry_request(self, request: SyncRequest) -> bool | RetryMode:
+            if request.url.endswith("/unsafe-method"):
+                return False
+            return RetryMode.UNBUFFERED
 
 
-        client = SyncClient(transport=MyRetryTransport(SyncHTTPTransport()))
-        client.get("http://localhost/safe-method")  # will retry on transient errors
-        client.get("http://localhost/unsafe-method")  # will not retry
+    client = SyncClient(transport=MyRetryTransport(SyncHTTPTransport()))
+    client.get("http://localhost/safe-method")  # will retry on transient errors
+    client.get("http://localhost/unsafe-method")  # will not retry
     ```
 
 ### Proxies

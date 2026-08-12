@@ -8,8 +8,10 @@ from pyqwest import HTTPHeaderName, ReadError, Transport
 from pyqwest._pyqwest import Request, Response, _Backoff
 
 from ._shared import (
+    RetryMode,
     default_should_retry_request,
     default_should_retry_response,
+    normalize_retry_mode,
     parse_retry_after,
 )
 
@@ -21,8 +23,8 @@ class RetryTransport(Transport):
     """Retry middleware for async clients.
 
     Wrap a Transport with this class to allow requests to be automatically retried.
-    By default, known-safe errors are retried, meaning connection errors for any request,
-    and I/O errors or 429/5xx responses for idempotent methods.
+    By default, connection errors are retried for any request, while I/O errors and
+    transient 429/5xx responses are retried only for GET, HEAD, PUT, and DELETE.
 
     The default behavior can be overridden by subclassing this class and overriding the
     `should_retry_request` and `should_retry_response` methods to suit any need.
@@ -30,12 +32,14 @@ class RetryTransport(Transport):
     Examples:
         ```python
         from pyqwest import Client, HTTPTransport, Request
-        from pyqwest.middleware.retry import RetryTransport
+        from pyqwest.middleware.retry import RetryMode, RetryTransport
 
 
         class MyRetryTransport(RetryTransport):
-            def should_retry_request(self, request: Request) -> bool:
-                return not request.url.endswith("/unsafe-method")
+            def should_retry_request(self, request: Request) -> bool | RetryMode:
+                if request.url.endswith("/unsafe-method"):
+                    return False
+                return RetryMode.UNBUFFERED
 
 
         client = Client(transport=MyRetryTransport(HTTPTransport()))
@@ -71,7 +75,8 @@ class RetryTransport(Transport):
 
     @final
     async def execute(self, request: Request) -> Response:
-        if not self.should_retry_request(request):
+        retry_mode = normalize_retry_mode(value=self.should_retry_request(request))
+        if retry_mode is None:
             return await self._transport.execute(request)
 
         backoff = _Backoff(
@@ -84,46 +89,89 @@ class RetryTransport(Transport):
         get_content: Callable[[], bytes | AsyncIterator[bytes]]
 
         content = request.content
+        content_started = False
+        unbuffered_stream = (
+            not isinstance(content, bytes) and retry_mode == RetryMode.UNBUFFERED
+        )
+
+        async def _close_content() -> None:
+            aclose = getattr(content, "aclose", None)
+            if aclose is not None:
+                await aclose()
+
         if isinstance(content, bytes):
 
             def _get_content() -> bytes:
                 return content
 
             get_content = _get_content
+        elif retry_mode == RetryMode.UNBUFFERED:
+
+            async def _unbuffered_content() -> AsyncIterator[bytes]:
+                nonlocal content_started
+                content_started = True
+                try:
+                    async for chunk in content:
+                        yield chunk
+                finally:
+                    await _close_content()
+
+            get_content = _unbuffered_content
         else:
             retrying_content = RetryingRequestContent(content)
             get_content = retrying_content.get
 
         resp: Response | Exception
 
-        try:
-            resp = await self._transport.execute(
-                Request(
-                    method=request.method,
-                    url=request.url,
-                    headers=request.headers,
-                    content=get_content(),
-                )
-            )
-        except Exception as e:
-            resp = e
-
         retries = 0
+        # Retry connection errors regardless of retry mode.
+        try:
+            while True:
+                try:
+                    resp = await self._transport.execute(
+                        Request(
+                            method=request.method,
+                            url=request.url,
+                            headers=request.headers,
+                            content=get_content(),
+                        )
+                    )
+                except Exception as e:  # noqa: PERF203
+                    if not self.should_retry_response(request, e):
+                        raise
+                    if unbuffered_stream and (
+                        not isinstance(e, ConnectionError) or content_started
+                    ):
+                        raise
+                    resp = e
+                    retries += 1
+                    self._check_retries(retries, e)
+                    wait_time = backoff.next_backoff()
+                    if wait_time is None:
+                        raise
+                    await asyncio.sleep(wait_time)
+                else:
+                    break
+        except BaseException:
+            if unbuffered_stream and not content_started:
+                await _close_content()
+            raise
+
+        # Don't retry responses with a streaming request when we can't buffer.
+        if unbuffered_stream:
+            if not content_started:
+                await _close_content()
+            if isinstance(resp, Exception):
+                raise resp
+            return resp
+
         while True:
             if not self.should_retry_response(request, resp):
                 break
             if isinstance(resp, Response):
                 await resp.aclose()
             retries += 1
-            if retries > self._max_retries:
-                if isinstance(resp, ConnectionError):
-                    # Connection errors that don't resolve with retries are better
-                    # surfaced as-is since they are network issues rather than backend.
-                    raise resp
-                msg = f"Maximum retry attempts exceeded: {self._max_retries}"
-                if isinstance(resp, Exception):
-                    raise ReadError(msg) from resp
-                raise ReadError(msg)
+            self._check_retries(retries, resp)
 
             if (
                 isinstance(resp, Response)
@@ -159,7 +207,7 @@ class RetryTransport(Transport):
             raise resp
         return resp
 
-    def should_retry_request(self, request: Request) -> bool:
+    def should_retry_request(self, request: Request) -> bool | RetryMode:
         return default_should_retry_request(request.method)
 
     def should_retry_response(
@@ -169,6 +217,17 @@ class RetryTransport(Transport):
             request.method,
             response.status if isinstance(response, Response) else response,
         )
+
+    def _check_retries(self, retries: int, resp: Response | Exception) -> None:
+        if retries > self._max_retries:
+            if isinstance(resp, ConnectionError):
+                # Connection errors that don't resolve with retries are better
+                # surfaced as-is since they are network issues rather than backend.
+                raise resp
+            msg = f"Maximum retry attempts exceeded: {self._max_retries}"
+            if isinstance(resp, Exception):
+                raise ReadError(msg) from resp
+            raise ReadError(msg)
 
 
 class RetryingRequestContent:
