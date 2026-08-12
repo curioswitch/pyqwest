@@ -276,7 +276,7 @@ async def test_request_body_task_cancelled_on_cancelled_execute(url: str) -> Non
 
     async with HTTPTransport() as transport:
         fut = asyncio.ensure_future(
-            transport.execute(Request("POST", f"{url}/echo", content=content()))
+            transport.execute(Request("POST", f"{url}/read_all", content=content()))
         )
         await body_started.wait()
         fut.cancel()

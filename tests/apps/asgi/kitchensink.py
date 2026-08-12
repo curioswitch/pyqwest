@@ -116,9 +116,6 @@ async def _content_encoding(
 async def _read_all(
     _scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
-    await send(
-        {"type": "http.response.start", "status": 200, "headers": (), "trailers": False}
-    )
     buf = bytearray()
     while True:
         message = await _receive()
@@ -131,6 +128,9 @@ async def _read_all(
                     buf.extend(body)
                 if not message["more_body"]:
                     break
+    await send(
+        {"type": "http.response.start", "status": 200, "headers": (), "trailers": False}
+    )
     await send({"type": "http.response.body", "body": bytes(buf), "more_body": False})
 
 

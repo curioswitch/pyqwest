@@ -47,6 +47,7 @@ jobs:
       # Avoid multiple compile e.g. in lint and test by setting as a job env var
       RUSTFLAGS: "--cfg reqwest_unstable --cfg tokio_unstable ${{ matrix.coverage == 'cov' && '-C instrument-coverage' || '' }}"
       MATURIN_DEVELOP_ARGS: ${{ (matrix.python == '3.10' || matrix.python == '3.11') && '--features pyo3/abi3-py310' || '' }}
+      PYTHON_GIL: ${{ matrix.python == '3.14t' && '0' || '' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
