@@ -562,6 +562,7 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
     client = async_client
     queue = asyncio.Queue()
 
+    request_started = asyncio.Event()
     request_cancelled = asyncio.Event()
     generator_cancelled = asyncio.Event()
 
@@ -570,6 +571,7 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
             return self
 
         async def __anext__(self) -> bytes:
+            request_started.set()
             try:
                 return await queue.get()
             except asyncio.CancelledError:
@@ -592,7 +594,8 @@ async def test_close_no_read(async_client: Client, url: str) -> None:
     assert chunk is None
     await resp.aclose()
 
-    await asyncio.wait_for(request_cancelled.wait(), timeout=1.0)
+    if request_started.is_set():
+        await asyncio.wait_for(request_cancelled.wait(), timeout=1.0)
     await asyncio.wait_for(generator_cancelled.wait(), timeout=1.0)
 
 
@@ -614,6 +617,7 @@ async def test_close_no_read_sync(sync_client: SyncClient, url: str) -> None:
         chunk = next(content, None)
         assert chunk is None
         resp.close()
+        assert request_body._closed
 
     await asyncio.to_thread(run)
 

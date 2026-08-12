@@ -1,9 +1,15 @@
-use std::fmt;
+use std::{
+    fmt,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
+use futures_core::Stream;
 use http::HeaderValue;
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyString, PyStringMethods as _};
 use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
 use pyo3::{Bound, PyAny};
+use tokio::sync::oneshot;
 use url::form_urlencoded::Serializer;
 use url::UrlQuery;
 
@@ -106,6 +112,32 @@ impl RequestHead {
 }
 
 pub(crate) type RequestStreamResult<T> = Result<T, RequestStreamError>;
+
+pub(crate) struct StartOnPoll<S> {
+    inner: S,
+    start: Option<oneshot::Sender<()>>,
+}
+
+impl<S> StartOnPoll<S> {
+    pub(crate) fn new(inner: S, start: oneshot::Sender<()>) -> Self {
+        Self {
+            inner,
+            start: Some(start),
+        }
+    }
+}
+
+impl<S: Stream + Unpin> Stream for StartOnPoll<S> {
+    type Item = S::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if let Some(start) = this.start.take() {
+            let _ = start.send(());
+        }
+        Pin::new(&mut this.inner).poll_next(cx)
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct RequestStreamError {

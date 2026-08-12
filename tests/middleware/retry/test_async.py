@@ -234,7 +234,10 @@ async def test_retries_exceeded_connection_error(app: App, client: Client) -> No
 async def test_retry_connection_error_content_iterator(
     app: App, client: Client
 ) -> None:
+    read_attempts = []
+
     async def content():
+        read_attempts.append(app.count)
         yield b"Hello "
         yield b"world!"
 
@@ -244,6 +247,7 @@ async def test_retry_connection_error_content_iterator(
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
+    assert read_attempts == [2]
 
 
 @pytest.mark.asyncio

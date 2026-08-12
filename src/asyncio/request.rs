@@ -10,6 +10,8 @@ use pyo3::{
     types::{PyAnyMethods as _, PyModule, PyString},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
+use pyo3_async_runtimes::tokio::{future_into_py_with_locals, get_current_locals};
+use tokio::sync::oneshot;
 use tokio_stream::StreamExt as _;
 
 use crate::{
@@ -19,7 +21,7 @@ use crate::{
         constants::Constants,
         request::{
             maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
-            RequestStreamResult,
+            RequestStreamResult, StartOnPoll,
         },
     },
 };
@@ -147,9 +149,10 @@ impl Request {
                 None,
             )),
             Some(Content::AsyncIter(iter)) => {
-                let iter = wrap_async_iter(py, iter)?;
+                let (start_tx, start_rx) = oneshot::channel();
+                let iter = wrap_async_iter(py, iter, start_rx)?;
                 let (stream, task) = into_stream(py, iter, &self.constants)?;
-                let res = stream.map(bytes_from_chunk);
+                let res = StartOnPoll::new(stream, start_tx).map(bytes_from_chunk);
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
             None => Ok((None, None)),
@@ -175,7 +178,11 @@ impl Content {
     }
 }
 
-fn wrap_async_iter<'py>(py: Python<'py>, iter: &Py<PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn wrap_async_iter<'py>(
+    py: Python<'py>,
+    iter: &Py<PyAny>,
+    start: oneshot::Receiver<()>,
+) -> PyResult<Bound<'py, PyAny>> {
     static WRAP_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     static GEN_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
@@ -192,7 +199,10 @@ fn wrap_async_iter<'py>(py: Python<'py>, iter: &Py<PyAny>) -> PyResult<Bound<'py
         })?
         .bind(py);
 
-    gen_fn.call1((iter, wrap_fn))
+    let start = future_into_py_with_locals(py, get_current_locals(py)?, async move {
+        Ok(start.await.is_ok())
+    })?;
+    gen_fn.call1((iter, wrap_fn, start))
 }
 
 #[pyclass(module = "_pyqwest.async", frozen)]

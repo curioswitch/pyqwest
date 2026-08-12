@@ -125,9 +125,11 @@ class ASGITransport(Transport):
         }
 
         receive_queue: asyncio.Queue[bytes | Exception | None] = asyncio.Queue(1)
+        receive_started = asyncio.Event()
 
         async def read_request_content() -> None:
             try:
+                await receive_started.wait()
                 if isinstance(request.content, bytes):
                     await receive_queue.put(request.content)
                     await receive_queue.put(None)
@@ -153,6 +155,7 @@ class ASGITransport(Transport):
         request_task = asyncio.create_task(read_request_content())
 
         async def receive() -> ASGIReceiveEvent:
+            receive_started.set()
             chunk = await receive_queue.get()
             if chunk is None:
                 return {"type": "http.request", "body": b"", "more_body": False}

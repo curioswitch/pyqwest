@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pyqwest import Client, ReadError, SyncClient, WriteError
+from pyqwest import (
+    Client,
+    HTTPTransport,
+    HTTPVersion,
+    ReadError,
+    SyncClient,
+    SyncHTTPTransport,
+    WriteError,
+)
 
 from ._util import SyncRequestBody
 
@@ -123,6 +131,68 @@ async def test_connection_error(
         else:
             async with client.stream(method, url):
                 pass
+
+
+@pytest.mark.asyncio
+async def test_connection_error_does_not_advance_request_body(
+    http_scheme: str, http_version: HTTPVersion | None
+) -> None:
+    class RequestBody:
+        def __init__(self) -> None:
+            self.next_calls = 0
+            self.closed = False
+
+        def __iter__(self) -> RequestBody:
+            return self
+
+        def __next__(self) -> bytes:
+            self.next_calls += 1
+            return b"request"
+
+        def close(self) -> None:
+            self.closed = True
+
+    class AsyncRequestBody:
+        def __init__(self) -> None:
+            self.anext_calls = 0
+            self.closed = asyncio.Event()
+
+        def __aiter__(self) -> AsyncRequestBody:
+            return self
+
+        async def __anext__(self) -> bytes:
+            self.anext_calls += 1
+            return b"request"
+
+        async def aclose(self) -> None:
+            self.closed.set()
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        url = f"{http_scheme}://127.0.0.1:{port}/echo"
+
+        request_body = AsyncRequestBody()
+        async with HTTPTransport(
+            http_version=http_version, connect_timeout=0.1, enable_otel=False
+        ) as transport:
+            with pytest.raises(ConnectionError):
+                await Client(transport).post(url, content=request_body)
+        assert request_body.anext_calls == 0
+        await asyncio.wait_for(request_body.closed.wait(), timeout=5)
+
+        sync_request_body = RequestBody()
+        with (
+            SyncHTTPTransport(
+                http_version=http_version, connect_timeout=0.1, enable_otel=False
+            ) as transport,
+            pytest.raises(ConnectionError),
+        ):
+            await asyncio.to_thread(
+                SyncClient(transport).post, url, content=sync_request_body
+            )
+        assert sync_request_body.next_calls == 0
+        assert sync_request_body.closed
 
 
 @pytest.mark.asyncio

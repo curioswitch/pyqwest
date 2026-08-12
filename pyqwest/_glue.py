@@ -23,9 +23,13 @@ U = TypeVar("U")
 
 
 async def wrap_body_gen(
-    gen: AsyncIterator[T_contra], wrap_fn: Callable[[T_contra], U]
+    gen: AsyncIterator[T_contra],
+    wrap_fn: Callable[[T_contra], U],
+    start: Awaitable[bool],
 ) -> AsyncIterator[U]:
     try:
+        if not await start:
+            return
         async for item in gen:
             yield wrap_fn(item)
     finally:

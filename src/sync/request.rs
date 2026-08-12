@@ -6,7 +6,7 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObjectExt as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use pyo3_async_runtimes::tokio::get_runtime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
         constants::Constants,
         request::{
             maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
-            RequestStreamError, RequestStreamResult,
+            RequestStreamError, RequestStreamResult, StartOnPoll,
         },
     },
     sync::timeout::get_timeout,
@@ -142,30 +142,37 @@ impl SyncRequest {
             )),
             Some(Content::Iter(iter)) => {
                 let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
+                let (start_tx, start_rx) = oneshot::channel();
                 let read_iter = iter.clone_ref(py);
-                get_runtime().spawn_blocking(move || {
-                    Python::attach(|py| {
-                        let mut read_iter = read_iter.into_bound(py);
-                        loop {
-                            let res = match read_iter.next() {
-                                Some(Ok(item)) => item.extract::<Bytes>().map_err(|e| {
-                                    RequestStreamError::new(format!("Invalid bytes item: {e}"))
-                                }),
-                                Some(Err(e)) => {
-                                    let e_py = e.into_value(py);
-                                    Err(RequestStreamError::from_py(e_py.bind(py).as_any()))
+                get_runtime().spawn(async move {
+                    if start_rx.await.is_err() || tx.is_closed() {
+                        return;
+                    }
+                    let _ = tokio::task::spawn_blocking(move || {
+                        Python::attach(|py| {
+                            let mut read_iter = read_iter.into_bound(py);
+                            loop {
+                                let res = match read_iter.next() {
+                                    Some(Ok(item)) => item.extract::<Bytes>().map_err(|e| {
+                                        RequestStreamError::new(format!("Invalid bytes item: {e}"))
+                                    }),
+                                    Some(Err(e)) => {
+                                        let e_py = e.into_value(py);
+                                        Err(RequestStreamError::from_py(e_py.bind(py).as_any()))
+                                    }
+                                    None => break,
+                                };
+                                let errored = res.is_err();
+                                if py.detach(|| tx.blocking_send(res)).is_err() || errored {
+                                    break;
                                 }
-                                None => break,
-                            };
-                            let errored = res.is_err();
-                            if py.detach(|| tx.blocking_send(res)).is_err() || errored {
-                                break;
                             }
-                        }
-                    });
+                        });
+                    })
+                    .await;
                 });
                 Some((
-                    reqwest::Body::wrap_stream(ReceiverStream::new(rx)),
+                    reqwest::Body::wrap_stream(StartOnPoll::new(ReceiverStream::new(rx), start_tx)),
                     Some(iter.clone_ref(py).into_any()),
                 ))
             }
