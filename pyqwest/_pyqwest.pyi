@@ -544,9 +544,7 @@ class HTTPTransport:
         When creating a transport, take care to set options to meet your needs.
 
         Args:
-            tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
-                         PEM-encoded, and may contain multiple certificates. Raises ValueError if
-                         it contains no certificate.
+            tls_ca_cert: The PEM-encoded CA certificate(s) to use to verify the server for TLS connections.
             tls_include_system_certs: Whether to include the system CA certificates to verify TLS connections.
                                       If this is unset and tls_ca_cert is not provided, TLS will not function.
             tls_key: The client private key to identify the client for mTLS connections.
@@ -1061,9 +1059,7 @@ class SyncHTTPTransport:
         When creating a transport, take care to set options to meet your needs.
 
         Args:
-            tls_ca_cert: The CA certificate to use to verify the server for TLS connections.
-                         PEM-encoded, and may contain multiple certificates. Raises ValueError if
-                         it contains no certificate.
+            tls_ca_cert: The PEM-encoded CA certificate(s) to use to verify the server for TLS connections.
             tls_include_system_certs: Whether to include the system CA certificates to verify TLS connections.
                                       If this is unset and tls_ca_cert is not provided, TLS will not function.
             tls_key: The client private key to identify the client for mTLS connections.
