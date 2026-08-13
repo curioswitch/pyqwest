@@ -105,7 +105,7 @@ class RetryTransport(Transport):
                 return content
 
             get_content = _get_content
-        elif retry_mode == RetryMode.UNBUFFERED:
+        elif unbuffered_stream:
 
             async def _unbuffered_content() -> AsyncIterator[bytes]:
                 nonlocal content_started
@@ -139,9 +139,8 @@ class RetryTransport(Transport):
                 except Exception as e:  # noqa: PERF203
                     if not self.should_retry_response(request, e):
                         raise
-                    if unbuffered_stream and (
-                        not isinstance(e, ConnectionError) or content_started
-                    ):
+                    if unbuffered_stream and content_started:
+                        # I/O happened for an unbuffered stream, can't retry.
                         raise
                     resp = e
                     retries += 1

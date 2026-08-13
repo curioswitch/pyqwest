@@ -192,12 +192,9 @@ subclassing the middleware class and implementing `should_retry_request` or
 `should_retry_response` also returns `True`, or a `RetryMode` explicitly.
 `RetryMode.BUFFERED` retains streamed request content in memory as it is sent so it can be
 replayed. This can increase peak memory usage by the full size of the body even when the
-first attempt succeeds. `RetryMode.UNBUFFERED` retains no streamed content. Content provided
-as `bytes` is already replayable, so it follows the normal response retry policy in either
-mode.
-
-The default behavior retries connection errors for every HTTP method, and I/O errors
-or transient 429/5xx responses only for GET, HEAD, PUT, and DELETE.
+first attempt succeeds. `RetryMode.UNBUFFERED` retains no streamed content and makes streamed
+requests only retry connection errors. Content provided as `bytes` is already replayable, so
+it follows the normal response retry policy in either mode.
 
 === "async"
 

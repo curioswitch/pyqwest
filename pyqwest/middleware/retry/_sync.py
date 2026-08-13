@@ -104,7 +104,7 @@ class SyncRetryTransport(SyncTransport):
                 return content
 
             get_content = _get_content
-        elif retry_mode == RetryMode.UNBUFFERED:
+        elif unbuffered_stream:
 
             def _unbuffered_content() -> Iterator[bytes]:
                 content_started.set()
@@ -135,9 +135,7 @@ class SyncRetryTransport(SyncTransport):
                 except Exception as e:  # noqa: PERF203
                     if not self.should_retry_response(request, e):
                         raise
-                    if unbuffered_stream and (
-                        not isinstance(e, ConnectionError) or content_started.is_set()
-                    ):
+                    if unbuffered_stream and content_started.is_set():
                         raise
                     resp = e
                     retries += 1
