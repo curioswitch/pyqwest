@@ -9,7 +9,10 @@ class RetryMode(Enum):
     """Controls how request content is retained for retries."""
 
     BUFFERED = "buffered"
+    """Streaming requests are fully buffered in memory for retries on connection errors and server responses."""
+
     UNBUFFERED = "unbuffered"
+    """Streaming requests are not buffered in memory and can only be retried on connection errors."""
 
 
 _IDEMPOTENT_METHODS = ("GET", "HEAD", "PUT", "DELETE")
@@ -40,8 +43,6 @@ def parse_retry_after(header: str | None) -> float | None:
 
 
 def default_should_retry_request(method: str) -> RetryMode:
-    # GET, HEAD, PUT, and DELETE may retry after content has been sent and therefore
-    # need a replay buffer. Other methods only retry connection errors by default.
     if method in _IDEMPOTENT_METHODS:
         return RetryMode.BUFFERED
     return RetryMode.UNBUFFERED

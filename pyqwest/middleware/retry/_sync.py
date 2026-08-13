@@ -136,6 +136,7 @@ class SyncRetryTransport(SyncTransport):
                     if not self.should_retry_response(request, e):
                         raise
                     if unbuffered_stream and content_started.is_set():
+                        # I/O happened for an unbuffered stream, can't retry.
                         raise
                     resp = e
                     retries += 1
