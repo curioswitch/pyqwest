@@ -212,7 +212,7 @@ def test_retry_content_iterator(app: App, client: SyncClient) -> None:
     ("mode", "expected_status", "expected_count"),
     [(True, 200, 2), (RetryMode.BUFFERED, 200, 2), (False, 500, 1)],
 )
-def test_buffered_retry_mode_compatibility(
+def test_buffered_retry_mode(
     app: App, mode: bool | RetryMode, expected_status: int, expected_count: int
 ) -> None:
     app.status = [500, 200]
@@ -227,7 +227,7 @@ def test_buffered_retry_mode_compatibility(
     assert app.read_content == b"Hello world!"
 
 
-def test_unbuffered_bytes_follow_normal_retry_policy(app: App) -> None:
+def test_unbuffered_bytes(app: App) -> None:
     app.status = [500, 200]
     client = SyncClient(
         ConfiguredRetryTransport(WSGITransport(app), RetryMode.UNBUFFERED)
@@ -238,7 +238,7 @@ def test_unbuffered_bytes_follow_normal_retry_policy(app: App) -> None:
     assert app.read_content == b"Hello world!"
 
 
-def test_unbuffered_bytes_retry_io_errors(app: App) -> None:
+def test_unbuffered_bytes_io_errors(app: App) -> None:
     app.timeouts = 1
     client = SyncClient(
         ConfiguredRetryTransport(WSGITransport(app), RetryMode.UNBUFFERED)
@@ -249,7 +249,7 @@ def test_unbuffered_bytes_retry_io_errors(app: App) -> None:
     assert app.read_content == b"Hello world!"
 
 
-def test_unbuffered_stream_only_retries_connection_errors(app: App) -> None:
+def test_unbuffered_stream_connection_error(app: App) -> None:
     closed = False
 
     def content():
@@ -270,7 +270,7 @@ def test_unbuffered_stream_only_retries_connection_errors(app: App) -> None:
     assert closed
 
 
-def test_unbuffered_stream_closed_when_response_does_not_read_request() -> None:
+def test_unread_unbuffered_stream_closed() -> None:
     class Content:
         def __init__(self) -> None:
             self.closed = False
@@ -299,7 +299,7 @@ def test_unbuffered_stream_closed_when_response_does_not_read_request() -> None:
     assert content.closed
 
 
-def test_post_response_retry_loop_handles_exceptions() -> None:
+def test_connection_error_after_response() -> None:
     class Transport(SyncTransport):
         def __init__(self) -> None:
             self.count = 0
@@ -369,8 +369,8 @@ def test_retry_connection_error_content_iterator(app: App, client: SyncClient) -
 
     app.status = [200, 200]
     app.connection_errors = 1
-    with client.stream("POST", "http://localhost", content=content()) as res:
-        assert res.status == 200
+    res = client.post("http://localhost", content=content())
+    assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
 
