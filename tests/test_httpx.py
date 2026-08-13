@@ -27,7 +27,7 @@ from pyqwest import (
     WriteError,
 )
 from pyqwest.httpx import AsyncPyqwestTransport, PyqwestTransport
-from pyqwest.httpx._transport import convert_headers
+from pyqwest.httpx._transport import convert_headers, convert_timeout
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from ._util import (
@@ -277,6 +277,112 @@ def test_sync_timeout() -> None:
             client.get("http://localhost/")
     finally:
         release.set()
+
+
+def test_sync_timeout_shortest_phase() -> None:
+    # A short read timeout next to a longer write timeout must still bound the
+    # operation - the tightest phase carries the caller's intent.
+    release = threading.Event()
+
+    def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
+        release.wait(5)
+        return sync_echo_app(environ, start_response)
+
+    transport = PyqwestTransport(WSGITransport(app))
+    try:
+        with (
+            httpx.Client(
+                transport=transport,
+                timeout=httpx.Timeout(connect=5, read=0.1, write=5, pool=5),
+            ) as client,
+            pytest.raises(httpx.ReadTimeout),
+        ):
+            client.get("http://localhost/")
+    finally:
+        release.set()
+
+
+@pytest.mark.asyncio
+async def test_async_timeout_shortest_phase() -> None:
+    release = asyncio.Event()
+
+    async def app(
+        scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
+    ) -> None:
+        await release.wait()
+        await echo_app(scope, receive, send)
+
+    transport = AsyncPyqwestTransport(ASGITransport(app))
+    try:
+        async with httpx.AsyncClient(
+            transport=transport,
+            timeout=httpx.Timeout(connect=5, read=0.1, write=5, pool=5),
+        ) as client:
+            with pytest.raises(httpx.ReadTimeout):
+                await client.get("http://localhost/")
+    finally:
+        release.set()
+        await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_async_timeout_unlimited_phase() -> None:
+    # read=None means no limit, so the write timeout must not end up bounding
+    # the read the caller explicitly unbounded.
+    async def app(
+        scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
+    ) -> None:
+        await asyncio.sleep(0.2)
+        await echo_app(scope, receive, send)
+
+    transport = AsyncPyqwestTransport(ASGITransport(app))
+    async with httpx.AsyncClient(
+        transport=transport, timeout=httpx.Timeout(None, read=None, write=0.05)
+    ) as client:
+        res = await client.get("http://localhost/")
+    assert res.status_code == 200
+
+
+def test_convert_timeout_none() -> None:
+    assert convert_timeout({}) is None
+    assert convert_timeout({"timeout": None}) is None
+
+
+def test_convert_timeout_shortest_phase() -> None:
+    assert convert_timeout({"timeout": httpx.Timeout(5).as_dict()}) == 5
+    assert (
+        convert_timeout(
+            {"timeout": httpx.Timeout(connect=30, read=2, write=30, pool=30).as_dict()}
+        )
+        == 2
+    )
+    assert (
+        convert_timeout({"timeout": httpx.Timeout(None, read=30, write=2).as_dict()})
+        == 2
+    )
+
+
+def test_convert_timeout_unlimited_phase() -> None:
+    # None means no limit in httpx, not "unspecified", so it must not be
+    # replaced by another phase's timeout.
+    assert (
+        convert_timeout({"timeout": httpx.Timeout(None, read=None, write=5).as_dict()})
+        is None
+    )
+    assert (
+        convert_timeout({"timeout": httpx.Timeout(None, read=5, write=None).as_dict()})
+        is None
+    )
+    assert convert_timeout({"timeout": httpx.Timeout(None).as_dict()}) is None
+
+
+def test_convert_timeout_ignores_connect_and_pool() -> None:
+    # connect is applied by the transport itself, and says nothing about how
+    # long the response may take.
+    assert (
+        convert_timeout({"timeout": httpx.Timeout(None, connect=4).as_dict()}) is None
+    )
+    assert convert_timeout({"timeout": {"connect": 4, "pool": 4}}) is None
 
 
 def test_convert_headers_strips_default_host() -> None:

@@ -38,6 +38,13 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
     By default, [pyqwest.HTTPTransport][] follows redirects internally. To have
     HTTPX handle it instead, for example to set `response.history`, configure
     the pyqwest transport with `follow_redirects=False`.
+
+    HTTPX's per-phase timeouts are approximated, not honored individually: the
+    underlying transport supports a single operation timeout, which is taken as
+    the smallest of the `read` and `write` timeouts. A phase explicitly set to
+    `None` means no limit and disables the operation timeout. The `connect`
+    timeout is configured on the pyqwest transport instead, and `pool` is
+    ignored.
     """
 
     _transport: Transport
@@ -178,6 +185,13 @@ class PyqwestTransport(httpx.BaseTransport):
     By default, [pyqwest.SyncHTTPTransport][] follows redirects internally. To have
     HTTPX handle it instead, for example to set `response.history`, configure
     the pyqwest transport with `follow_redirects=False`.
+
+    HTTPX's per-phase timeouts are approximated, not honored individually: the
+    underlying transport supports a single operation timeout, which is taken as
+    the smallest of the `read` and `write` timeouts. A phase explicitly set to
+    `None` means no limit and disables the operation timeout. The `connect`
+    timeout is configured on the pyqwest transport instead, and `pool` is
+    ignored.
     """
 
     _transport: SyncTransport
@@ -343,22 +357,34 @@ def convert_timeout(extensions: dict) -> float | None:
     httpx_timeout = cast("dict | None", extensions.get("timeout"))
     if httpx_timeout is None:
         return None
-    # reqwest does not support setting individual timeout settings
-    # per call, only an operation timeout, so we need to approximate
-    # that from the httpx timeout dict. Connect usually happens once
-    # and can be given a longer timeout - we assume the operation timeout
-    # is the max of read/write if present, or connect if not. We ignore
-    # pool for now
-    read_timeout = httpx_timeout.get("read", -1)
-    if read_timeout is None:
-        read_timeout = -1
-    write_timeout = httpx_timeout.get("write", -1)
-    if write_timeout is None:
-        write_timeout = -1
-    operation_timeout = max(read_timeout, write_timeout)
-    if operation_timeout != -1:
-        return operation_timeout
-    return httpx_timeout.get("connect")
+    # reqwest does not support setting individual timeout settings per call,
+    # only an operation timeout, so we need to approximate that from the httpx
+    # timeout dict.
+    #
+    # The approximation is the smallest of the specified read/write timeouts,
+    # so the operation never outlives a bound the caller set. Taking the
+    # largest instead would let a request run far past a short timeout that
+    # happened to sit next to a longer one.
+    #
+    # httpx uses None to mean "no limit", which is not the same as the phase
+    # being unspecified, so an explicit None disables the operation timeout
+    # rather than being skipped over. A phase the caller unbounded must not
+    # come back bounded by another phase's value.
+    #
+    # Connect is not used: it is applied while establishing the connection,
+    # which the transport's own connect_timeout already covers, and it says
+    # nothing about how long the rest of the operation may take. Pool is
+    # ignored for now.
+    operation_timeout = None
+    for phase in ("read", "write"):
+        if phase not in httpx_timeout:
+            continue
+        phase_timeout = httpx_timeout[phase]
+        if phase_timeout is None:
+            return None
+        if operation_timeout is None or phase_timeout < operation_timeout:
+            operation_timeout = phase_timeout
+    return operation_timeout
 
 
 def remaining_time(deadline: float | None) -> float | None:
