@@ -41,7 +41,7 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
 
     HTTPX's per-phase timeouts are approximated, not honored individually: the
     underlying transport supports a single operation timeout, which is taken as
-    the smallest of the `read` and `write` timeouts. A phase explicitly set to
+    the sum of the `read` and `write` timeouts. A phase explicitly set to
     `None` means no limit and disables the operation timeout. The `connect`
     timeout is configured on the pyqwest transport instead, and `pool` is
     ignored.
@@ -188,7 +188,7 @@ class PyqwestTransport(httpx.BaseTransport):
 
     HTTPX's per-phase timeouts are approximated, not honored individually: the
     underlying transport supports a single operation timeout, which is taken as
-    the smallest of the `read` and `write` timeouts. A phase explicitly set to
+    the sum of the `read` and `write` timeouts. A phase explicitly set to
     `None` means no limit and disables the operation timeout. The `connect`
     timeout is configured on the pyqwest transport instead, and `pool` is
     ignored.
@@ -361,15 +361,14 @@ def convert_timeout(extensions: dict) -> float | None:
     # only an operation timeout, so we need to approximate that from the httpx
     # timeout dict.
     #
-    # The approximation is the smallest of the specified read/write timeouts,
-    # so the operation never outlives a bound the caller set. Taking the
-    # largest instead would let a request run far past a short timeout that
-    # happened to sit next to a longer one.
+    # The approximation is the sum of the specified read/write timeouts: an
+    # exchange is essentially a write followed by a read, so the caller's total
+    # budget across both phases is the closest match for an operation timeout.
     #
     # httpx uses None to mean "no limit", which is not the same as the phase
-    # being unspecified, so an explicit None disables the operation timeout
-    # rather than being skipped over. A phase the caller unbounded must not
-    # come back bounded by another phase's value.
+    # being unspecified, so an explicit None disables the operation timeout - a
+    # sum with an unbounded phase is unbounded. Negative values contribute
+    # nothing to the budget rather than shrinking the other phase's.
     #
     # Connect is not used: it is applied while establishing the connection,
     # which the transport's own connect_timeout already covers, and it says
@@ -382,8 +381,9 @@ def convert_timeout(extensions: dict) -> float | None:
         phase_timeout = httpx_timeout[phase]
         if phase_timeout is None:
             return None
-        if operation_timeout is None or phase_timeout < operation_timeout:
-            operation_timeout = phase_timeout
+        if operation_timeout is None:
+            operation_timeout = 0.0
+        operation_timeout += max(phase_timeout, 0.0)
     return operation_timeout
 
 

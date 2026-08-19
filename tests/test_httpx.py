@@ -279,9 +279,9 @@ def test_sync_timeout() -> None:
         release.set()
 
 
-def test_sync_timeout_shortest_phase() -> None:
-    # A short read timeout next to a longer write timeout must still bound the
-    # operation - the tightest phase carries the caller's intent.
+def test_sync_timeout_sums_phases() -> None:
+    # The read and write budgets together bound the operation, even with much
+    # longer connect and pool timeouts alongside.
     release = threading.Event()
 
     def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
@@ -293,7 +293,7 @@ def test_sync_timeout_shortest_phase() -> None:
         with (
             httpx.Client(
                 transport=transport,
-                timeout=httpx.Timeout(connect=5, read=0.1, write=5, pool=5),
+                timeout=httpx.Timeout(connect=5, read=0.05, write=0.05, pool=5),
             ) as client,
             pytest.raises(httpx.ReadTimeout),
         ):
@@ -303,7 +303,7 @@ def test_sync_timeout_shortest_phase() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_timeout_shortest_phase() -> None:
+async def test_async_timeout_sums_phases() -> None:
     release = asyncio.Event()
 
     async def app(
@@ -316,7 +316,7 @@ async def test_async_timeout_shortest_phase() -> None:
     try:
         async with httpx.AsyncClient(
             transport=transport,
-            timeout=httpx.Timeout(connect=5, read=0.1, write=5, pool=5),
+            timeout=httpx.Timeout(connect=5, read=0.05, write=0.05, pool=5),
         ) as client:
             with pytest.raises(httpx.ReadTimeout):
                 await client.get("http://localhost/")
@@ -348,18 +348,26 @@ def test_convert_timeout_none() -> None:
     assert convert_timeout({"timeout": None}) is None
 
 
-def test_convert_timeout_shortest_phase() -> None:
-    assert convert_timeout({"timeout": httpx.Timeout(5).as_dict()}) == 5
+def test_convert_timeout_sums_phases() -> None:
+    assert convert_timeout({"timeout": httpx.Timeout(5).as_dict()}) == 10
     assert (
         convert_timeout(
             {"timeout": httpx.Timeout(connect=30, read=2, write=30, pool=30).as_dict()}
         )
-        == 2
+        == 32
     )
     assert (
         convert_timeout({"timeout": httpx.Timeout(None, read=30, write=2).as_dict()})
-        == 2
+        == 32
     )
+    assert convert_timeout({"timeout": {"read": 5}}) == 5
+
+
+def test_convert_timeout_negative_phase() -> None:
+    # A negative phase contributes nothing to the budget rather than shrinking
+    # the other phase's.
+    assert convert_timeout({"timeout": {"read": -5, "write": 10}}) == 10
+    assert convert_timeout({"timeout": {"read": -5, "write": -10}}) == 0
 
 
 def test_convert_timeout_unlimited_phase() -> None:
