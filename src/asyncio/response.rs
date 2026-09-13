@@ -7,12 +7,12 @@ use pyo3::{
     types::{PyAnyMethods as _, PyBytes, PyInt},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::{
     asyncio::awaitable::{
         EmptyAsyncIterator, EmptyAwaitable, ErrorAwaitable, ValueAsyncIterator, ValueAwaitable,
     },
+    asyncio::runtime::{into_awaitable, AsyncLibrary},
     common::httpversion::HTTPVersion,
     headers::Headers,
     shared::{
@@ -39,13 +39,17 @@ pub(crate) struct Response {
 }
 
 impl Response {
-    pub(super) fn pending(py: Python<'_>, constants: Constants) -> PyResult<Response> {
+    pub(super) fn pending(
+        py: Python<'_>,
+        constants: Constants,
+        library: AsyncLibrary,
+    ) -> PyResult<Response> {
         let trailers = Py::new(py, Headers::empty())?;
         Ok(Response {
             head: ResponseHead::pending(py),
             content: Content::Http(Py::new(
                 py,
-                ContentGenerator::new(ResponseBody::pending(trailers.clone_ref(py))),
+                ContentGenerator::new(ResponseBody::pending(trailers.clone_ref(py)), library),
             )?),
             trailers,
             request_iter_task: RequestIterTask::empty(constants.clone()),
@@ -254,19 +258,13 @@ impl Drop for RequestIterTask {
         Python::attach(|py| {
             with_exception_set_aside(py, || {
                 let task = task.bind(py);
-                // Deallocation may run on any attached thread, including a
-                // tokio worker applying a decref that pyo3 deferred. So, we
-                // must schedule the cancellation on the task's event loop
-                // explicitly. Scheduling errors are ignored, as the loop may
-                // already be closed.
-                let _ = task
-                    .call_method0(&self.constants.get_loop)
-                    .and_then(|event_loop| {
-                        event_loop.call_method1(
-                            &self.constants.call_soon_threadsafe,
-                            (task.getattr(&self.constants.cancel)?,),
-                        )
-                    });
+                // Deallocation may run on any attached thread, including a tokio
+                // worker applying a decref that pyo3 deferred, so `cancel_soon`
+                // schedules the cancellation on the task's own event loop or
+                // trio run.
+                if let Err(e) = task.call_method0(&self.constants.cancel_soon) {
+                    e.write_unraisable(py, Some(task));
+                }
             });
         });
     }
@@ -275,12 +273,14 @@ impl Drop for RequestIterTask {
 #[pyclass(module = "_pyqwest.async", frozen)]
 struct ContentGenerator {
     body: ArcSwapOption<ResponseBody>,
+    library: AsyncLibrary,
 }
 
 impl ContentGenerator {
-    fn new(body: ResponseBody) -> Self {
+    fn new(body: ResponseBody, library: AsyncLibrary) -> Self {
         ContentGenerator {
             body: ArcSwapOption::from_pointee(body),
+            library,
         }
     }
 }
@@ -300,7 +300,7 @@ impl ContentGenerator {
             .into_bound_py_any(py);
         };
         let body = body.clone();
-        future_into_py(py, async move {
+        into_awaitable(py, self.library, async move {
             let chunk = body.chunk().await?;
             if let Some(bytes) = chunk {
                 Ok(BytesMemoryView::new(bytes))
@@ -317,7 +317,7 @@ impl ContentGenerator {
         if body.try_close() {
             return EmptyAwaitable.into_bound_py_any(py);
         }
-        future_into_py(py, async move {
+        into_awaitable(py, self.library, async move {
             body.close().await;
             Ok(())
         })

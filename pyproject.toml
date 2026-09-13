@@ -25,6 +25,11 @@ classifiers = [
 ]
 dependencies = ["opentelemetry-api >=1.39.1"]
 
+[project.optional-dependencies]
+# pyqwest._trio needs spawn_system_task(context=), added in trio 0.20, but trio
+# before 0.25 fails to import on Python 3.13.
+trio = ["trio >=0.25", "sniffio", "outcome", "exceptiongroup; python_version < '3.11'"]
+
 [project.urls]
 Changelog = "https://github.com/curioswitch/pyqwest/releases"
 Homepage = "https://github.com/curioswitch/pyqwest"
@@ -40,6 +45,7 @@ dev = [
   "maturin",
   "niquests[http3]",
   "opentelemetry-test-utils",
+  "outcome",
   "poethepoet",
   "psutil",
   "pytest",
@@ -49,6 +55,8 @@ dev = [
   "pytest-order",
   "pyvoy",
   "ruff",
+  "sniffio",
+  "trio",
   "trustme",
   "ty",
   "uvloop; sys_platform != 'win32'",

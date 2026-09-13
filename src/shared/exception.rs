@@ -90,7 +90,8 @@ impl Drop for PendingException<'_> {
     }
 }
 
-fn panic_message(payload: &(dyn Any + Send)) -> &str {
+/// The message a panic was raised with.
+pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> &str {
     payload
         .downcast_ref::<&str>()
         .copied()

@@ -2,6 +2,7 @@ use std::{ops::Deref, sync::Arc};
 
 use http::{header, HeaderName, StatusCode};
 use pyo3::{
+    exceptions::PyModuleNotFoundError,
     sync::PyOnceLock,
     types::{PyAnyMethods as _, PyBytes, PyInt, PyString, PyTuple},
     Py, PyAny, PyResult, PyTypeInfo, Python,
@@ -27,22 +28,20 @@ pub(crate) struct ConstantsInner {
     pub aclose: Py<PyString>,
     /// The string "`add_done_callback`".
     pub add_done_callback: Py<PyString>,
-    /// The string "`call_soon_threadsafe`".
-    pub call_soon_threadsafe: Py<PyString>,
+    /// The string "asyncio".
+    pub asyncio: Py<PyString>,
     /// The string "cancel".
     pub cancel: Py<PyString>,
-    /// The string "`create_task`".
-    pub create_task: Py<PyString>,
-    /// The string "exception".
-    pub exception: Py<PyString>,
+    /// The string "`cancel_soon`".
+    pub cancel_soon: Py<PyString>,
     /// The string "execute".
     pub execute: Py<PyString>,
     /// The string "`execute_sync`".
     pub execute_sync: Py<PyString>,
-    /// The string "`get_loop`".
-    pub get_loop: Py<PyString>,
     /// The string "result".
     pub result: Py<PyString>,
+    /// The string "trio".
+    pub trio: Py<PyString>,
 
     /// The _glue.py function `close_request_iterator`.
     pub close_request_iterator: Py<PyAny>,
@@ -56,6 +55,11 @@ pub(crate) struct ConstantsInner {
     pub multipart_content_sync: Py<PyAny>,
     /// The _glue.py function `read_content_sync`.
     pub read_content_sync: Py<PyAny>,
+    /// The _glue.py function `spawn_pump`, which starts asyncio tasks.
+    pub spawn_pump: Py<PyAny>,
+
+    /// sniffio, when it is installed.
+    pub sniffio: Option<Sniffio>,
 
     /// The class `pyqwest.Multipart`.
     pub multipart_class: Py<PyAny>,
@@ -492,6 +496,15 @@ pub(crate) struct ConstantsInner {
     header_x_xss_protection: Py<HttpHeaderName>,
 }
 
+/// sniffio's detection API. sniffio is an optional dependency: trio depends on
+/// it, so where it is missing the running library can only be asyncio.
+pub(crate) struct Sniffio {
+    /// The function `current_async_library`.
+    pub current_async_library: Py<PyAny>,
+    /// The exception class `AsyncLibraryNotFoundError`.
+    pub async_library_not_found: Py<PyAny>,
+}
+
 static INSTANCE: PyOnceLock<Constants> = PyOnceLock::new();
 
 #[derive(Clone)]
@@ -507,6 +520,14 @@ impl Constants {
     #[allow(clippy::too_many_lines)]
     fn new(py: Python<'_>) -> PyResult<Self> {
         let glue = py.import("pyqwest._glue")?;
+        let sniffio = match py.import("sniffio") {
+            Ok(sniffio) => Some(Sniffio {
+                current_async_library: sniffio.getattr("current_async_library")?.unbind(),
+                async_library_not_found: sniffio.getattr("AsyncLibraryNotFoundError")?.unbind(),
+            }),
+            Err(e) if e.is_instance_of::<PyModuleNotFoundError>(py) => None,
+            Err(e) => return Err(e),
+        };
         let multipart = py.import("pyqwest._multipart")?;
         let contextvars = py.import("contextvars")?;
         let timeout_context_var = contextvars
@@ -528,14 +549,13 @@ impl Constants {
                 __aiter__: PyString::new(py, "__aiter__").unbind(),
                 aclose: PyString::new(py, "aclose").unbind(),
                 add_done_callback: PyString::new(py, "add_done_callback").unbind(),
-                call_soon_threadsafe: PyString::new(py, "call_soon_threadsafe").unbind(),
+                asyncio: PyString::new(py, "asyncio").unbind(),
                 cancel: PyString::new(py, "cancel").unbind(),
-                create_task: PyString::new(py, "create_task").unbind(),
-                exception: PyString::new(py, "exception").unbind(),
+                cancel_soon: PyString::new(py, "cancel_soon").unbind(),
                 execute: PyString::new(py, "execute").unbind(),
                 execute_sync: PyString::new(py, "execute_sync").unbind(),
-                get_loop: PyString::new(py, "get_loop").unbind(),
                 result: PyString::new(py, "result").unbind(),
+                trio: PyString::new(py, "trio").unbind(),
 
                 close_request_iterator: glue.getattr("close_request_iterator")?.unbind(),
                 execute_and_read_full: glue.getattr("execute_and_read_full")?.unbind(),
@@ -543,6 +563,8 @@ impl Constants {
                 multipart_content: glue.getattr("multipart_content")?.unbind(),
                 multipart_content_sync: glue.getattr("multipart_content_sync")?.unbind(),
                 read_content_sync: glue.getattr("read_content_sync")?.unbind(),
+                spawn_pump: glue.getattr("spawn_pump")?.unbind(),
+                sniffio,
 
                 multipart_class: multipart.getattr("Multipart")?.unbind(),
                 sync_multipart_class: multipart.getattr("SyncMultipart")?.unbind(),

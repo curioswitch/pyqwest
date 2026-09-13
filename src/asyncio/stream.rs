@@ -1,31 +1,34 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use pyo3::{
-    exceptions::PyBaseException, pyclass, pymethods, sync::MutexExt as _, types::PyAnyMethods as _,
+    exceptions::{PyBaseException, PyRuntimeError},
+    pyclass, pymethods,
+    sync::MutexExt as _,
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
-};
-use pyo3_async_runtimes::{
-    tokio::{future_into_py_with_locals, get_current_locals},
-    TaskLocals,
 };
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::shared::{
-    constants::Constants,
-    request::{RequestStreamError, RequestStreamResult},
+use crate::{
+    asyncio::runtime::{into_awaitable_with_locals, pump_spawner, AsyncLibrary, Locals},
+    shared::{
+        constants::Constants,
+        request::{RequestStreamError, RequestStreamResult},
+    },
 };
 
+/// Pumps a Python async iterator into a Rust stream from a detached task on
+/// `library`, returning the stream and the task's `PumpHandle`.
 pub(super) fn into_stream(
     py: Python<'_>,
     gen: Bound<'_, PyAny>,
     constants: &Constants,
+    library: AsyncLibrary,
 ) -> PyResult<(
     impl futures_core::Stream<Item = RequestStreamResult<Py<PyAny>>>,
     Py<PyAny>,
 )> {
-    let locals = get_current_locals(py)?;
-    let event_loop = locals.event_loop(py);
+    let locals = Locals::current(py, library)?;
     let (tx, rx) = mpsc::channel::<RequestStreamResult<Py<PyAny>>>(10);
     let sender = Py::new(
         py,
@@ -35,20 +38,16 @@ pub(super) fn into_stream(
         },
     )?;
 
-    let task_consumer = TaskConsumer {
-        constants: constants.clone(),
-    };
-    let coro = constants.forward.bind(py).call1((gen, sender))?;
-    let task = event_loop.call_method1(&constants.create_task, (coro,))?;
-    task.call_method1(&constants.add_done_callback, (task_consumer,))?;
+    let handle =
+        pump_spawner(py, library, constants)?.call1(py, (&constants.forward, gen, sender))?;
 
     let stream = ReceiverStream::new(rx);
-    Ok((stream, task.unbind()))
+    Ok((stream, handle))
 }
 
 #[pyclass(module = "_pyqwest.async", frozen)]
 struct Sender {
-    locals: TaskLocals,
+    locals: Locals,
     tx: Mutex<Option<mpsc::Sender<RequestStreamResult<Py<PyAny>>>>>,
 }
 
@@ -61,45 +60,37 @@ impl Sender {
             Ok(item.unbind())
         };
 
-        let guard = self.tx.lock_py_attached(py).unwrap();
-        // SAFETY - We never call send after close in _glue.py
-        let tx = guard.as_ref().unwrap();
-        match tx.try_send(item) {
-            Ok(()) => true.into_py_any(py),
-            Err(e) => match e {
-                TrySendError::Full(item) => {
-                    let tx = tx.clone();
-                    future_into_py_with_locals(py, self.locals.clone(), async move {
-                        let Some(permit) = tx.reserve().await.ok() else {
-                            // receiving side disconnected
-                            return Ok(false);
-                        };
-                        permit.send(item);
-                        Ok(true)
-                    })
-                    .map(Bound::unbind)
-                }
-                TrySendError::Closed(_) => false.into_py_any(py),
-            },
-        }
+        let (tx, item) = {
+            let guard = self
+                .tx
+                .lock_py_attached(py)
+                .unwrap_or_else(PoisonError::into_inner);
+            // forward() never sends after close. Raise rather than panic if it
+            // does: a panic escaping trio's system task ends the whole run.
+            let tx = guard
+                .as_ref()
+                .ok_or_else(|| PyRuntimeError::new_err("request body sender already closed"))?;
+            match tx.try_send(item) {
+                Ok(()) => return true.into_py_any(py),
+                Err(TrySendError::Closed(_)) => return false.into_py_any(py),
+                Err(TrySendError::Full(item)) => (tx.clone(), item),
+            }
+        };
+        into_awaitable_with_locals(py, &self.locals, async move {
+            let Some(permit) = tx.reserve().await.ok() else {
+                // receiving side disconnected
+                return Ok(false);
+            };
+            permit.send(item);
+            Ok(true)
+        })
+        .map(Bound::unbind)
     }
 
     fn close(&self, py: Python<'_>) {
-        let mut guard = self.tx.lock_py_attached(py).unwrap();
-        *guard = None;
-    }
-}
-
-#[pyclass(module = "_pyqwest.async", frozen)]
-struct TaskConsumer {
-    constants: Constants,
-}
-
-#[pymethods]
-impl TaskConsumer {
-    #[allow(clippy::unused_self)]
-    fn __call__(&self, future: &Bound<'_, PyAny>) {
-        // Suppress errors.
-        let _ = future.call_method0(&self.constants.exception);
+        *self
+            .tx
+            .lock_py_attached(py)
+            .unwrap_or_else(PoisonError::into_inner) = None;
     }
 }

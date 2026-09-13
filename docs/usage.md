@@ -4,8 +4,8 @@ icon: material/hammer-wrench
 
 # Usage
 
-The entrypoint to pyqwest is [`Client`](/api/#pyqwest.Client) for asyncio applications
-and [`SyncClient`](/api/#pyqwest.SyncClient) for synchronous applications.
+The entrypoint to pyqwest is [`Client`](/api/#pyqwest.Client) for asyncio and Trio
+applications and [`SyncClient`](/api/#pyqwest.SyncClient) for synchronous applications.
 
 === "async"
 
@@ -186,7 +186,8 @@ Retry middleware automatically reissues requests on errors. The default behavior
 retry known-safe errors, which include connection errors and transient error responses for
 GET, HEAD, PUT, and DELETE. Whether a request or response is retryable can be customized by
 subclassing the middleware class and implementing `should_retry_request` or
-`should_retry_response`, for example to match against `request.url`.
+`should_retry_response`, for example to match against `request.url`. `RetryTransport` waits
+between attempts with `asyncio.sleep`, so under Trio it fails at its first retry.
 
 `should_retry_request` may return `False` to disable retries, `True` to retry if
 `should_retry_response` also returns `True`, or a `RetryMode` explicitly.
@@ -326,9 +327,11 @@ The transport can be configured with timeouts for overall operations, connect, a
         application = MyApplication(client)
     ```
 
-The overall operation timeout can also be configured per-call to override the transport's
-setting by passing `timeout` for sync clients or using `asyncio.wait_for` or
-`asyncio.timeout` for async. Connect and read timeout cannot be configured per-call.
+Sync clients can override the transport's overall timeout per call by passing `timeout`.
+Async calls can set a shorter deadline with `asyncio.wait_for`, or with `asyncio.timeout` on
+Python 3.11 and later, while the transport's timeout still applies. With Trio, use
+`trio.fail_after`: its deadline raises `trio.TooSlowError`, and the transport's timeout
+still raises `TimeoutError`. Connect and read timeouts cannot be configured per call.
 
 === "async"
 

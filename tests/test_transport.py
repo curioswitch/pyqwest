@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import TYPE_CHECKING
 
 import pytest
+import sniffio
 
 from pyqwest import (
     Client,
@@ -17,10 +19,10 @@ from pyqwest import (
     get_default_transport,
 )
 
-from ._util import SyncRequestBody
+from ._util import SyncRequestBody, run_child
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
 
 pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
@@ -283,3 +285,42 @@ async def test_request_body_task_cancelled_on_cancelled_execute(url: str) -> Non
         with pytest.raises(asyncio.CancelledError):
             await fut
         await asyncio.wait_for(body_closed.wait(), timeout=5)
+
+
+def test_asyncio_without_sniffio(url: str) -> None:
+    # The transport imports sniffio once per process, so blocking that import
+    # needs a fresh interpreter.
+    run_child("_no_sniffio_child.py", f"{url}/echo", prints="200")
+
+
+@contextlib.contextmanager
+def sniffio_reports(name: str) -> Iterator[None]:
+    previous = sniffio.thread_local.name
+    sniffio.thread_local.name = name
+    try:
+        yield
+    finally:
+        sniffio.thread_local.name = previous
+
+
+@pytest.mark.asyncio
+async def test_response_content_reuses_detected_library(url: str) -> None:
+    res = await get_default_transport().execute(Request("GET", f"{url}/echo"))
+    assert res.status == 200
+    # execute() detected asyncio; reading the body reuses that answer rather
+    # than asking sniffio again, so a different answer now has no effect.
+    with sniffio_reports("curio"):
+        async for _ in res.content:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_unsupported_async_library(url: str) -> None:
+    transport = get_default_transport()
+    with (
+        sniffio_reports("curio"),
+        pytest.raises(
+            RuntimeError, match="pyqwest supports asyncio and trio, not 'curio'"
+        ),
+    ):
+        await transport.execute(Request("GET", f"{url}/echo"))

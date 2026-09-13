@@ -10,12 +10,14 @@ use pyo3::{
     types::{PyAnyMethods as _, PyModule, PyString},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::{future_into_py_with_locals, get_current_locals};
 use tokio::sync::oneshot;
 use tokio_stream::StreamExt as _;
 
 use crate::{
-    asyncio::stream::into_stream,
+    asyncio::{
+        runtime::{into_awaitable, AsyncLibrary},
+        stream::into_stream,
+    },
     headers::Headers,
     shared::{
         constants::Constants,
@@ -127,10 +129,11 @@ impl Request {
         &self,
         py: Python<'_>,
         http3: bool,
+        library: AsyncLibrary,
     ) -> PyResult<(reqwest::Request, Arc<ArcSwapOption<Py<PyAny>>>)> {
         let mut req = self.head.new_reqwest(py, http3)?;
         let request_iter_task: Arc<ArcSwapOption<Py<PyAny>>> = Arc::new(ArcSwapOption::empty());
-        if let (Some(body), task) = self.content_into_reqwest(py)? {
+        if let (Some(body), task) = self.content_into_reqwest(py, library)? {
             *req.body_mut() = Some(body);
             if let Some(task) = task {
                 request_iter_task.store(Some(Arc::new(task)));
@@ -142,6 +145,7 @@ impl Request {
     fn content_into_reqwest(
         &self,
         py: Python<'_>,
+        library: AsyncLibrary,
     ) -> PyResult<(Option<reqwest::Body>, Option<Py<PyAny>>)> {
         match &self.content {
             Some(Content::Bytes(bytes)) => Ok((
@@ -150,8 +154,8 @@ impl Request {
             )),
             Some(Content::AsyncIter(iter)) => {
                 let (start_tx, start_rx) = oneshot::channel();
-                let iter = wrap_async_iter(py, iter, start_rx)?;
-                let (stream, task) = into_stream(py, iter, &self.constants)?;
+                let iter = wrap_async_iter(py, iter, start_rx, library)?;
+                let (stream, task) = into_stream(py, iter, &self.constants, library)?;
                 let res = StartOnPoll::new(stream, start_tx).map(bytes_from_chunk);
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
@@ -182,6 +186,7 @@ fn wrap_async_iter<'py>(
     py: Python<'py>,
     iter: &Py<PyAny>,
     start: oneshot::Receiver<()>,
+    library: AsyncLibrary,
 ) -> PyResult<Bound<'py, PyAny>> {
     static WRAP_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     static GEN_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -199,9 +204,7 @@ fn wrap_async_iter<'py>(
         })?
         .bind(py);
 
-    let start = future_into_py_with_locals(py, get_current_locals(py)?, async move {
-        Ok(start.await.is_ok())
-    })?;
+    let start = into_awaitable(py, library, async move { Ok(start.await.is_ok()) })?;
     gen_fn.call1((iter, wrap_fn, start))
 }
 
