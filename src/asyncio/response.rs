@@ -18,6 +18,7 @@ use crate::{
     shared::{
         buffer::BytesMemoryView,
         constants::Constants,
+        exception::with_exception_set_aside,
         response::{ResponseBody, ResponseHead, RustFullResponse},
     },
 };
@@ -244,22 +245,29 @@ impl Drop for RequestIterTask {
         let Some(task) = self.task.swap(None) else {
             return;
         };
-        // SAFETY - the task is populated in the response future's done callback,
-        // meaning a dropped Response is always during Python garbage collection.
-        // This attach is reentrant and cannot happen on a tokio thread as a result.
+        // SAFETY - a task is only stored on a Response that Python already owns
+        // (the done callback and `_set_request_iter_task`), so this runs as
+        // part of Response deallocation. pyo3 attaches the thread before it
+        // runs the deallocator, so `Python::attach` reuses that attachment and
+        // never blocks. Deallocation can happen while an exception propagates,
+        // requiring `with_exception_set_aside`.
         Python::attach(|py| {
-            let task = task.bind(py);
-            // Deallocation may run on any thread holding the GIL, so schedule
-            // the cancellation on the task's event loop instead of calling it
-            // directly. Ignore errors from an already closed loop.
-            let _ = task
-                .call_method0(&self.constants.get_loop)
-                .and_then(|event_loop| {
-                    event_loop.call_method1(
-                        &self.constants.call_soon_threadsafe,
-                        (task.getattr(&self.constants.cancel)?,),
-                    )
-                });
+            with_exception_set_aside(py, || {
+                let task = task.bind(py);
+                // Deallocation may run on any attached thread, including a
+                // tokio worker applying a decref that pyo3 deferred. So, we
+                // must schedule the cancellation on the task's event loop
+                // explicitly. Scheduling errors are ignored, as the loop may
+                // already be closed.
+                let _ = task
+                    .call_method0(&self.constants.get_loop)
+                    .and_then(|event_loop| {
+                        event_loop.call_method1(
+                            &self.constants.call_soon_threadsafe,
+                            (task.getattr(&self.constants.cancel)?,),
+                        )
+                    });
+            });
         });
     }
 }

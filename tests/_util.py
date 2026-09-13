@@ -3,9 +3,14 @@ from __future__ import annotations
 import contextlib
 import socket
 import struct
+import subprocess
+import sys
 import threading
 from collections.abc import Iterator
+from pathlib import Path
 from queue import Empty, Queue
+
+import pytest
 
 
 @contextlib.contextmanager
@@ -102,3 +107,21 @@ class SyncRequestBody(Iterator[bytes]):
             return
         self._closed = True
         self._queue.put(None)
+
+
+def run_child(script: str, *args: str, prints: str) -> None:
+    """Runs `script` from this directory in a fresh interpreter.
+
+    Fails unless it exits cleanly after printing only `prints`.
+    """
+    __tracebackhide__ = True
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, "-X", "faulthandler", Path(__file__).with_name(script), *args],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0 or proc.stdout.split() != [prints]:
+        pytest.fail(f"exit {proc.returncode}\nstdout: {proc.stdout!r}\n{proc.stderr}")

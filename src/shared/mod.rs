@@ -4,6 +4,8 @@ pub(crate) mod backoff;
 pub(crate) mod buffer;
 /// Shared constants.
 pub(crate) mod constants;
+/// Shared utilities for the thread's Python exception state.
+pub(crate) mod exception;
 /// Shared utilities for `OTel` instrumentation.
 pub(crate) mod otel;
 /// Shared utilities for request handling.
