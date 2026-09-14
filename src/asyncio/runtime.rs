@@ -1,12 +1,10 @@
 //! Runtime dispatch for the awaitables the transport hands back to Python.
 //!
 //! Under asyncio a Rust future becomes an `asyncio.Future` through
-//! pyo3-async-runtimes. Under trio it is wrapped in a [`Kickoff`], which
-//! `pyqwest._trio.await_kickoff` awaits.
-//!
-//! The two runtimes differ in when work starts: asyncio futures run from the
-//! moment they are created, while a trio kickoff runs only once its
-//! coroutine is awaited.
+//! pyo3-async-runtimes. Under trio it is spawned on the tokio runtime just the
+//! same, with `pyqwest._trio.start_request` providing the completion callback
+//! tokio reports through and the awaitable Python gets back. Under both, the
+//! request runs from the moment it is created.
 
 use std::{
     any::Any,
@@ -30,9 +28,6 @@ use pyo3_async_runtimes::{
 use tokio::{sync::oneshot, task::JoinError};
 
 use crate::shared::{constants::Constants, exception::panic_message};
-
-/// Spawns the wrapped future, routing its outcome to the completion callback.
-type Starter = Box<dyn FnOnce(Py<PyAny>) -> Abort + Send>;
 
 /// The async library a request runs on. `execute()` detects it once, and every
 /// awaitable the request creates reuses the answer, including each read of the
@@ -120,9 +115,10 @@ where
     }
 }
 
-/// Like [`into_awaitable`], with `on_done` invoked once the awaitable settles.
-/// It receives an object with `result()`: the `asyncio.Future` itself, or its
-/// trio stand-in. An `Exception` from `on_done` is logged under either runtime.
+/// Like [`into_awaitable`], with `on_done` invoked once the future settles,
+/// whether or not the awaitable is awaited. It receives an object with
+/// `result()`: the `asyncio.Future` itself, or its trio stand-in. An
+/// `Exception` from `on_done` is logged under either runtime.
 pub(super) fn into_awaitable_with_done<'py, F, T>(
     py: Python<'py>,
     library: AsyncLibrary,
@@ -159,7 +155,7 @@ pub(super) fn pump_spawner<'a>(
 
 /// `pyqwest._trio`, imported on first use.
 struct TrioGlue {
-    await_kickoff: Py<PyAny>,
+    start_request: Py<PyAny>,
     spawn_pump: Py<PyAny>,
 }
 
@@ -168,7 +164,7 @@ fn trio_glue(py: Python<'_>) -> PyResult<&'static TrioGlue> {
     GLUE.get_or_try_init(py, || {
         let module = PyModule::import(py, "pyqwest._trio")?;
         Ok(TrioGlue {
-            await_kickoff: module.getattr("await_kickoff")?.unbind(),
+            start_request: module.getattr("start_request")?.unbind(),
             spawn_pump: module.getattr("spawn_pump")?.unbind(),
         })
     })
@@ -183,38 +179,39 @@ where
     F: Future<Output = PyResult<T>> + Send + 'static,
     T: for<'a> IntoPyObject<'a> + Send + 'static,
 {
-    let await_kickoff = trio_glue(py)?.await_kickoff.bind(py);
+    let (abort_tx, mut abort_rx) = oneshot::channel();
+    let abort = Abort {
+        abort: Mutex::new(Some(abort_tx)),
+    };
+    let (completion, awaitable): (Py<PyAny>, Bound<'py, PyAny>) = trio_glue(py)?
+        .start_request
+        .bind(py)
+        .call1((abort, on_done))?
+        .extract()?;
 
     // The future races the abort signal in its own task, so a panic in it
     // comes back as a `JoinError` and is still reported. Converting the result
     // and waking trio need the GIL, which a tokio worker must not wait for, so
     // both happen on the blocking pool.
-    let starter: Starter = Box::new(move |completion: Py<PyAny>| {
-        let (abort_tx, mut abort_rx) = oneshot::channel();
-        let runtime = get_runtime();
-        let race = runtime.spawn(async move {
-            tokio::select! {
-                biased;
-                _ = &mut abort_rx => None,
-                res = fut => Some(res),
-            }
-        });
-        runtime.spawn(async move {
-            let outcome = race.await;
-            // try_attach: once the interpreter is finalizing, nothing awaits.
-            let _ = tokio::task::spawn_blocking(move || {
-                Python::try_attach(move |py| report(py, &completion, outcome));
-            })
-            .await;
-        });
-        Abort {
-            abort: Mutex::new(Some(abort_tx)),
+    let runtime = get_runtime();
+    let race = runtime.spawn(async move {
+        tokio::select! {
+            biased;
+            // Only an explicit abort cancels. A dropped handle leaves the
+            // request running, as dropping an `asyncio.Future` does.
+            Ok(()) = &mut abort_rx => None,
+            res = fut => Some(res),
         }
     });
-    let kickoff = Kickoff {
-        starter: Mutex::new(Some(starter)),
-    };
-    await_kickoff.call1((kickoff, on_done))
+    runtime.spawn(async move {
+        let outcome = race.await;
+        // try_attach: once the interpreter is finalizing, nothing awaits.
+        let _ = tokio::task::spawn_blocking(move || {
+            Python::try_attach(move |py| report(py, &completion, outcome));
+        })
+        .await;
+    });
+    Ok(awaitable)
 }
 
 /// Calls `completion(value, error, cancelled)` exactly once for `outcome`.
@@ -253,29 +250,9 @@ fn panic_error(payload: &(dyn Any + Send)) -> PyErr {
     RustPanic::new_err(format!("rust future panicked: {}", panic_message(payload)))
 }
 
-/// A future not yet running; `start` spawns it and routes its outcome to
-/// `completion(value, error, cancelled)` on a tokio thread.
-#[pyclass(module = "_pyqwest.async", frozen)]
-struct Kickoff {
-    starter: Mutex<Option<Starter>>,
-}
-
-#[pymethods]
-impl Kickoff {
-    fn start(&self, py: Python<'_>, completion: Py<PyAny>) -> PyResult<Abort> {
-        let starter = self
-            .starter
-            .lock_py_attached(py)
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .ok_or_else(|| PyRuntimeError::new_err("kickoff already started"))?;
-        Ok(starter(completion))
-    }
-}
-
 /// Cancels the spawned future. The completion callback then reports
 /// `cancelled=True`, unless the future finished first. Dropping the handle
-/// without calling `abort` cancels the future the same way.
+/// without calling `abort` leaves the future running.
 #[pyclass(module = "_pyqwest.async", frozen)]
 struct Abort {
     abort: Mutex<Option<oneshot::Sender<()>>>,

@@ -145,11 +145,8 @@ RUN_TIMEOUT = 30
 
 
 def run_trio(main: Callable[..., Awaitable[object]], *args: object) -> object:
-    """`trio.run(main, *args)`, failing instead of hanging if the run never ends.
-
-    A task awaiting a request refuses cancellation until tokio reports back, so
-    a regression there parks it where no trio deadline inside `main` reaches;
-    joining the run's thread with a timeout still does.
+    """`trio.run(main, *args)`, failing with the run's stack instead of hanging
+    if it never ends.
     """
     __tracebackhide__ = True
     result: list[outcome.Outcome[object]] = []

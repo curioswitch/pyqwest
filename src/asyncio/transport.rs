@@ -321,9 +321,10 @@ impl Drop for EndOperationCallback {
         let Some(operation) = operation.take() else {
             return;
         };
-        // A done callback freed without being called, such as a trio request
-        // that was never awaited, still ends its operation, so the span closes
-        // and the active request count comes back down.
+        // A done callback freed without being called still ends its operation,
+        // so the span closes and the active request count comes back down. That
+        // happens when the event loop or trio run ends before the request
+        // completes, leaving its outcome nowhere to go.
         Python::attach(|py| {
             without_pending_exception(py, || {
                 if let Some(task) = self.request_iter_task.swap(None) {

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import inspect
 import logging
-import signal
 import socket
 import threading
 import warnings
@@ -14,88 +14,89 @@ import trio
 import trio.testing
 
 from pyqwest import HTTPTransport, Request
-from pyqwest._trio import await_kickoff, spawn_pump
+from pyqwest._trio import spawn_pump, start_request
 
 from ._util import RUN_TIMEOUT, one_connection_server, run_trio
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import AsyncIterator, Awaitable
 
     from pyqwest._trio import Completed, Completion
 
 # These tests reach paths of the trio bridge that the kitchensink server cannot
-# produce on demand. The kickoff tests drive `await_kickoff` with a fake
-# kickoff, so each race resolves the same way on every run. The pump tests call
-# `spawn_pump` directly. The body tests serve raw sockets, so they build their
-# own transport rather than using the parametrized fixtures.
+# produce on demand. The request tests call `start_request` in place of Rust
+# and then the completion as tokio would, so each race resolves the same way
+# on every run. The pump tests call `spawn_pump` directly. The body tests serve
+# raw sockets, so they build their own transport rather than using the
+# parametrized fixtures.
 
 
 def trio_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [record for record in caplog.records if record.name == "pyqwest._trio"]
 
 
-class FakeKickoff:
-    """Stands in for the Rust `Kickoff`, reacting to `start` and `abort` as told."""
+class FakeAbort:
+    """Stands in for the Rust `Abort` handle."""
 
-    def __init__(
-        self,
-        *,
-        on_start: Callable[[Completion], None] | None = None,
-        on_abort: Callable[[Completion], None] | None = None,
-    ) -> None:
-        self._on_start = on_start
-        self._on_abort = on_abort
-        self._completion: Completion | None = None
-        self.started = False
+    def __init__(self) -> None:
         self.aborted = False
-
-    def start(self, completion: Completion) -> FakeKickoff:
-        self.started = True
-        self._completion = completion
-        if self._on_start is not None:
-            self._on_start(completion)
-        return self
 
     def abort(self) -> None:
         self.aborted = True
-        if self._on_abort is not None and self._completion is not None:
-            self._on_abort(self._completion)
 
 
-def test_result_racing_abort_is_returned() -> None:
-    kickoff = FakeKickoff(on_abort=lambda complete: complete("value", None, False))
-    results: list[object] = []
-
-    async def main() -> None:
-        with trio.move_on_after(0.01):
-            results.append(await await_kickoff(kickoff))
-            await trio.lowlevel.checkpoint()
-            results.append("not cancelled")
-
-    run_trio(main)
-    assert kickoff.aborted
-    assert results == ["value"]
+def close_unawaited(awaitable: Awaitable[object]) -> None:
+    """Drops an awaitable without awaiting it, as a caller that never awaits does."""
+    assert inspect.iscoroutine(awaitable)
+    awaitable.close()
 
 
-def test_unrequested_cancellation_raises() -> None:
-    kickoff = FakeKickoff(on_start=lambda complete: complete(None, None, True))
+def test_done_callback_runs_before_awaiter_resumes() -> None:
+    abort = FakeAbort()
+    events: list[tuple[str, object]] = []
+
+    def on_done(completed: Completed) -> None:
+        events.append(("done", completed.result()))
 
     async def main() -> None:
-        with pytest.raises(RuntimeError, match="without a trio cancellation"):
-            await await_kickoff(kickoff)
+        completion, awaitable = start_request(abort, on_done)
+        # tokio reports from one of its threads.
+        threading.Thread(target=completion, args=("value", None, False)).start()
+        events.append(("awaited", await awaitable))
 
     run_trio(main)
+    assert events == [("done", "value"), ("awaited", "value")]
+    assert not abort.aborted
+
+
+def test_error_keeps_its_traceback_past_done_callback() -> None:
+    abort = FakeAbort()
+
+    def on_done(completed: Completed) -> None:
+        with contextlib.suppress(ValueError):
+            completed.result()
+
+    async def main() -> None:
+        completion, awaitable = start_request(abort, on_done)
+        completion(None, ValueError("request failed"), False)
+        await awaitable
+
+    with pytest.raises(ValueError, match="request failed") as info:
+        run_trio(main)
+    assert "result" not in [entry.name for entry in info.traceback]
 
 
 def test_failing_done_callback_is_logged(caplog: pytest.LogCaptureFixture) -> None:
-    kickoff = FakeKickoff(on_start=lambda complete: complete("value", None, False))
+    abort = FakeAbort()
 
     def on_done(_: Completed) -> None:
         msg = "callback failed"
         raise RuntimeError(msg)
 
     async def main() -> None:
-        assert await await_kickoff(kickoff, on_done) == "value"
+        completion, awaitable = start_request(abort, on_done)
+        completion("value", None, False)
+        assert await awaitable == "value"
 
     run_trio(main)
     records = trio_records(caplog)
@@ -105,65 +106,79 @@ def test_failing_done_callback_is_logged(caplog: pytest.LogCaptureFixture) -> No
     assert "RuntimeError: callback failed" in logging.Formatter().format(record)
 
 
-def test_cancelled_caller_does_not_start_request() -> None:
-    # on_abort matters only if the request wrongly starts: that then fails
-    # instead of hanging.
-    kickoff = FakeKickoff(on_abort=lambda complete: complete(None, None, True))
+def test_cancelled_wait_aborts_request() -> None:
+    abort = FakeAbort()
     done: list[Completed] = []
 
     async def main() -> None:
-        with trio.CancelScope() as scope:
-            scope.cancel()
-            await await_kickoff(kickoff, done.append)
+        completion, awaitable = start_request(abort, done.append)
+        with trio.move_on_after(0.01) as scope:
+            await awaitable
+        assert scope.cancelled_caught
+        assert abort.aborted
+        assert done == []
+        # tokio confirms the abort; the done callback sees the cancellation.
+        completion(None, None, True)
+        await trio.testing.wait_all_tasks_blocked()
 
     run_trio(main)
-    assert not kickoff.started
     assert len(done) == 1
     with pytest.raises(trio.Cancelled):
         done[0].result()
 
 
-def test_done_callback_keeps_error_traceback() -> None:
-    kickoff = FakeKickoff(
-        on_start=lambda complete: complete(None, ValueError("request failed"), False)
-    )
-
-    def on_done(completed: Completed) -> None:
-        with contextlib.suppress(ValueError):
-            completed.result()
+def test_result_racing_cancellation_reaches_done_callback() -> None:
+    # The request finished before the abort landed. The awaiter has already
+    # left with `Cancelled`, so the value is dropped, but the done callback
+    # still gets it, so a response's body task is still cancelled.
+    abort = FakeAbort()
+    done: list[Completed] = []
 
     async def main() -> None:
-        await await_kickoff(kickoff, on_done)
+        completion, awaitable = start_request(abort, done.append)
+        with trio.move_on_after(0.01) as scope:
+            await awaitable
+        assert scope.cancelled_caught
+        assert abort.aborted
+        completion("value", None, False)
+        await trio.testing.wait_all_tasks_blocked()
 
-    with pytest.raises(ValueError, match="request failed") as info:
-        run_trio(main)
-    assert "result" not in [entry.name for entry in info.traceback]
+    run_trio(main)
+    assert [completed.result() for completed in done] == ["value"]
 
 
-def test_keyboard_interrupt_while_starting_aborts_request() -> None:
-    def interrupt(_: Completion) -> None:
-        # raise_signal runs the handler before it returns, so the interrupt
-        # arrives between start() and parking.
-        signal.raise_signal(signal.SIGINT)
-
-    kickoff = FakeKickoff(
-        on_start=interrupt, on_abort=lambda complete: complete(None, None, True)
-    )
+def test_unawaited_request_still_reports() -> None:
+    # Dropping the awaitable does not cancel the request, as under asyncio; its
+    # done callback still runs once tokio reports.
+    abort = FakeAbort()
+    done: list[Completed] = []
 
     async def main() -> None:
-        # A missed interrupt then fails with TooSlowError instead of hanging.
-        with trio.fail_after(5):
-            await await_kickoff(kickoff)
+        completion, awaitable = start_request(abort, done.append)
+        close_unawaited(awaitable)
+        completion("value", None, False)
+        await trio.testing.wait_all_tasks_blocked()
 
-    # trio handles SIGINT only when Python's default handler is installed.
-    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
-    try:
-        # trio.run, not run_trio: a signal handler runs on the main thread only.
-        with pytest.raises(KeyboardInterrupt):
-            trio.run(main)
-    finally:
-        signal.signal(signal.SIGINT, previous)
-    assert kickoff.aborted
+    run_trio(main)
+    assert not abort.aborted
+    assert [completed.result() for completed in done] == ["value"]
+
+
+def test_completion_after_run_finished_is_dropped() -> None:
+    # tokio may report after `trio.run` returned. Nothing waits by then, and
+    # the Rust side ends the operation instead.
+    abort = FakeAbort()
+    done: list[Completed] = []
+    completions: list[Completion] = []
+
+    async def main() -> None:
+        completion, awaitable = start_request(abort, done.append)
+        close_unawaited(awaitable)
+        completions.append(completion)
+
+    run_trio(main)
+    completions[0]("value", None, False)
+    assert done == []
 
 
 def test_body_task_error_is_logged(caplog: pytest.LogCaptureFixture) -> None:

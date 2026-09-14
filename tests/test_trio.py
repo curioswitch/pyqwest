@@ -15,7 +15,7 @@ from ._util import run_trio
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
-    from opentelemetry.sdk.metrics._internal.point import Metric, Sum
+    from opentelemetry.sdk.metrics._internal.point import Histogram, Metric, Sum
 
     from pyqwest import HTTPVersion
 
@@ -269,16 +269,32 @@ def test_request_body_sees_caller_context(
     run_trio(main)
 
 
-def test_unawaited_request_ends_operation(url: str, otel_test_base: TestBase) -> None:
+def active_requests(test_base: TestBase) -> int | float:
+    metrics = cast("list[Metric]", test_base.get_sorted_metrics())
+    active = next(m for m in metrics if m.name == "http.client.active_requests")
+    return cast("Sum", active.data).data_points[0].value
+
+
+def test_unawaited_request_completes(url: str, otel_test_base: TestBase) -> None:
+    # As under asyncio, the request runs once `execute()` is called, whether or
+    # not its awaitable is awaited, and its done callback ends the operation.
     async def main() -> None:
         async with HTTPTransport(
             meter_provider=otel_test_base.meter_provider
         ) as transport:
-            request = transport.execute(Request("GET", f"{url}/echo"))
-            assert inspect.iscoroutine(request)
-            request.close()
+            awaitable = transport.execute(Request("GET", f"{url}/echo"))
+            assert inspect.iscoroutine(awaitable)
+            awaitable.close()
+            # Polls a metric, which nothing in the run can signal.
+            with trio.fail_after(5):
+                while active_requests(otel_test_base) != 0:  # noqa: ASYNC110
+                    await trio.sleep(0.01)
 
     run_trio(main)
     metrics = cast("list[Metric]", otel_test_base.get_sorted_metrics())
-    active = next(m for m in metrics if m.name == "http.client.active_requests")
-    assert cast("Sum", active.data).data_points[0].value == 0
+    duration = next(m for m in metrics if m.name == "http.client.request.duration")
+    (point,) = cast("Histogram", duration.data).data_points
+    # Completed rather than cancelled.
+    assert point.attributes is not None
+    assert point.attributes["http.response.status_code"] == 200
+    assert "error.type" not in point.attributes

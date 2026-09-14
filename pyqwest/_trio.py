@@ -1,9 +1,11 @@
 """Trio side of the runtime bridge.
 
-Rust hands over a `Kickoff`: a future on pyqwest's tokio runtime that has not
-started. `await_kickoff` starts it and parks the trio task on
-`trio.lowlevel.wait_task_rescheduled` until tokio reports the outcome through
-the trio token, and aborts the tokio task if trio cancels first.
+Rust runs a request on pyqwest's tokio runtime and, before spawning it, asks
+`start_request` for the completion callback tokio reports the outcome through
+and for the awaitable handed back to Python. The awaitable waits on a
+`trio.Event` that the completion sets through the trio token, and aborts the
+tokio task if trio cancels the wait first. As under asyncio, the request runs
+whether or not the awaitable is awaited.
 
 This module is imported only once trio is the running library, so trio stays
 an optional dependency.
@@ -17,7 +19,6 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Protocol
 
-import outcome
 import trio
 
 if sys.version_info < (3, 11):
@@ -26,8 +27,6 @@ if sys.version_info < (3, 11):
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from typing import TypeAlias
-
-    from trio.lowlevel import RaiseCancelT
 
     from ._glue import PumpHandle
 
@@ -39,10 +38,6 @@ _logger = logging.getLogger(__name__)
 
 class AbortHandle(Protocol):
     def abort(self) -> None: ...
-
-
-class Kickoff(Protocol):
-    def start(self, completion: Completion) -> AbortHandle: ...
 
 
 class Completed:
@@ -60,16 +55,21 @@ class Completed:
         return self._value
 
 
-# KeyboardInterrupt must not land between starting the future and parking,
-# or the future's completion would later reschedule a task that is not
-# waiting.
-@trio.lowlevel.enable_ki_protection
-async def await_kickoff(
-    kickoff: Kickoff, on_done: Callable[[Completed], object] | None = None
-) -> object:
-    task = trio.lowlevel.current_task()
+def start_request(
+    abort: AbortHandle, on_done: Callable[[Completed], object] | None = None
+) -> tuple[Completion, Awaitable[object]]:
+    """Prepares for a request tokio is about to run.
+
+    Returns the completion tokio calls with `(value, error, cancelled)` from one
+    of its threads, and the awaitable for the outcome. `on_done` runs on the
+    trio thread once tokio reports, before the awaiter resumes and whether or
+    not anything awaits, as an asyncio done callback does.
+    """
     token = trio.lowlevel.current_trio_token()
-    raise_cancel: RaiseCancelT | None = None
+    done = trio.Event()
+    outcome: list[tuple[object, BaseException | None]] = []
+    # The exception that cancelled the wait, which then aborted the request.
+    cancelled_by: list[BaseException] = []
 
     def completion(
         value: object,
@@ -79,47 +79,42 @@ async def await_kickoff(
         # Runs on a tokio thread; only the token may touch trio state.
         def deliver() -> None:
             if cancelled:
-                if raise_cancel is None:
-                    # trio did not ask for it: the abort handle was dropped.
-                    err = RuntimeError(
-                        "request task stopped without a trio cancellation"
-                    )
-                    result: outcome.Outcome[object] = outcome.Error(err)
-                else:
-                    result = outcome.capture(raise_cancel)
-            elif error is not None:
-                result = outcome.Error(error)
+                # Only an aborted wait cancels the request, so the done callback
+                # sees the exception the awaiter did.
+                error_: BaseException | None = (
+                    cancelled_by[0]
+                    if cancelled_by
+                    else RuntimeError("request cancelled without a trio cancellation")
+                )
             else:
-                result = outcome.Value(value)
-            trio.lowlevel.reschedule(task, result)
+                error_ = error
+            value_ = value if error_ is None else None
+            outcome.append((value_, error_))
+            if on_done is not None:
+                tb = error_.__traceback__ if error_ is not None else None
+                _call_on_done(on_done, Completed(value_, error_))
+                if error_ is not None:
+                    # on_done reads the error by raising it, which adds frames.
+                    error_.__traceback__ = tb
+            done.set()
 
         # The trio run already finished; nobody is waiting.
         with contextlib.suppress(trio.RunFinishedError):
             token.run_sync_soon(deliver)
 
-    def abort_fn(raise_cancel_: RaiseCancelT) -> trio.lowlevel.Abort:
-        nonlocal raise_cancel
-        raise_cancel = raise_cancel_
-        abort.abort()
-        # tokio reports the abort (or a completion that raced it) through
-        # `completion`, which reschedules us.
-        return trio.lowlevel.Abort.FAILED
+    async def wait() -> object:
+        try:
+            await done.wait()
+        except BaseException as e:
+            cancelled_by.append(e)
+            abort.abort()
+            raise
+        value, error = outcome[0]
+        if error is not None:
+            raise error
+        return value
 
-    try:
-        # An already-cancelled caller never starts the request.
-        await trio.lowlevel.checkpoint_if_cancelled()
-        abort = kickoff.start(completion)
-        value = await trio.lowlevel.wait_task_rescheduled(abort_fn)
-    except BaseException as e:
-        if on_done is not None:
-            tb = e.__traceback__
-            _call_on_done(on_done, Completed(None, e))
-            # on_done reads the error by raising it, which adds its frames.
-            e.__traceback__ = tb
-        raise
-    if on_done is not None:
-        _call_on_done(on_done, Completed(value, None))
-    return value
+    return completion, wait()
 
 
 def _call_on_done(on_done: Callable[[Completed], object], completed: Completed) -> None:
