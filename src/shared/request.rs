@@ -142,27 +142,39 @@ impl<S: Stream + Unpin> Stream for StartOnPoll<S> {
 #[derive(Debug)]
 pub(crate) struct RequestStreamError {
     msg: String,
+    /// hyper resets an HTTP/2 stream with the reason of an `h2::Error` it
+    /// finds among an error's sources, and with `INTERNAL_ERROR` otherwise.
+    source: Option<h2::Error>,
 }
 
 impl RequestStreamError {
     pub(crate) fn new(msg: String) -> Self {
-        Self { msg }
+        Self { msg, source: None }
+    }
+
+    /// The error for a body that ended before it was complete. The body was
+    /// abandoned rather than broken, so HTTP/2 resets its stream with `CANCEL`.
+    pub(crate) fn unfinished() -> Self {
+        Self {
+            msg: "Request body ended before it was complete".to_string(),
+            source: Some(h2::Error::from(h2::Reason::CANCEL)),
+        }
     }
 
     pub(crate) fn from_py(err: &Bound<'_, PyAny>) -> Self {
         if let Ok(msg) = err.str() {
-            Self {
-                msg: msg.to_string(),
-            }
+            Self::new(msg.to_string())
         } else {
-            Self {
-                msg: "Unknown Error".to_string(),
-            }
+            Self::new("Unknown Error".to_string())
         }
     }
 }
 
-impl std::error::Error for RequestStreamError {}
+impl std::error::Error for RequestStreamError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|e| e as _)
+    }
+}
 
 impl fmt::Display for RequestStreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

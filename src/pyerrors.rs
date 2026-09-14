@@ -4,6 +4,8 @@ use pyo3::{
     import_exception, PyErr,
 };
 
+use crate::shared::request::RequestStreamError;
+
 create_exception!(pyqwest, ReadError, PyException);
 create_exception!(pyqwest, WriteError, PyException);
 create_exception!(pyqwest, TooManyRedirects, PyException);
@@ -19,7 +21,14 @@ pub fn from_reqwest(e: &reqwest::Error, msg: &str) -> PyErr {
         }
     }
 
-    let msg = format!("{msg}: {:+}", errors::fmt(e));
+    // A request body error's source only carries the HTTP/2 reset reason for
+    // hyper, so the message ends at the body error.
+    let msg = match errors::iter::sources(e)
+        .position(<dyn std::error::Error>::is::<RequestStreamError>)
+    {
+        Some(depth) => format!("{msg}: {:+.*}", depth + 1, errors::fmt(e)),
+        None => format!("{msg}: {:+}", errors::fmt(e)),
+    };
     if e.is_connect() {
         if e.is_timeout() {
             ConnectTimeout::new_err(msg)

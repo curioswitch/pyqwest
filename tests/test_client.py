@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import threading
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
     from anyio.streams.memory import MemoryObjectReceiveStream
+
+    from pyqwest import HTTPTransport
 
 
 pytestmark = [
@@ -768,6 +771,43 @@ async def test_request_content_error(
         assert msg in str(exc_info.value)
     else:
         assert isinstance(exc_info.value, ReadError)
+
+
+class BodyInterruptedError(BaseException):
+    pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error", [BodyInterruptedError, asyncio.CancelledError])
+async def test_request_content_interrupted(
+    async_transport: HTTPTransport,
+    url: str,
+    http_version: HTTPVersion | None,
+    error: type[BaseException],
+) -> None:
+    async def req_content() -> AsyncIterator[bytes]:
+        yield b"Hello, World!"
+        raise error
+
+    # /read_all responds only after reading the whole body, so the failure is
+    # on the write side, without the race test_request_content_error allows
+    # for. Except on HTTP/3: reqwest finishes the QUIC stream on a body error,
+    # so the server gets the truncated body as complete and can respond first.
+    with pytest.raises((WriteError, ReadError)) as exc_info:
+        await Client(async_transport).post(f"{url}/read_all", content=req_content())
+    if http_version != HTTPVersion.HTTP3:
+        assert isinstance(exc_info.value, WriteError)
+    if http_version is None:
+        http_version = (
+            HTTPVersion.HTTP2 if url.startswith("https") else HTTPVersion.HTTP1
+        )
+    if http_version == HTTPVersion.HTTP2:
+        # h2 reports its own reset instead of the body's error.
+        assert "stream error sent by user: stream no longer needed" in str(
+            exc_info.value
+        )
+    elif isinstance(exc_info.value, WriteError):
+        assert str(exc_info.value).endswith("Request body ended before it was complete")
 
 
 @pytest.mark.anyio

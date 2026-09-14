@@ -117,6 +117,9 @@ def close_request_iterator(itr: Iterator[bytes]) -> None:
 class Sender(Protocol[T_contra]):
     def send(self, item: T_contra | BaseException) -> bool | Awaitable[bool]: ...
 
+    # Ends the body as complete. Closing without it fails the body.
+    def finish(self) -> None: ...
+
     def close(self) -> None: ...
 
 
@@ -135,5 +138,8 @@ async def forward(gen: AsyncIterator[T_contra], sender: Sender[T_contra]) -> Non
         res = sender.send(e)
         if inspect.isawaitable(res):
             await res
+    else:
+        # Also reached after the break, when the receiver is already gone.
+        sender.finish()
     finally:
         sender.close()
