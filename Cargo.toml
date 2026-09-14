@@ -11,7 +11,7 @@ name = "pyqwest"
 [dependencies]
 arc-swap = "1.9.2"
 backoff = "0.4.0"
-brotli = "8.0.4"
+brotli = "9.0.0"
 bytes = "1.12.1"
 errors = "0.1.0"
 futures-core = "0.3.34"
