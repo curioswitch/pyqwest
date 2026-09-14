@@ -442,8 +442,8 @@ class ResponseContent(Iterator[bytes]):
         if self._closed:
             return
         self._closed = True
-        self._request_input.close()
         self._response_queue.put(ReadError("Response body read cancelled"))
+        self._request_input.close()
         with contextlib.suppress(Exception):
             self._app_future.result()
 
