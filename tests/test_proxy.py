@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import anyio
 import pytest
-import pytest_asyncio
+from anyio import to_thread
+from anyio.abc import SocketAttribute
+from anyio.streams.buffered import BufferedByteReceiveStream
 
 from pyqwest import Client, HTTPTransport, Proxy, SyncClient, SyncHTTPTransport
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from anyio.abc import SocketStream
 
 # The target host does not resolve, so a successful response can only
 # have been served by the proxy.
@@ -39,31 +43,28 @@ class RecordingProxy:
         return headers
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def proxy() -> AsyncIterator[RecordingProxy]:
     recorded: list[bytes] = []
 
-    async def handle(
-        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
-        recorded.append(await reader.readuntil(b"\r\n\r\n"))
-        writer.write(
-            b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nproxy"
-        )
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
+    async def handle(stream: SocketStream) -> None:
+        async with stream:
+            buffered = BufferedByteReceiveStream(stream)
+            head = await buffered.receive_until(b"\r\n\r\n", 65536)
+            recorded.append(head + b"\r\n\r\n")
+            await stream.send(
+                b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\nproxy"
+            )
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    port = server.sockets[0].getsockname()[1]
-    try:
+    listener = await anyio.create_tcp_listener(local_host="127.0.0.1")
+    async with listener, anyio.create_task_group() as tg:
+        tg.start_soon(listener.serve, handle)
+        port = listener.extra(SocketAttribute.local_port)  # noqa: S610  # not Django
         yield RecordingProxy(host="127.0.0.1", port=port, requests=recorded)
-    finally:
-        server.close()
-        await server.wait_closed()
+        tg.cancel_scope.cancel()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy(proxy: RecordingProxy) -> None:
     async with HTTPTransport(proxy=proxy.url(), timeout=10) as transport:
         res = await Client(transport).get(TARGET_URL)
@@ -72,16 +73,16 @@ async def test_proxy(proxy: RecordingProxy) -> None:
     assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_sync(proxy: RecordingProxy) -> None:
     with SyncHTTPTransport(proxy=proxy.url(), timeout=10) as transport:
-        res = await asyncio.to_thread(SyncClient(transport).get, TARGET_URL)
+        res = await to_thread.run_sync(SyncClient(transport).get, TARGET_URL)
     assert res.status == 200
     assert res.content == b"proxy"
     assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_credentials(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=proxy.url(credentials="user:pass@"), timeout=10
@@ -92,12 +93,12 @@ async def test_proxy_credentials(proxy: RecordingProxy) -> None:
     assert proxy.request_headers()[b"proxy-authorization"] == b"Basic dXNlcjpwYXNz"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_credentials_sync(proxy: RecordingProxy) -> None:
     with SyncHTTPTransport(
         proxy=proxy.url(credentials="user:pass@"), timeout=10
     ) as transport:
-        res = await asyncio.to_thread(SyncClient(transport).get, TARGET_URL)
+        res = await to_thread.run_sync(SyncClient(transport).get, TARGET_URL)
     assert res.status == 200
     # base64 of "user:pass"
     assert proxy.request_headers()[b"proxy-authorization"] == b"Basic dXNlcjpwYXNz"
@@ -113,7 +114,7 @@ def test_proxy_invalid_url_sync() -> None:
         SyncHTTPTransport(proxy="not a url")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object(proxy: RecordingProxy) -> None:
     async with HTTPTransport(proxy=Proxy(proxy.url()), timeout=10) as transport:
         res = await Client(transport).get(TARGET_URL)
@@ -122,16 +123,16 @@ async def test_proxy_object(proxy: RecordingProxy) -> None:
     assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_sync(proxy: RecordingProxy) -> None:
     with SyncHTTPTransport(proxy=Proxy(proxy.url()), timeout=10) as transport:
-        res = await asyncio.to_thread(SyncClient(transport).get, TARGET_URL)
+        res = await to_thread.run_sync(SyncClient(transport).get, TARGET_URL)
     assert res.status == 200
     assert res.content == b"proxy"
     assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_auth(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=Proxy(proxy.url(), auth=("user", "pass")), timeout=10
@@ -142,7 +143,7 @@ async def test_proxy_object_auth(proxy: RecordingProxy) -> None:
     assert proxy.request_headers()[b"proxy-authorization"] == b"Basic dXNlcjpwYXNz"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_headers(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=Proxy(proxy.url(), headers={"x-tenant": "my-tenant"}), timeout=10
@@ -152,7 +153,7 @@ async def test_proxy_object_headers(proxy: RecordingProxy) -> None:
     assert proxy.request_headers()[b"x-tenant"] == b"my-tenant"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_no_proxy_match(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=Proxy(proxy.url(), no_proxy="pyqwest.invalid"), timeout=10
@@ -163,7 +164,7 @@ async def test_proxy_object_no_proxy_match(proxy: RecordingProxy) -> None:
     assert not proxy.requests
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_no_proxy_no_match(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=Proxy(proxy.url(), no_proxy="other.invalid"), timeout=10
@@ -173,7 +174,7 @@ async def test_proxy_object_no_proxy_no_match(proxy: RecordingProxy) -> None:
     assert res.content == b"proxy"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_scheme_http(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=Proxy(proxy.url(), scheme="http"), timeout=10
@@ -183,7 +184,7 @@ async def test_proxy_object_scheme_http(proxy: RecordingProxy) -> None:
     assert res.content == b"proxy"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_object_scheme_https(proxy: RecordingProxy) -> None:
     async with HTTPTransport(
         proxy=Proxy(proxy.url(), scheme="https"), timeout=10
@@ -195,7 +196,7 @@ async def test_proxy_object_scheme_https(proxy: RecordingProxy) -> None:
     assert not proxy.requests
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_sequence(proxy: RecordingProxy) -> None:
     proxies = [
         Proxy("http://other.invalid:8030", scheme="https"),
@@ -208,19 +209,19 @@ async def test_proxy_sequence(proxy: RecordingProxy) -> None:
     assert proxy.request_line() == b"GET http://pyqwest.invalid/echo HTTP/1.1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_sequence_sync(proxy: RecordingProxy) -> None:
     proxies = [
         Proxy("http://other.invalid:8030", scheme="https"),
         Proxy(proxy.url(), scheme="http"),
     ]
     with SyncHTTPTransport(proxy=proxies, timeout=10) as transport:
-        res = await asyncio.to_thread(SyncClient(transport).get, TARGET_URL)
+        res = await to_thread.run_sync(SyncClient(transport).get, TARGET_URL)
     assert res.status == 200
     assert res.content == b"proxy"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_proxy_sequence_url_strings(proxy: RecordingProxy) -> None:
     async with HTTPTransport(proxy=[proxy.url()], timeout=10) as transport:
         res = await Client(transport).get(TARGET_URL)

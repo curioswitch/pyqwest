@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import socket
 import threading
 from typing import TYPE_CHECKING, cast
 
+import anyio
 import httpx
 import pytest
+from anyio import to_thread
 from h2.errors import ErrorCodes
 
 from pyqwest import (
@@ -103,7 +104,7 @@ def assert_multipart_echo(res: httpx.Response) -> None:
     assert b"file bytes" in res.content
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_get() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(echo_app))
     async with httpx.AsyncClient(transport=transport) as client:
@@ -113,7 +114,7 @@ async def test_async_get() -> None:
     assert res.content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_post_content() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(echo_app))
     async with httpx.AsyncClient(transport=transport) as client:
@@ -123,7 +124,7 @@ async def test_async_post_content() -> None:
     assert res.content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_post_content_iterator() -> None:
     async def content() -> AsyncIterator[bytes]:
         yield b"Hello "
@@ -136,7 +137,7 @@ async def test_async_post_content_iterator() -> None:
     assert res.content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_post_multipart() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(echo_app))
     async with httpx.AsyncClient(transport=transport) as client:
@@ -148,7 +149,7 @@ async def test_async_post_multipart() -> None:
     assert_multipart_echo(res)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_response_stream() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(echo_app))
     async with (
@@ -162,7 +163,7 @@ async def test_async_response_stream() -> None:
     assert content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_no_timeout() -> None:
     transport = AsyncPyqwestTransport(ASGITransport(echo_app))
     async with httpx.AsyncClient(transport=transport, timeout=None) as client:  # noqa: S113
@@ -171,9 +172,9 @@ async def test_async_no_timeout() -> None:
     assert res.content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_timeout_headers() -> None:
-    release = asyncio.Event()
+    release = anyio.Event()
 
     async def app(
         scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -189,12 +190,12 @@ async def test_async_timeout_headers() -> None:
     finally:
         release.set()
         # Let the application task finish before the event loop closes.
-        await asyncio.sleep(0.01)
+        await anyio.sleep(0.01)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_timeout_response_content() -> None:
-    release = asyncio.Event()
+    release = anyio.Event()
 
     async def app(
         scope: Scope, _receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -229,7 +230,7 @@ async def test_async_timeout_response_content() -> None:
             assert content == b"partial"
     finally:
         release.set()
-        await asyncio.sleep(0.01)
+        await anyio.sleep(0.01)
 
 
 def test_sync_get() -> None:
@@ -302,9 +303,9 @@ def test_sync_timeout_sums_phases() -> None:
         release.set()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_timeout_sums_phases() -> None:
-    release = asyncio.Event()
+    release = anyio.Event()
 
     async def app(
         scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -322,17 +323,17 @@ async def test_async_timeout_sums_phases() -> None:
                 await client.get("http://localhost/")
     finally:
         release.set()
-        await asyncio.sleep(0.01)
+        await anyio.sleep(0.01)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_timeout_unlimited_phase() -> None:
     # read=None means no limit, so the write timeout must not end up bounding
     # the read the caller explicitly unbounded.
     async def app(
         scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
     ) -> None:
-        await asyncio.sleep(0.2)
+        await anyio.sleep(0.2)
         await echo_app(scope, receive, send)
 
     transport = AsyncPyqwestTransport(ASGITransport(app))
@@ -437,7 +438,7 @@ class RecordingTransport(Transport):
         return SyncResponse(status=200)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_host_header() -> None:
     recording = RecordingTransport()
     transport = AsyncPyqwestTransport(recording)
@@ -470,7 +471,7 @@ def test_sync_host_header() -> None:
     assert recording.headers[2]["host"] == "example.com"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_async_redirects_handled_by_pyqwest(url: str) -> None:
@@ -482,7 +483,7 @@ async def test_async_redirects_handled_by_pyqwest(url: str) -> None:
             assert res.history == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_sync_redirects_handled_by_pyqwest(url: str) -> None:
@@ -494,10 +495,10 @@ async def test_sync_redirects_handled_by_pyqwest(url: str) -> None:
                 assert res.status_code == 200
                 assert res.history == []
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_async_redirects_handled_by_httpx(url: str) -> None:
@@ -514,7 +515,7 @@ async def test_async_redirects_handled_by_httpx(url: str) -> None:
             assert len(res.history) == 3
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_sync_redirects_handled_by_httpx(url: str) -> None:
@@ -531,10 +532,10 @@ async def test_sync_redirects_handled_by_httpx(url: str) -> None:
                 assert res.status_code == 200
                 assert len(res.history) == 3
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_async_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
@@ -545,7 +546,7 @@ async def test_async_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
                 await client.get(f"{url}/redirect?n=5")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_sync_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
@@ -558,7 +559,7 @@ async def test_sync_redirects_handled_by_pyqwest_exceed_max(url: str) -> None:
             ):
                 client.get(f"{url}/redirect?n=5")
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
 def refused_url() -> str:
@@ -584,7 +585,7 @@ def require_blackhole() -> None:
     pytest.skip(f"network does not blackhole {BLACKHOLE_HOST}")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_connect_error() -> None:
     async with HTTPTransport() as pyqwest_transport:
         transport = AsyncPyqwestTransport(pyqwest_transport)
@@ -594,7 +595,7 @@ async def test_async_connect_error() -> None:
     assert isinstance(excinfo.value.__cause__, ConnectionError)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_connect_timeout() -> None:
     require_blackhole()
     async with HTTPTransport(connect_timeout=0.2) as pyqwest_transport:
@@ -632,7 +633,7 @@ def access_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [record for record in caplog.records if record.name == "pyqwest.access"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_async_access_log(url: str, caplog: pytest.LogCaptureFixture) -> None:
@@ -648,7 +649,7 @@ async def test_async_access_log(url: str, caplog: pytest.LogCaptureFixture) -> N
     assert records[0].getMessage() == f'HTTP Request: GET {url}/echo "HTTP/1.1 200 OK"'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_sync_access_log(url: str, caplog: pytest.LogCaptureFixture) -> None:
@@ -659,7 +660,7 @@ async def test_sync_access_log(url: str, caplog: pytest.LogCaptureFixture) -> No
                 return client.get(f"{url}/echo")
 
     with caplog.at_level(logging.DEBUG, logger="pyqwest.access"):
-        res = await asyncio.to_thread(run)
+        res = await to_thread.run_sync(run)
     assert res.status_code == 200
 
     records = access_records(caplog)
@@ -679,7 +680,7 @@ PROTOCOL_FAULTS = [
 ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("response", PROTOCOL_FAULTS)
 async def test_async_protocol_error(response: bytes) -> None:
     with raw_server(response) as url:
@@ -691,7 +692,7 @@ async def test_async_protocol_error(response: bytes) -> None:
     assert isinstance(excinfo.value.__cause__, RemoteProtocolError)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("response", PROTOCOL_FAULTS)
 async def test_sync_protocol_error(response: bytes) -> None:
     def run() -> None:
@@ -704,7 +705,7 @@ async def test_sync_protocol_error(response: bytes) -> None:
                 client.get(url)
         assert isinstance(excinfo.value.__cause__, RemoteProtocolError)
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
 class StreamErrorTransport(Transport):
@@ -717,7 +718,7 @@ class StreamErrorTransport(Transport):
         raise StreamError("boom", StreamErrorCode.REFUSED_STREAM)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_stream_error_keeps_reset_message() -> None:
     # StreamError subclasses RemoteProtocolError, so it has to stay matched first
     # to keep the stream reset detail rather than falling back to the plain
@@ -747,7 +748,7 @@ def test_sync_stream_error_keeps_reset_message() -> None:
     assert f"error_code:{ErrorCodes.REFUSED_STREAM!s}" in str(excinfo.value)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_response_reset() -> None:
     # A reset breaks the connection rather than the protocol, so unlike the
     # truncations above it stays a read error, matching httpx.
@@ -762,7 +763,7 @@ async def test_async_response_reset() -> None:
     assert isinstance(excinfo.value.__cause__, (ReadError, WriteError))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sync_response_reset() -> None:
     def run() -> None:
         with (
@@ -779,10 +780,10 @@ async def test_sync_response_reset() -> None:
                 client.get(url)
         assert isinstance(excinfo.value.__cause__, (ReadError, WriteError))
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_async_request_body_error(url: str) -> None:
@@ -798,7 +799,7 @@ async def test_async_request_body_error(url: str) -> None:
     assert isinstance(excinfo.value.__cause__, (WriteError, ReadError))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("http_scheme", ["http"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1"], indirect=True)
 async def test_sync_request_body_error(url: str) -> None:
@@ -815,10 +816,10 @@ async def test_sync_request_body_error(url: str) -> None:
                 client.post(f"{url}/echo", content=content())
         assert isinstance(excinfo.value.__cause__, (WriteError, ReadError))
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_unsupported_scheme() -> None:
     async with HTTPTransport() as pyqwest_transport:
         transport = AsyncPyqwestTransport(pyqwest_transport)
@@ -827,7 +828,7 @@ async def test_async_unsupported_scheme() -> None:
                 await client.get("ftp://127.0.0.1:1/")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sync_unsupported_scheme() -> None:
     def run() -> None:
         with SyncHTTPTransport() as pyqwest_transport:
@@ -838,10 +839,10 @@ async def test_sync_unsupported_scheme() -> None:
             ):
                 client.get("ftp://127.0.0.1:1/")
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_malformed_request() -> None:
     url = refused_url()
     async with HTTPTransport() as pyqwest_transport:
@@ -856,7 +857,7 @@ async def test_async_malformed_request() -> None:
                 await client.request("BAD METHOD", url)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sync_malformed_request() -> None:
     def run() -> None:
         url = refused_url()
@@ -869,4 +870,4 @@ async def test_sync_malformed_request() -> None:
                 with pytest.raises(httpx.LocalProtocolError):
                     client.request("BAD METHOD", url)
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)

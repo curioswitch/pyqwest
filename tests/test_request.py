@@ -8,7 +8,7 @@ import pytest
 from pyqwest import Headers, Multipart, Request, SyncMultipart, SyncRequest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_minimal():
     request = Request(method="GET", url="https://example.com/")
     assert request.method == "GET"
@@ -27,7 +27,7 @@ def test_sync_request_minimal():
     assert request.content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_content_bytes():
     request = Request(
         method="DELETE",
@@ -58,7 +58,7 @@ def test_sync_request_content_bytes():
     assert request.content == b"Sample body"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_content_iterator():
     async def content() -> AsyncIterator[bytes]:
         yield b"Part 1, "
@@ -94,7 +94,7 @@ def test_sync_request_content_iterator():
     assert parts == [b"Part 1, ", b"Part 2."]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_content_invalid():
     with pytest.raises(TypeError) as excinfo:
         Request(
@@ -137,7 +137,7 @@ def expected_multipart_body(boundary: str) -> bytes:
     ).encode()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_content_multipart():
     headers = Headers({"content-type": "multipart/form-data", "x-hello": "world"})
     request = Request(
@@ -198,7 +198,7 @@ def test_request_multipart_other_content_type(mode: str):
             )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_multipart_unique_boundaries():
     multipart = Multipart({"field": b"value"})
     boundaries = {
@@ -212,7 +212,7 @@ async def test_request_multipart_unique_boundaries():
     assert len(boundaries) == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_content_sync_multipart():
     multipart = SyncMultipart({"field": b"value"})
     with pytest.raises(TypeError) as excinfo:
@@ -238,7 +238,7 @@ def test_sync_request_content_async_multipart():
     assert str(excinfo.value) == "'Multipart' object is not iterable"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "method",
     ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE", "CUSTOM"],
@@ -316,7 +316,7 @@ def test_request_query_params(
 
 
 @pytest.mark.parametrize("mode", ["sync", "async"])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_json_content(mode: str):
     if mode == "sync":
         request = SyncRequest(

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
+from anyio import to_thread
 
 from pyqwest import (
     Client,
@@ -35,7 +35,7 @@ async def read_content(content: AsyncIterator[bytes | bytearray | memoryview]) -
     return bytes(body)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_override_request(url: str, transport: SyncTransport | Transport):
     url = f"{url}/echo"
     headers = [
@@ -59,7 +59,7 @@ async def test_override_request(url: str, transport: SyncTransport | Transport):
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(client.post, url, headers, req_content)
+        resp = await to_thread.run_sync(client.post, url, headers, req_content)
     else:
 
         class Override(Transport):
@@ -84,7 +84,7 @@ async def test_override_request(url: str, transport: SyncTransport | Transport):
     assert resp.content == b"Goodbye"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_override_response(url: str, transport: SyncTransport | Transport):
     method = "POST"
     url = f"{url}/echo"
@@ -119,7 +119,7 @@ async def test_override_response(url: str, transport: SyncTransport | Transport)
                 content = b"".join(resp.content)
             return resp, content
 
-        resp, content = await asyncio.to_thread(run)
+        resp, content = await to_thread.run_sync(run)
     else:
 
         class Override(Transport):
@@ -150,7 +150,7 @@ async def test_override_response(url: str, transport: SyncTransport | Transport)
     assert resp.trailers["final-trailer"] == "bye"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_override_response_except_content(
     url: str, transport: SyncTransport | Transport
 ):
@@ -182,7 +182,7 @@ async def test_override_response_except_content(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(client.post, url, headers, req_content)
+        resp = await to_thread.run_sync(client.post, url, headers, req_content)
     else:
 
         class Override(Transport):
@@ -212,7 +212,7 @@ async def test_override_response_except_content(
     assert resp.trailers["final-trailer"] == "bye"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_override_response_content(
     url: str, transport: SyncTransport | Transport
 ):
@@ -245,7 +245,7 @@ async def test_override_response_content(
                 content = b"".join(resp.content)
             return resp, content
 
-        resp, content = await asyncio.to_thread(run)
+        resp, content = await to_thread.run_sync(run)
     else:
 
         class Override(Transport):
@@ -276,7 +276,7 @@ async def test_override_response_content(
     assert resp.trailers["x-echo-trailer"] == "last info"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_override_response_trailers(
     url: str, transport: SyncTransport | Transport
 ):
@@ -305,7 +305,7 @@ async def test_override_response_trailers(
                 content = b"".join(resp.content)
             return resp, content
 
-        resp, content = await asyncio.to_thread(run)
+        resp, content = await to_thread.run_sync(run)
     else:
 
         class Override(Transport):
@@ -332,7 +332,7 @@ async def test_override_response_trailers(
     assert resp.trailers["final-trailer"] == "bye"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_override_response_execute(
     url: str, transport: SyncTransport | Transport
 ):
@@ -364,7 +364,7 @@ async def test_override_response_execute(
 
         client = SyncClient(SyncOverride())
 
-        resp = await asyncio.to_thread(
+        resp = await to_thread.run_sync(
             client.execute, method, url, headers, req_content
         )
     else:

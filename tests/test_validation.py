@@ -74,7 +74,7 @@ def test_only_client_key(client_type: str) -> None:
             HTTPTransport(tls_key=b"unused")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_transport_invalid_option() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         HTTPTransport(timeout=-1)

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import socket
-import sys
+from functools import partial
 from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
+from anyio import to_thread
 
 from pyqwest import (
     Client,
@@ -17,10 +18,10 @@ from pyqwest import (
     WriteError,
 )
 
-from ._util import SyncRequestBody
+from ._util import SyncRequestBody, hanging_body
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import Iterator
     from queue import Queue
 
 
@@ -28,14 +29,6 @@ pytestmark = [
     pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
     pytest.mark.parametrize("http_version", ["h2"], indirect=True),
 ]
-
-
-async def request_body(queue: asyncio.Queue) -> AsyncIterator[bytes]:
-    while True:
-        item: bytes | None = await queue.get()
-        if item is None:
-            return
-        yield item
 
 
 def sync_request_body(queue: Queue) -> Iterator[bytes]:
@@ -46,11 +39,8 @@ def sync_request_body(queue: Queue) -> Iterator[bytes]:
         yield item
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
-    if sys.version_info < (3, 11):
-        pytest.skip("asyncio.timeout requires Python 3.11+")
-        return
     method = "POST"
     url = f"{url}/echo"
     # Even with a timeout of zero, headers may still return before timeout,
@@ -58,7 +48,7 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
     # so we just allow it to fail within response handling some times, and
     # try to increase the chance of that by running this test a few times.
     for _ in range(10):
-        with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+        with pytest.raises(TimeoutError):
             if isinstance(client, SyncClient):
 
                 def run():
@@ -68,26 +58,22 @@ async def test_request_timeout(client: Client | SyncClient, url: str) -> None:
                     ) as resp:
                         next(resp.content)
 
-                await asyncio.to_thread(run)
+                await to_thread.run_sync(run)
             else:
-                queue = asyncio.Queue()
-                async with asyncio.timeout(0):
+                with anyio.fail_after(0):
                     async with client.stream(
-                        method, url, content=request_body(queue)
+                        method, url, content=hanging_body()
                     ) as resp:
                         await anext(resp.content)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_content_timeout(client: Client | SyncClient, url: str) -> None:
-    if sys.version_info < (3, 11):
-        pytest.skip("asyncio.timeout requires Python 3.11+")
-        return
     method = "POST"
     url = f"{url}/echo"
     # Anecdotally, the above test will have one of its runs timeout on the response body
     # in many cases, but check explicitly for good measure.
-    with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+    with pytest.raises(TimeoutError):
         if isinstance(client, SyncClient):
 
             def run():
@@ -98,18 +84,15 @@ async def test_response_content_timeout(client: Client | SyncClient, url: str) -
                     assert resp.status == 200
                     next(resp.content)
 
-            await asyncio.to_thread(run)
+            await to_thread.run_sync(run)
         else:
-            queue = asyncio.Queue()
-            async with asyncio.timeout(0.03):
-                async with client.stream(
-                    method, url, content=request_body(queue)
-                ) as resp:
+            with anyio.fail_after(0.03):
+                async with client.stream(method, url, content=hanging_body()) as resp:
                     assert resp.status == 200
                     await anext(resp.content)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connection_error(
     client: Client | SyncClient, client_type: str, url: str
 ) -> None:
@@ -127,13 +110,13 @@ async def test_connection_error(
             def run():
                 client.stream(method, url)
 
-            await asyncio.to_thread(run)
+            await to_thread.run_sync(run)
         else:
             async with client.stream(method, url):
                 pass
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connection_error_does_not_advance_request_body(
     http_scheme: str, http_version: HTTPVersion | None
 ) -> None:
@@ -155,7 +138,7 @@ async def test_connection_error_does_not_advance_request_body(
     class AsyncRequestBody:
         def __init__(self) -> None:
             self.anext_calls = 0
-            self.closed = asyncio.Event()
+            self.closed = anyio.Event()
 
         def __aiter__(self) -> AsyncRequestBody:
             return self
@@ -179,7 +162,8 @@ async def test_connection_error_does_not_advance_request_body(
             with pytest.raises(ConnectionError):
                 await Client(transport).post(url, content=request_body)
         assert request_body.anext_calls == 0
-        await asyncio.wait_for(request_body.closed.wait(), timeout=5)
+        with anyio.fail_after(5):
+            await request_body.closed.wait()
 
         sync_request_body = RequestBody()
         with (
@@ -188,14 +172,14 @@ async def test_connection_error_does_not_advance_request_body(
             ) as transport,
             pytest.raises(ConnectionError),
         ):
-            await asyncio.to_thread(
-                SyncClient(transport).post, url, content=sync_request_body
+            await to_thread.run_sync(
+                partial(SyncClient(transport).post, url, content=sync_request_body)
             )
         assert sync_request_body.next_calls == 0
         assert sync_request_body.closed
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_not_bytes(client: Client | SyncClient, url: str) -> None:
     method = "POST"
     url = f"{url}/echo"
@@ -210,7 +194,7 @@ async def test_request_not_bytes(client: Client | SyncClient, url: str) -> None:
                 with client.stream(method, url, content=request_content_sync()) as resp:
                     next(resp.content)
 
-            await asyncio.to_thread(run)
+            await to_thread.run_sync(run)
         else:
 
             async def request_content():

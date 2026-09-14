@@ -7,13 +7,20 @@ import subprocess
 import sys
 import threading
 import traceback
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
 from queue import Empty, Queue
 
+import anyio
 import outcome
 import pytest
 import trio
+
+
+async def hanging_body() -> AsyncIterator[bytes]:
+    """A request body that never yields a chunk."""
+    await anyio.Event().wait()
+    yield b""
 
 
 @contextlib.contextmanager

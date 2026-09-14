@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Generator, Iterator
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_minimal():
     response = Response(status=404)
     assert response.status == 404
@@ -22,7 +22,7 @@ async def test_response_minimal():
     assert not response._read_pending  # ty: ignore[unresolved-attribute]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_content_bytes():
     response = Response(
         status=500,
@@ -40,7 +40,7 @@ async def test_response_content_bytes():
     assert await anext(content, None) is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_content_iterator():
     async def content() -> AsyncIterator[bytes]:
         yield b"Part 1, "
@@ -126,8 +126,10 @@ def test_response_aclose_awaitable_supports_yield_from():
         yield_from_await(response.aclose()).send(None)
 
 
-@pytest.mark.asyncio
-async def test_response_content_awaitable_ensure_future():
+@pytest.mark.anyio
+async def test_response_content_awaitable_ensure_future(anyio_backend_name: str):
+    if anyio_backend_name != "asyncio":
+        pytest.skip("asyncio.ensure_future needs asyncio")
     content = Response(status=200, content=b"Sample body").content
     assert bytes(await asyncio.ensure_future(content.__anext__())) == b"Sample body"
 

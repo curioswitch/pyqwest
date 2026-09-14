@@ -46,7 +46,7 @@ def test_multipart_accepts_mapping() -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_encode_closes_part_stream_on_close() -> None:
     closed = False
 

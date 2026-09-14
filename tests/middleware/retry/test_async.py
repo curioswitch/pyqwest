@@ -125,7 +125,7 @@ def test_default_retry_mode(app: App, method: str, expected: RetryMode) -> None:
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_success(app: App, client: Client) -> None:
     res = await client.get("http://localhost")
     assert res.status == 200
@@ -133,7 +133,7 @@ async def test_success(app: App, client: Client) -> None:
     assert app.read_content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_one_retry(app: App, client: Client) -> None:
     app.status = [500, 200]
     start = monotonic()
@@ -145,7 +145,7 @@ async def test_one_retry(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 0.01)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_retryable_request(app: App, client: Client) -> None:
     app.status = [500, 200]
     res = await client.post("http://localhost", content=b"hello")
@@ -154,7 +154,7 @@ async def test_not_retryable_request(app: App, client: Client) -> None:
     assert app.read_content == b"hello"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_retryable_response(app: App, client: Client) -> None:
     app.status = [404, 200]
     res = await client.get("http://localhost")
@@ -163,7 +163,7 @@ async def test_not_retryable_response(app: App, client: Client) -> None:
     assert app.read_content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_retryable_response_501(app: App, client: Client) -> None:
     app.status = [501, 200]
     res = await client.get("http://localhost")
@@ -172,7 +172,7 @@ async def test_not_retryable_response_501(app: App, client: Client) -> None:
     assert app.read_content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_max_retries(app: App, client: Client) -> None:
     app.status = [500, 502, 503, 504, 200]
     start = monotonic()
@@ -184,7 +184,7 @@ async def test_max_retries(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_exceed_max_retries(app: App, client: Client) -> None:
     app.status = [500, 502, 503, 504, 505, 200]
     start = monotonic()
@@ -196,7 +196,7 @@ async def test_exceed_max_retries(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_fixed_content(app: App, client: Client) -> None:
     content = b"Hello world!"
     app.status = [500, 200]
@@ -206,7 +206,7 @@ async def test_retry_fixed_content(app: App, client: Client) -> None:
     assert app.read_content == content
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_content_iterator(app: App, client: Client) -> None:
     async def content():
         yield b"Hello "
@@ -219,7 +219,7 @@ async def test_retry_content_iterator(app: App, client: Client) -> None:
     assert app.read_content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("mode", "expected_status", "expected_count"),
     [(True, 200, 2), (RetryMode.BUFFERED, 200, 2), (False, 500, 1)],
@@ -239,7 +239,7 @@ async def test_buffered_retry_mode(
     assert app.read_content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unbuffered_bytes(app: App) -> None:
     app.status = [500, 200]
     client = Client(ConfiguredRetryTransport(ASGITransport(app), RetryMode.UNBUFFERED))
@@ -249,7 +249,7 @@ async def test_unbuffered_bytes(app: App) -> None:
     assert app.read_content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unbuffered_bytes_io_errors(app: App) -> None:
     app.timeouts = 1
     client = Client(ConfiguredRetryTransport(ASGITransport(app), RetryMode.UNBUFFERED))
@@ -259,7 +259,7 @@ async def test_unbuffered_bytes_io_errors(app: App) -> None:
     assert app.read_content == b"Hello world!"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unbuffered_stream_connection_error(app: App) -> None:
     closed = False
 
@@ -279,7 +279,7 @@ async def test_unbuffered_stream_connection_error(app: App) -> None:
     assert closed
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unread_unbuffered_stream_closed() -> None:
     class Content:
         def __init__(self) -> None:
@@ -314,7 +314,7 @@ async def test_unread_unbuffered_stream_closed() -> None:
     assert content.closed
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connection_error_after_response() -> None:
     class Transport(BaseTransport):
         def __init__(self) -> None:
@@ -337,7 +337,7 @@ async def test_connection_error_after_response() -> None:
     assert transport.count == 3
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_timeout(app: App, client: Client) -> None:
     app.status = [200, 200]
     app.timeouts = 1
@@ -347,7 +347,7 @@ async def test_retry_timeout(app: App, client: Client) -> None:
     assert app.read_content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retries_exceeded_timeout(app: App, client: Client) -> None:
     app.status = [200, 200, 200, 200, 200, 200]
     app.timeouts = 5
@@ -356,7 +356,7 @@ async def test_retries_exceeded_timeout(app: App, client: Client) -> None:
     assert app.count == 5
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_no_retry_timeout_not_idempotent(app: App, client: Client) -> None:
     app.status = [200, 200]
     app.timeouts = 1
@@ -364,7 +364,7 @@ async def test_no_retry_timeout_not_idempotent(app: App, client: Client) -> None
         await client.post("http://localhost")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_connection_error(app: App, client: Client) -> None:
     app.status = [200, 200]
     app.connection_errors = 1
@@ -374,7 +374,7 @@ async def test_retry_connection_error(app: App, client: Client) -> None:
     assert app.read_content == b""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retries_exceeded_connection_error(app: App, client: Client) -> None:
     app.status = [200, 200]
     app.connection_errors = 5
@@ -383,7 +383,7 @@ async def test_retries_exceeded_connection_error(app: App, client: Client) -> No
     assert app.count == 5
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_connection_error_content_iterator(
     app: App, client: Client
 ) -> None:
@@ -403,7 +403,7 @@ async def test_retry_connection_error_content_iterator(
     assert read_attempts == [2]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_no_retry_exception(app: App) -> None:
     class NoExceptionRetry(RetryTransport):
         def should_retry_response(
@@ -429,7 +429,7 @@ async def test_no_retry_exception(app: App) -> None:
     assert app.count == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_after_secs(app: App, client: Client) -> None:
     app.status = [429, 200]
     # Unfortunately can't avoid a slow test.
@@ -442,7 +442,7 @@ async def test_retry_after_secs(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 1.0)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_after_secs_negative(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "-1"
@@ -455,7 +455,7 @@ async def test_retry_after_secs_negative(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_after_date(app: App, client: Client) -> None:
     app.status = [429, 200]
     # Unfortunately can't avoid a very slow test. If we set for current
@@ -470,7 +470,7 @@ async def test_retry_after_date(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 1.0)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_after_date_past(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "Wed, 21 Oct 2015 07:28:00 GMT"
@@ -483,7 +483,7 @@ async def test_retry_after_date_past(app: App, client: Client) -> None:
     assert_duration_at_least(start, end, 0.01 + 0.03 + 0.05 + 0.05)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_after_invalid(app: App, client: Client) -> None:
     app.status = [429, 429, 429, 429, 200]
     app.retry_after = "Invalid Date String"
