@@ -151,10 +151,6 @@ class _ScopeHandle:
             self._token.run_sync_soon(self._scope.cancel)
 
 
-# Protected so KeyboardInterrupt cannot land between spawning the task and
-# returning its handle, which would leave the task running with no way to
-# cancel it.
-@trio.lowlevel.enable_ki_protection
 def spawn_pump(fn: Callable[..., Awaitable[None]], *args: object) -> PumpHandle:
     """Start `fn(*args)` as a system task with the caller's context.
 
