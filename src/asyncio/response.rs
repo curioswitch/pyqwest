@@ -18,7 +18,7 @@ use crate::{
     shared::{
         buffer::BytesMemoryView,
         constants::Constants,
-        exception::with_exception_set_aside,
+        exception::without_pending_exception,
         response::{ResponseBody, ResponseHead, RustFullResponse},
     },
 };
@@ -249,19 +249,18 @@ impl Drop for RequestIterTask {
         let Some(task) = self.task.swap(None) else {
             return;
         };
-        // SAFETY - a task is only stored on a Response that Python already owns
-        // (the done callback and `_set_request_iter_task`), so this runs as
-        // part of Response deallocation. pyo3 attaches the thread before it
-        // runs the deallocator, so `Python::attach` reuses that attachment and
-        // never blocks. Deallocation can happen while an exception propagates,
-        // requiring `with_exception_set_aside`.
+        // SAFETY - the task is only stored on a Response that Python owns (the
+        // response future's done callback and `_set_request_iter_task`), so a
+        // Response with a task is always dropped during Python deallocation. This
+        // attach is reentrant and cannot happen on a tokio worker thread as a
+        // result.
         Python::attach(|py| {
-            with_exception_set_aside(py, || {
+            // Needed since this is a Drop implementation.
+            without_pending_exception(py, || {
                 let task = task.bind(py);
-                // Deallocation may run on any attached thread, including a tokio
-                // worker applying a decref that pyo3 deferred, so `cancel_soon`
-                // schedules the cancellation on the task's own event loop or
-                // trio run.
+                // Deallocation may run on any thread holding the GIL, so
+                // `cancel_soon` schedules the cancellation on the task's own event
+                // loop or trio run instead of cancelling it directly.
                 if let Err(e) = task.call_method0(&self.constants.cancel_soon) {
                     e.write_unraisable(py, Some(task));
                 }

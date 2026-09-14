@@ -12,7 +12,7 @@ use crate::asyncio::runtime::{into_awaitable_with_done, AsyncLibrary};
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
-use crate::shared::exception::with_exception_set_aside;
+use crate::shared::exception::without_pending_exception;
 use crate::shared::otel::{Instrumentation, Operation};
 use crate::shared::transport::{
     get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
@@ -325,7 +325,7 @@ impl Drop for EndOperationCallback {
         // that was never awaited, still ends its operation, so the span closes
         // and the active request count comes back down.
         Python::attach(|py| {
-            with_exception_set_aside(py, || {
+            without_pending_exception(py, || {
                 if let Some(task) = self.request_iter_task.swap(None) {
                     let task = task.bind(py);
                     if let Err(e) = task.call_method0(&self.constants.cancel_soon) {
