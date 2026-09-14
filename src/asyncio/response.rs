@@ -49,7 +49,11 @@ impl Response {
             head: ResponseHead::pending(py),
             content: Content::Http(Py::new(
                 py,
-                ContentGenerator::new(ResponseBody::pending(trailers.clone_ref(py)), library),
+                ContentGenerator::new(
+                    ResponseBody::pending(trailers.clone_ref(py)),
+                    library,
+                    constants.clone(),
+                ),
             )?),
             trailers,
             request_iter_task: RequestIterTask::empty(constants.clone()),
@@ -273,13 +277,15 @@ impl Drop for RequestIterTask {
 struct ContentGenerator {
     body: ArcSwapOption<ResponseBody>,
     library: AsyncLibrary,
+    constants: Constants,
 }
 
 impl ContentGenerator {
-    fn new(body: ResponseBody, library: AsyncLibrary) -> Self {
+    fn new(body: ResponseBody, library: AsyncLibrary, constants: Constants) -> Self {
         ContentGenerator {
             body: ArcSwapOption::from_pointee(body),
             library,
+            constants,
         }
     }
 }
@@ -299,14 +305,20 @@ impl ContentGenerator {
             .into_bound_py_any(py);
         };
         let body = body.clone();
-        into_awaitable(py, self.library, async move {
-            let chunk = body.chunk().await?;
-            if let Some(bytes) = chunk {
-                Ok(BytesMemoryView::new(bytes))
-            } else {
-                Err(PyStopAsyncIteration::new_err(()))
-            }
-        })
+        into_awaitable(
+            py,
+            self.library,
+            &self.constants,
+            async move {
+                let chunk = body.chunk().await?;
+                if let Some(bytes) = chunk {
+                    Ok(BytesMemoryView::new(bytes))
+                } else {
+                    Err(PyStopAsyncIteration::new_err(()))
+                }
+            },
+            None,
+        )
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -316,9 +328,15 @@ impl ContentGenerator {
         if body.try_close() {
             return EmptyAwaitable.into_bound_py_any(py);
         }
-        into_awaitable(py, self.library, async move {
-            body.close().await;
-            Ok(())
-        })
+        into_awaitable(
+            py,
+            self.library,
+            &self.constants,
+            async move {
+                body.close().await;
+                Ok(())
+            },
+            None,
+        )
     }
 }

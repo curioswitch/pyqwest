@@ -8,7 +8,7 @@ use pyo3::{prelude::*, IntoPyObjectExt as _};
 use crate::asyncio::awaitable::{EmptyAwaitable, ValueAwaitable};
 use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
-use crate::asyncio::runtime::{into_awaitable_with_done, AsyncLibrary};
+use crate::asyncio::runtime::{into_awaitable, AsyncLibrary};
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
@@ -172,7 +172,7 @@ impl HttpTransport {
         let on_done =
             EndOperationCallback::new(operation.clone(), self.constants.clone(), request_iter_task)
                 .into_bound_py_any(py)?;
-        into_awaitable_with_done(
+        into_awaitable(
             py,
             library,
             &self.constants,
@@ -188,7 +188,7 @@ impl HttpTransport {
                     Ok(response)
                 }
             },
-            on_done,
+            Some(on_done),
         )
     }
 
@@ -211,7 +211,7 @@ impl HttpTransport {
         let on_done =
             EndOperationCallback::new(operation.clone(), self.constants.clone(), request_iter_task)
                 .into_bound_py_any(py)?;
-        into_awaitable_with_done(
+        into_awaitable(
             py,
             library,
             &self.constants,
@@ -228,7 +228,7 @@ impl HttpTransport {
                     Ok(full_response)
                 }
             },
-            on_done,
+            Some(on_done),
         )
     }
 

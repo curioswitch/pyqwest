@@ -6,14 +6,13 @@ use pyo3::{
     types::{PyAnyMethods as _, PyString, PyStringMethods as _},
     Bound, PyAny, PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::get_runtime;
 
 use crate::{
     common::{
         httpversion::HTTPVersion,
         proxy::{proxy_from_url, Proxy},
     },
-    shared::validation::validate_timeout,
+    shared::{runtime::get_runtime, validation::validate_timeout},
 };
 
 static DEFAULT_REQWEST_CLIENT: PyOnceLock<reqwest::Client> = PyOnceLock::new();

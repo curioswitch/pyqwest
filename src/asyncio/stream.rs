@@ -10,7 +10,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    asyncio::runtime::{into_awaitable_with_locals, pump_spawner, AsyncLibrary, Locals},
+    asyncio::runtime::{into_awaitable, spawn_pump, AsyncLibrary},
     shared::{
         constants::Constants,
         request::{RequestStreamError, RequestStreamResult},
@@ -28,18 +28,17 @@ pub(super) fn into_stream(
     impl futures_core::Stream<Item = RequestStreamResult<Py<PyAny>>>,
     Py<PyAny>,
 )> {
-    let locals = Locals::current(py, library)?;
     let (tx, rx) = mpsc::channel::<RequestStreamResult<Py<PyAny>>>(10);
     let sender = Py::new(
         py,
         Sender {
-            locals,
+            library,
+            constants: constants.clone(),
             tx: Mutex::new(Some(tx)),
         },
     )?;
 
-    let handle =
-        pump_spawner(py, library, constants)?.call1(py, (&constants.forward, gen, sender))?;
+    let handle = spawn_pump(py, library, constants, gen, sender.into_any())?;
 
     let stream = ReceiverStream::new(rx);
     Ok((stream, handle))
@@ -47,7 +46,8 @@ pub(super) fn into_stream(
 
 #[pyclass(module = "_pyqwest.async", frozen)]
 struct Sender {
-    locals: Locals,
+    library: AsyncLibrary,
+    constants: Constants,
     tx: Mutex<Option<mpsc::Sender<RequestStreamResult<Py<PyAny>>>>>,
 }
 
@@ -76,14 +76,20 @@ impl Sender {
                 Err(TrySendError::Full(item)) => (tx.clone(), item),
             }
         };
-        into_awaitable_with_locals(py, &self.locals, async move {
-            let Some(permit) = tx.reserve().await.ok() else {
-                // receiving side disconnected
-                return Ok(false);
-            };
-            permit.send(item);
-            Ok(true)
-        })
+        into_awaitable(
+            py,
+            self.library,
+            &self.constants,
+            async move {
+                let Some(permit) = tx.reserve().await.ok() else {
+                    // receiving side disconnected
+                    return Ok(false);
+                };
+                permit.send(item);
+                Ok(true)
+            },
+            None,
+        )
         .map(Bound::unbind)
     }
 

@@ -1,10 +1,11 @@
 //! Runtime dispatch for the awaitables the transport hands back to Python.
 //!
-//! Under asyncio a Rust future becomes an `asyncio.Future` through
-//! pyo3-async-runtimes. Under trio it is spawned on the tokio runtime just the
-//! same, with `pyqwest._trio.start_request` providing the completion callback
-//! tokio reports through and the awaitable Python gets back. Under both, the
-//! request runs from the moment it is created.
+//! A Rust future is spawned on the tokio runtime as soon as it is created, on
+//! either async library, and races an abort signal. Each library supplies the
+//! awaitable Python gets back and the way tokio reports the outcome. asyncio's
+//! are built here: an `asyncio.Future`, completed through the loop's
+//! `call_soon_threadsafe`. trio's come from `pyqwest._trio`: a coroutine
+//! waiting on a `trio.Event`, which only Python can await.
 
 use std::{
     any::Any,
@@ -13,21 +14,18 @@ use std::{
     sync::{Mutex, PoisonError},
 };
 
+use futures_util::FutureExt as _;
 use pyo3::{
     exceptions::PyRuntimeError,
+    panic::PanicException,
     pyclass, pymethods,
     sync::{MutexExt as _, PyOnceLock},
     types::{PyAnyMethods as _, PyModule},
     Bound, IntoPyObject, IntoPyObjectExt as _, Py, PyAny, PyErr, PyResult, Python,
 };
-use pyo3_async_runtimes::{
-    err::RustPanic,
-    tokio::{future_into_py, future_into_py_with_locals, get_current_locals, get_runtime},
-    TaskLocals,
-};
-use tokio::{sync::oneshot, task::JoinError};
+use tokio::sync::oneshot;
 
-use crate::shared::{constants::Constants, exception::panic_message};
+use crate::shared::{constants::Constants, exception::panic_message, runtime::get_runtime};
 
 /// The async library a request runs on. `execute()` detects it once, and every
 /// awaitable the request creates reuses the answer, including each read of the
@@ -67,95 +65,14 @@ impl AsyncLibrary {
     }
 }
 
-/// What a spawned future needs from the calling task, captured up front for
-/// awaitables created later from a different context (the request body pump).
-pub(super) enum Locals {
-    Asyncio(TaskLocals),
-    Trio,
-}
-
-impl Locals {
-    pub(super) fn current(py: Python<'_>, library: AsyncLibrary) -> PyResult<Self> {
-        match library {
-            AsyncLibrary::Asyncio => get_current_locals(py).map(Self::Asyncio),
-            AsyncLibrary::Trio => Ok(Self::Trio),
-        }
-    }
-}
-
-/// Wraps `fut` in an awaitable for `library`.
-pub(super) fn into_awaitable<'py, F, T>(
-    py: Python<'py>,
-    library: AsyncLibrary,
-    fut: F,
-) -> PyResult<Bound<'py, PyAny>>
-where
-    F: Future<Output = PyResult<T>> + Send + 'static,
-    T: for<'a> IntoPyObject<'a> + Send + 'static,
-{
-    match library {
-        AsyncLibrary::Asyncio => future_into_py(py, fut),
-        AsyncLibrary::Trio => trio_awaitable(py, fut, None),
-    }
-}
-
-/// Like [`into_awaitable`], for a task whose locals were captured earlier.
-pub(super) fn into_awaitable_with_locals<'py, F, T>(
-    py: Python<'py>,
-    locals: &Locals,
-    fut: F,
-) -> PyResult<Bound<'py, PyAny>>
-where
-    F: Future<Output = PyResult<T>> + Send + 'static,
-    T: for<'a> IntoPyObject<'a> + Send + 'static,
-{
-    match locals {
-        Locals::Asyncio(locals) => future_into_py_with_locals(py, locals.clone(), fut),
-        Locals::Trio => trio_awaitable(py, fut, None),
-    }
-}
-
-/// Like [`into_awaitable`], with `on_done` invoked once the future settles,
-/// whether or not the awaitable is awaited. It receives an object with
-/// `result()`: the `asyncio.Future` itself, or its trio stand-in. An
-/// `Exception` from `on_done` is logged under either runtime.
-pub(super) fn into_awaitable_with_done<'py, F, T>(
-    py: Python<'py>,
-    library: AsyncLibrary,
-    constants: &Constants,
-    fut: F,
-    on_done: Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>>
-where
-    F: Future<Output = PyResult<T>> + Send + 'static,
-    T: for<'a> IntoPyObject<'a> + Send + 'static,
-{
-    match library {
-        AsyncLibrary::Asyncio => {
-            let fut = future_into_py(py, fut)?;
-            fut.call_method1(&constants.add_done_callback, (on_done,))?;
-            Ok(fut)
-        }
-        AsyncLibrary::Trio => trio_awaitable(py, fut, Some(on_done)),
-    }
-}
-
-/// The `spawn_pump(fn, *args)` of `library`, which starts `fn(*args)` as a
-/// detached task and returns its `PumpHandle`.
-pub(super) fn pump_spawner<'a>(
-    py: Python<'_>,
-    library: AsyncLibrary,
-    constants: &'a Constants,
-) -> PyResult<&'a Py<PyAny>> {
-    Ok(match library {
-        AsyncLibrary::Asyncio => &constants.spawn_pump,
-        AsyncLibrary::Trio => &trio_glue(py)?.spawn_pump,
-    })
-}
-
-/// `pyqwest._trio`, imported on first use.
+/// `pyqwest._trio`, imported on first use so that trio stays an optional
+/// dependency.
 struct TrioGlue {
+    /// `start_request(abort, on_done)`, returning the completion callback
+    /// tokio reports through and the awaitable for the outcome.
     start_request: Py<PyAny>,
+    /// `spawn_pump(fn, *args)`, starting `fn(*args)` as a system task and
+    /// returning its `PumpHandle`.
     spawn_pump: Py<PyAny>,
 }
 
@@ -170,8 +87,88 @@ fn trio_glue(py: Python<'_>) -> PyResult<&'static TrioGlue> {
     })
 }
 
-fn trio_awaitable<'py, F, T>(
+/// Starts `forward(gen, sender)`, the request body pump, as a detached task on
+/// `library`. Returns its `PumpHandle`: `cancel()` on the loop's thread,
+/// `cancel_soon()` from any.
+pub(super) fn spawn_pump(
+    py: Python<'_>,
+    library: AsyncLibrary,
+    constants: &Constants,
+    gen: Bound<'_, PyAny>,
+    sender: Py<PyAny>,
+) -> PyResult<Py<PyAny>> {
+    match library {
+        AsyncLibrary::Asyncio => {
+            let event_loop = constants.get_running_loop.call0(py)?.into_bound(py);
+            let coro = constants.forward.bind(py).call1((gen, sender))?;
+            let task = event_loop.call_method1(&constants.create_task, (coro,))?;
+            task.call_method1(
+                &constants.add_done_callback,
+                (ConsumeTask {
+                    constants: constants.clone(),
+                },),
+            )?;
+            TaskHandle {
+                task: task.unbind(),
+                constants: constants.clone(),
+            }
+            .into_py_any(py)
+        }
+        AsyncLibrary::Trio => trio_glue(py)?
+            .spawn_pump
+            .call1(py, (&constants.forward, gen, sender)),
+    }
+}
+
+/// Retrieves a finished pump task's outcome so the loop never logs it: the
+/// pump reports errors through its sender, and cancellation is how it stops.
+#[pyclass(module = "_pyqwest.async", frozen)]
+struct ConsumeTask {
+    constants: Constants,
+}
+
+#[pymethods]
+impl ConsumeTask {
+    fn __call__(&self, task: &Bound<'_, PyAny>) {
+        let _ = task.call_method0(&self.constants.exception);
+    }
+}
+
+/// The `PumpHandle` of an asyncio task.
+#[pyclass(module = "_pyqwest.async", frozen)]
+struct TaskHandle {
+    task: Py<PyAny>,
+    constants: Constants,
+}
+
+#[pymethods]
+impl TaskHandle {
+    fn cancel(&self, py: Python<'_>) -> PyResult<()> {
+        self.task.call_method0(py, &self.constants.cancel)?;
+        Ok(())
+    }
+
+    fn cancel_soon(&self, py: Python<'_>) -> PyResult<()> {
+        let event_loop = self.task.call_method0(py, &self.constants.get_loop)?;
+        let cancel = self.task.getattr(py, &self.constants.cancel)?;
+        match event_loop.call_method1(py, &self.constants.call_soon_threadsafe, (cancel,)) {
+            // A closed loop raises RuntimeError; its task is already gone.
+            Err(e) if e.is_instance_of::<PyRuntimeError>(py) => Ok(()),
+            res => res.map(drop),
+        }
+    }
+}
+
+/// Spawns `fut` and wraps its outcome in an awaitable for `library`.
+///
+/// `on_done`, if given, is called once the future settles, whether or not the
+/// awaitable is awaited, with an object whose `result()` returns the value or
+/// raises the error: the `asyncio.Future` itself, or its trio stand-in. An
+/// `Exception` from `on_done` is logged under either library.
+pub(super) fn into_awaitable<'py, F, T>(
     py: Python<'py>,
+    library: AsyncLibrary,
+    constants: &Constants,
     fut: F,
     on_done: Option<Bound<'py, PyAny>>,
 ) -> PyResult<Bound<'py, PyAny>>
@@ -183,76 +180,191 @@ where
     let abort = Abort {
         abort: Mutex::new(Some(abort_tx)),
     };
-    let (completion, awaitable): (Py<PyAny>, Bound<'py, PyAny>) = trio_glue(py)?
-        .start_request
-        .bind(py)
-        .call1((abort, on_done))?
-        .extract()?;
+    let (completion, awaitable) = match library {
+        AsyncLibrary::Asyncio => asyncio_awaitable(py, constants, abort, on_done)?,
+        AsyncLibrary::Trio => {
+            let (callback, awaitable): (Py<PyAny>, Bound<'py, PyAny>) = trio_glue(py)?
+                .start_request
+                .bind(py)
+                .call1((abort, on_done))?
+                .extract()?;
+            (Completion::Trio(callback), awaitable)
+        }
+    };
 
-    // The future races the abort signal in its own task, so a panic in it
-    // comes back as a `JoinError` and is still reported. Converting the result
-    // and waking trio need the GIL, which a tokio worker must not wait for, so
-    // both happen on the blocking pool.
-    let runtime = get_runtime();
-    let race = runtime.spawn(async move {
-        tokio::select! {
+    let constants = constants.clone();
+    get_runtime().spawn(async move {
+        let outcome = tokio::select! {
             biased;
             // Only an explicit abort cancels. A dropped handle leaves the
             // request running, as dropping an `asyncio.Future` does.
             Ok(()) = &mut abort_rx => None,
-            res = fut => Some(res),
-        }
-    });
-    runtime.spawn(async move {
-        let outcome = race.await;
-        // try_attach: once the interpreter is finalizing, nothing awaits.
-        let _ = tokio::task::spawn_blocking(move || {
-            Python::try_attach(move |py| report(py, &completion, outcome));
-        })
-        .await;
+            // A panic in the future is caught so it still reaches the awaiter.
+            res = AssertUnwindSafe(fut).catch_unwind() => Some(res),
+        };
+        // Converting the result and calling back into Python need the GIL,
+        // which a tokio worker must not wait for, so both happen on the
+        // blocking pool.
+        tokio::task::spawn_blocking(move || {
+            Python::try_attach(move |py| report(py, &constants, &completion, outcome));
+        });
     });
     Ok(awaitable)
 }
 
-/// Calls `completion(value, error, cancelled)` exactly once for `outcome`.
+/// asyncio Future and completion callback.
+fn asyncio_awaitable<'py>(
+    py: Python<'py>,
+    constants: &Constants,
+    abort: Abort,
+    on_done: Option<Bound<'py, PyAny>>,
+) -> PyResult<(Completion, Bound<'py, PyAny>)> {
+    let event_loop = constants.get_running_loop.call0(py)?.into_bound(py);
+    let future = event_loop.call_method0(&constants.create_future)?;
+    future.call_method1(
+        &constants.add_done_callback,
+        (AbortOnCancel {
+            abort,
+            constants: constants.clone(),
+        },),
+    )?;
+    if let Some(on_done) = on_done {
+        future.call_method1(&constants.add_done_callback, (on_done,))?;
+    }
+    let deliver = Py::new(
+        py,
+        Deliver {
+            future: future.clone().unbind(),
+            constants: constants.clone(),
+        },
+    )?;
+    let completion = Completion::Asyncio {
+        event_loop: event_loop.unbind(),
+        deliver,
+    };
+    Ok((completion, future))
+}
+
+/// How tokio reports a request's outcome, `(value, error, cancelled)`, to
+/// Python.
+enum Completion {
+    /// `deliver(value, error, cancelled)`, scheduled on the event loop.
+    Asyncio {
+        event_loop: Py<PyAny>,
+        deliver: Py<Deliver>,
+    },
+    /// The callback `pyqwest._trio.start_request` returned.
+    Trio(Py<PyAny>),
+}
+
+/// Reports `outcome` exactly once: `None` for an abort, otherwise the future's
+/// result or its panic.
 fn report<T>(
     py: Python<'_>,
-    completion: &Py<PyAny>,
-    outcome: Result<Option<PyResult<T>>, JoinError>,
+    constants: &Constants,
+    completion: &Completion,
+    outcome: Option<Result<PyResult<T>, Box<dyn Any + Send>>>,
 ) where
     T: for<'a> IntoPyObject<'a>,
 {
     let result = match outcome {
-        Ok(None) => Ok(None),
+        None => Ok(None),
+        Some(Err(payload)) => Err(panic_error(&*payload)),
         // A panicking conversion must still wake the awaiter.
-        Ok(Some(res)) => catch_unwind(AssertUnwindSafe(|| {
+        Some(Ok(res)) => catch_unwind(AssertUnwindSafe(|| {
             res.and_then(|value| value.into_py_any(py)).map(Some)
         }))
         .unwrap_or_else(|payload| Err(panic_error(&*payload))),
-        Err(join) => Err(join.try_into_panic().map_or_else(
-            |_| PyRuntimeError::new_err("request task cancelled by its runtime"),
-            |payload| panic_error(&*payload),
-        )),
     };
-    let args = match result {
+    let (value, error, cancelled) = match result {
         Ok(Some(value)) => (value, py.None(), false),
         Ok(None) => (py.None(), py.None(), true),
         Err(err) => (py.None(), err.into_value(py).into_any(), false),
     };
-    if let Err(e) = completion.call1(py, args) {
+    let reported = match completion {
+        Completion::Asyncio {
+            event_loop,
+            deliver,
+        } => event_loop
+            .call_method1(
+                py,
+                &constants.call_soon_threadsafe,
+                (deliver, value, error, cancelled),
+            )
+            .map(drop)
+            // A closed loop raises RuntimeError: nobody waits.
+            .or_else(|e| {
+                e.is_instance_of::<PyRuntimeError>(py)
+                    .then_some(())
+                    .ok_or(e)
+            }),
+        Completion::Trio(callback) => callback.call1(py, (value, error, cancelled)).map(drop),
+    };
+    if let Err(e) = reported {
         e.write_unraisable(py, None);
     }
 }
 
-/// The error for a panic in a request task: the same `RustPanic` callers see
-/// from an asyncio request.
+/// The error for a panic in a request task.
 fn panic_error(payload: &(dyn Any + Send)) -> PyErr {
-    RustPanic::new_err(format!("rust future panicked: {}", panic_message(payload)))
+    PanicException::new_err(format!("rust future panicked: {}", panic_message(payload)))
 }
 
-/// Cancels the spawned future. The completion callback then reports
-/// `cancelled=True`, unless the future finished first. Dropping the handle
-/// without calling `abort` leaves the future running.
+/// asyncio's done callback: a Future that asyncio cancelled aborts the request.
+#[pyclass(module = "_pyqwest.async", frozen)]
+struct AbortOnCancel {
+    abort: Abort,
+    constants: Constants,
+}
+
+#[pymethods]
+impl AbortOnCancel {
+    fn __call__(&self, py: Python<'_>, future: &Bound<'_, PyAny>) -> PyResult<()> {
+        if future
+            .call_method0(&self.constants.cancelled)?
+            .is_truthy()?
+        {
+            self.abort.abort(py);
+        }
+        Ok(())
+    }
+}
+
+/// Completes the Future on the loop thread with what tokio reported.
+#[pyclass(module = "_pyqwest.async", frozen)]
+struct Deliver {
+    future: Py<PyAny>,
+    constants: Constants,
+}
+
+#[pymethods]
+impl Deliver {
+    fn __call__(
+        &self,
+        py: Python<'_>,
+        value: &Bound<'_, PyAny>,
+        error: &Bound<'_, PyAny>,
+        cancelled: bool,
+    ) -> PyResult<()> {
+        let future = self.future.bind(py);
+        // Cancelled here first: this is its abort, or a result that raced it.
+        if future.call_method0(&self.constants.done)?.is_truthy()? {
+            return Ok(());
+        }
+        if cancelled {
+            future.call_method0(&self.constants.cancel)?;
+        } else if !error.is_none() {
+            future.call_method1(&self.constants.set_exception, (error,))?;
+        } else {
+            future.call_method1(&self.constants.set_result, (value,))?;
+        }
+        Ok(())
+    }
+}
+
+/// Cancels the spawned future. The completion then reports `cancelled=True`,
+/// unless the future finished first. Dropping the handle without calling
+/// `abort` leaves the future running.
 #[pyclass(module = "_pyqwest.async", frozen)]
 struct Abort {
     abort: Mutex<Option<oneshot::Sender<()>>>,

@@ -28,8 +28,6 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from typing import TypeAlias
 
-    from ._glue import PumpHandle
-
     # (value, error, cancelled) — one of the three describes the outcome.
     Completion: TypeAlias = Callable[[object, BaseException | None, bool], None]
 
@@ -37,7 +35,17 @@ _logger = logging.getLogger(__name__)
 
 
 class AbortHandle(Protocol):
+    """Rust's handle on a spawned request: `abort()` cancels it."""
+
     def abort(self) -> None: ...
+
+
+class PumpHandle(Protocol):
+    """A detached task: `cancel()` on its run's thread, `cancel_soon()` from any."""
+
+    def cancel(self) -> None: ...
+
+    def cancel_soon(self) -> None: ...
 
 
 class Completed:

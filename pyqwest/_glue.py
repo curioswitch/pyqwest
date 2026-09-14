@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import inspect
 import types
@@ -15,7 +14,7 @@ from ._multipart import (
 from ._pyqwest import FullResponse, Headers, Request, Transport
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
     from ._multipart import Multipart, SyncMultipart
 
@@ -110,47 +109,6 @@ def close_request_iterator(itr: Iterator[bytes]) -> None:
     else:
         with contextlib.suppress(Exception):
             close()
-
-
-class PumpHandle(Protocol):
-    """A detached task: `cancel()` on its loop's thread, `cancel_soon()` from any."""
-
-    def cancel(self) -> None: ...
-
-    def cancel_soon(self) -> None: ...
-
-
-class _TaskHandle:
-    """The `PumpHandle` of an asyncio task."""
-
-    __slots__ = ("_task",)
-
-    def __init__(self, task: asyncio.Task[None]) -> None:
-        self._task = task
-
-    def cancel(self) -> None:
-        self._task.cancel()
-
-    def cancel_soon(self) -> None:
-        # A closed loop raises RuntimeError; its task is already gone.
-        with contextlib.suppress(RuntimeError):
-            self._task.get_loop().call_soon_threadsafe(self._task.cancel)
-
-
-def _consume_task(task: asyncio.Task[None]) -> None:
-    # Retrieve the outcome so the loop never logs it: the pump reports
-    # errors through its sender, and cancellation is how it is stopped.
-    with contextlib.suppress(asyncio.CancelledError):
-        task.exception()
-
-
-def spawn_pump(
-    fn: Callable[..., Coroutine[object, object, None]], *args: object
-) -> PumpHandle:
-    """Start `fn(*args)` as a detached asyncio task."""
-    task = asyncio.get_running_loop().create_task(fn(*args))
-    task.add_done_callback(_consume_task)
-    return _TaskHandle(task)
 
 
 # Vendored from pyo3-async-runtimes to apply some fixes

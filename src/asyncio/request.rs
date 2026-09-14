@@ -154,7 +154,7 @@ impl Request {
             )),
             Some(Content::AsyncIter(iter)) => {
                 let (start_tx, start_rx) = oneshot::channel();
-                let iter = wrap_async_iter(py, iter, start_rx, library)?;
+                let iter = wrap_async_iter(py, iter, start_rx, library, &self.constants)?;
                 let (stream, task) = into_stream(py, iter, &self.constants, library)?;
                 let res = StartOnPoll::new(stream, start_tx).map(bytes_from_chunk);
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
@@ -187,6 +187,7 @@ fn wrap_async_iter<'py>(
     iter: &Py<PyAny>,
     start: oneshot::Receiver<()>,
     library: AsyncLibrary,
+    constants: &Constants,
 ) -> PyResult<Bound<'py, PyAny>> {
     static WRAP_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     static GEN_FN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -204,7 +205,13 @@ fn wrap_async_iter<'py>(
         })?
         .bind(py);
 
-    let start = into_awaitable(py, library, async move { Ok(start.await.is_ok()) })?;
+    let start = into_awaitable(
+        py,
+        library,
+        constants,
+        async move { Ok(start.await.is_ok()) },
+        None,
+    )?;
     gen_fn.call1((iter, wrap_fn, start))
 }
 
