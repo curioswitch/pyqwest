@@ -275,7 +275,10 @@ def sync_wsgi_transport(
     return WSGITransport(kitchensink_app_wsgi, http_version=http_version)
 
 
-@pytest.fixture(scope="session", params=["sync", "sync_wsgi"])
+@pytest.fixture(
+    scope="session",
+    params=["sync", pytest.param("sync_wsgi", marks=pytest.mark.asyncio_only)],
+)
 def sync_client(
     request: pytest.FixtureRequest,
     sync_transport: SyncHTTPTransport,
@@ -296,7 +299,7 @@ def sync_client(
         "async",
         "sync",
         pytest.param("async_asgi", marks=pytest.mark.asyncio_only),
-        "sync_wsgi",
+        pytest.param("sync_wsgi", marks=pytest.mark.asyncio_only),
     ]
 )
 def client_type(request: pytest.FixtureRequest) -> str:
