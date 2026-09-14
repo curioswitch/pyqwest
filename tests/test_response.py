@@ -127,9 +127,8 @@ def test_response_aclose_awaitable_supports_yield_from():
 
 
 @pytest.mark.anyio
-async def test_response_content_awaitable_ensure_future(anyio_backend_name: str):
-    if anyio_backend_name != "asyncio":
-        pytest.skip("asyncio.ensure_future needs asyncio")
+@pytest.mark.asyncio_only
+async def test_response_content_awaitable_ensure_future():
     content = Response(status=200, content=b"Sample body").content
     assert bytes(await asyncio.ensure_future(content.__anext__())) == b"Sample body"
 

@@ -37,6 +37,8 @@ if TYPE_CHECKING:
     from .conftest import Certs
 
 pytestmark = [
+    # Benchmarks drive their own asyncio.Runner.
+    pytest.mark.asyncio_only,
     pytest.mark.parametrize("http_scheme", ["http"], indirect=True),
     pytest.mark.parametrize("http_version", ["h1", "h2", "h3"], indirect=True),
 ]
