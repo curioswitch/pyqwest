@@ -32,7 +32,7 @@ pyo3-async-runtimes = {
   ]
 }
 reqwest = {
-  version = "0.13.4",
+  version = "0.13.5",
   features = [
     "brotli",
     "cookies",
