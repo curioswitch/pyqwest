@@ -36,12 +36,22 @@ sequence = [
   { cmd = "uv run pytest -k test_client_sync", cwd = "out/integration/connect/conformance" },
 ]
 
+# The running interpreter's major.minor version, for `lint-types`.
+[tasks._python-version]
+expr = "f'{sys.version_info[0]}.{sys.version_info[1]}'"
+imports = ["sys"]
+
+[tasks.lint-types]
+help = "Type checks python code for the running interpreter's version"
+cmd = "ty check --python-version ${PYTHON_VERSION}"
+uses = { PYTHON_VERSION = "_python-version" }
+
 [tasks.lint-python]
 help = "Lints python code"
 sequence = [
   { cmd = "ruff check" },
   { cmd = "ruff format --check" },
-  { cmd = "ty check" }
+  "lint-types",
 ]
 
 [tasks.lint-rust]

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Protocol
 import trio
 
 if sys.version_info < (3, 11):
-    from exceptiongroup import BaseExceptionGroup  # ty: ignore[unresolved-import]
+    from exceptiongroup import BaseExceptionGroup
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
