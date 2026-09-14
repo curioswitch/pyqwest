@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Barrier
 from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
+from anyio import to_thread
 
 from pyqwest import Client, SyncClient, SyncHTTPTransport
 
@@ -29,7 +30,7 @@ def get_runtime_metrics(otel_test_base: TestBase) -> list[Metric]:
 @pytest.mark.parametrize("http_scheme", ["http", "https"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1", "h2"], indirect=True)
 @pytest.mark.parametrize("client_type", ["async", "sync"])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_basic(
     client: Client | SyncClient, url: str, otel_test_base: TestBase
 ) -> None:
@@ -39,10 +40,10 @@ async def test_basic(
     if isinstance(client, Client):
         await client.get(url)
     else:
-        await asyncio.to_thread(client.get, url)
+        await to_thread.run_sync(client.get, url)
 
     # Tokio takes some time to update internal metrics, unfortunately the best we can do is sleep.
-    await asyncio.sleep(0.05)
+    await anyio.sleep(0.05)
 
     metrics = get_runtime_metrics(otel_test_base)
     assert len(metrics) == 5
@@ -113,7 +114,7 @@ async def test_basic(
 @pytest.mark.order(2)
 @pytest.mark.parametrize("http_scheme", ["http", "https"], indirect=True)
 @pytest.mark.parametrize("http_version", ["h1", "h2"], indirect=True)
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_blocking_threads(
     sync_transport: SyncHTTPTransport, url: str, otel_test_base: TestBase
 ) -> None:
@@ -164,7 +165,7 @@ async def test_blocking_threads(
             fut.result()
 
         # Tokio takes some time to update internal metrics, unfortunately the best we can do is sleep.
-        await asyncio.sleep(0.05)
+        await anyio.sleep(0.05)
 
         metrics = get_runtime_metrics(otel_test_base)
         blocking_threads = metrics[1]

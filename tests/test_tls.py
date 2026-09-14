@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
+from anyio import to_thread
 
 from pyqwest import Client, HTTPTransport, HTTPVersion, SyncClient, SyncHTTPTransport
 
@@ -19,7 +19,7 @@ pytestmark = [
 ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_mtls(
     url: str,
     certs: Certs,
@@ -52,7 +52,7 @@ async def test_mtls(
                     content = b"".join(resp.content)
                 return resp, content
 
-            resp, content = await asyncio.to_thread(run)
+            resp, content = await to_thread.run_sync(run)
     else:
         async with HTTPTransport(
             tls_ca_cert=certs.ca,

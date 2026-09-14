@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import email.parser
+from functools import partial
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from anyio import to_thread
 
 from pyqwest import Client, Multipart, Part, SyncClient, SyncMultipart, SyncPart
 
@@ -40,7 +41,7 @@ def parse_multipart(
     return parts
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_multipart(client: Client | SyncClient, url: str) -> None:
     url = f"{url}/echo"
     if isinstance(client, SyncClient):
@@ -64,7 +65,7 @@ async def test_multipart(client: Client | SyncClient, url: str) -> None:
                 ),
             ]
         )
-        resp = await asyncio.to_thread(client.post, url, content=multipart)
+        resp = await to_thread.run_sync(partial(client.post, url, content=multipart))
     else:
 
         async def stream_async() -> AsyncIterator[bytes]:
@@ -99,14 +100,14 @@ async def test_multipart(client: Client | SyncClient, url: str) -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_multipart_adds_boundary_to_content_type(
     client: Client | SyncClient, url: str
 ) -> None:
     url = f"{url}/echo"
     headers = [("content-type", "multipart/form-data")]
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(
+        resp = await to_thread.run_sync(
             client.post, url, headers, SyncMultipart({"field": b"value"})
         )
     else:
@@ -120,7 +121,7 @@ async def test_multipart_adds_boundary_to_content_type(
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_multipart_multiple_streams(
     client: Client | SyncClient, url: str
 ) -> None:
@@ -136,7 +137,7 @@ async def test_multipart_multiple_streams(
                 ("second", SyncPart(stream_sync([b"second ", b"stream"]))),
             ]
         )
-        resp = await asyncio.to_thread(client.post, url, content=multipart)
+        resp = await to_thread.run_sync(partial(client.post, url, content=multipart))
     else:
 
         async def stream_async(chunks: list[bytes]) -> AsyncIterator[bytes]:
@@ -159,7 +160,7 @@ async def test_multipart_multiple_streams(
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_multipart_stream_error(client: Client | SyncClient, url: str) -> None:
     # There is a race between whether the error is handled on the request
     # or response side, which can look like a connection error when the server
@@ -179,7 +180,7 @@ async def test_multipart_stream_error(client: Client | SyncClient, url: str) -> 
                 with client.stream(method, url, content=multipart) as resp:
                     b"".join(resp.content)
 
-            await asyncio.to_thread(run)
+            await to_thread.run_sync(run)
         else:
 
             async def stream_async() -> AsyncIterator[bytes]:

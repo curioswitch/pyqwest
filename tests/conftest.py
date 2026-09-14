@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pytest
-import pytest_asyncio
 import trustme
 from opentelemetry.test.test_base import TestBase
 from pyvoy import PyvoyServer
@@ -42,21 +41,31 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
         )
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def track_asyncio_loop_exceptions() -> AsyncIterator[None]:
-    loop = asyncio.get_running_loop()
-    previous_handler = loop.get_exception_handler()
+def track_loop_exception(
+    loop: asyncio.AbstractEventLoop, context: dict[str, object]
+) -> None:
+    global _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION  # noqa: PLW0603
+    _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION = True
+    loop.default_exception_handler(context)
 
-    def handler(loop: asyncio.AbstractEventLoop, context: dict[str, object]) -> None:
-        global _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION  # noqa: PLW0603
-        _ENCOUNTERED_ASYNCIO_LOOP_EXCEPTION = True
-        if previous_handler is not None:
-            previous_handler(loop, context)
-        else:
-            loop.default_exception_handler(context)
 
-    loop.set_exception_handler(handler)
-    yield
+def new_tracked_loop() -> asyncio.AbstractEventLoop:
+    """An event loop that records exceptions its callbacks leave unhandled."""
+    loop = asyncio.new_event_loop()
+    loop.set_exception_handler(track_loop_exception)
+    return loop
+
+
+# The backends async tests run on, each with one runner for the whole session.
+# anyio hands `loop_factory` to its asyncio runner.
+@pytest.fixture(
+    scope="session",
+    params=[
+        pytest.param(("asyncio", {"loop_factory": new_tracked_loop}), id="asyncio")
+    ],
+)
+def anyio_backend(request: pytest.FixtureRequest) -> tuple[str, dict[str, object]]:
+    return request.param
 
 
 @pytest.fixture(autouse=True)
@@ -91,9 +100,9 @@ def certs(ca: trustme.CA) -> Certs:
     )
 
 
-@pytest_asyncio.fixture(scope="session")
-async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
-    async with PyvoyServer(
+@pytest.fixture(scope="session")
+def server(certs: Certs) -> Iterator[PyvoyServer]:
+    server = PyvoyServer(
         "tests.apps.asgi.kitchensink",
         tls_port=0,
         tls_key=certs.server_key,
@@ -103,8 +112,18 @@ async def server(certs: Certs) -> AsyncIterator[PyvoyServer]:
         lifespan=False,
         stdout=None,
         stderr=None,
-    ) as server:
-        yield server
+    )
+    # pyvoy drives its Envoy subprocess with asyncio. A private loop keeps the
+    # server independent of the backend the async tests run on.
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(server.start())
+        try:
+            yield server
+        finally:
+            loop.run_until_complete(server.stop())
+    finally:
+        loop.close()
 
 
 @pytest.fixture(scope="session")
@@ -165,7 +184,7 @@ def otel_test_base() -> Iterator[TestBase]:
         test_base.tearDown()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest.fixture(scope="session")
 async def async_transport(
     certs: Certs,
     http_version: HTTPVersion | None,
@@ -181,7 +200,7 @@ async def async_transport(
         yield transport
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest.fixture(scope="session")
 async def async_asgi_transport(
     http_version: HTTPVersion | None, http_scheme: str
 ) -> AsyncIterator[Transport]:

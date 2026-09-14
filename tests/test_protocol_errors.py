@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
-
 import pytest
+from anyio import to_thread
 
 from pyqwest import (
     Client,
@@ -38,7 +37,7 @@ PROTOCOL_FAULTS = [
 ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("response", PROTOCOL_FAULTS)
 async def test_async_protocol_error(response: bytes) -> None:
     with raw_server(response) as url:
@@ -47,7 +46,7 @@ async def test_async_protocol_error(response: bytes) -> None:
                 await Client(transport).get(url)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("response", PROTOCOL_FAULTS)
 async def test_sync_protocol_error(response: bytes) -> None:
     def run() -> None:
@@ -58,10 +57,10 @@ async def test_sync_protocol_error(response: bytes) -> None:
         ):
             SyncClient(transport).get(url)
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_response_reset_is_read_error() -> None:
     # A response cut short by a reset is a broken connection rather than a
     # protocol violation, so it must not be swept up by the tests above.
@@ -73,7 +72,7 @@ async def test_async_response_reset_is_read_error() -> None:
                 await Client(transport).get(url)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_sync_response_reset_is_read_error() -> None:
     def run() -> None:
         with (
@@ -83,4 +82,4 @@ async def test_sync_response_reset_is_read_error() -> None:
         ):
             SyncClient(transport).get(url)
 
-    await asyncio.to_thread(run)
+    await to_thread.run_sync(run)

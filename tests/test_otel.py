@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import socket
 from contextlib import AsyncExitStack, ExitStack
+from functools import partial
 from typing import TYPE_CHECKING, cast
 
 import pytest
-import pytest_asyncio
+from anyio import to_thread
 from opentelemetry import context
 from opentelemetry.baggage import set_baggage
 from opentelemetry.propagate import extract
@@ -70,7 +70,7 @@ def otel_test_base() -> Iterator[TestBase]:
         test_base.tearDown()
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def async_transport(
     certs: Certs, http_version: HTTPVersion | None, otel_test_base: TestBase
 ) -> AsyncIterator[HTTPTransport]:
@@ -118,7 +118,7 @@ def get_runtime_metrics(otel_test_base: TestBase) -> list[Metric]:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_basic(
     client: Client | SyncClient,
     url: str,
@@ -130,8 +130,8 @@ async def test_basic(
     headers = [("content-type", "text/plain")]
     req_content = b"Hello, World!"
     if isinstance(client, SyncClient):
-        resp = await asyncio.to_thread(
-            client.post, url, headers=headers, content=req_content
+        resp = await to_thread.run_sync(
+            partial(client.post, url, headers=headers, content=req_content)
         )
     else:
         resp = await client.post(url, headers=headers, content=req_content)
@@ -202,7 +202,7 @@ async def test_basic(
     assert request_duration_data.data_points[0].exemplars[0].span_id == span_ctx.span_id
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_stream(
     client: Client | SyncClient,
     url: str,
@@ -222,7 +222,7 @@ async def test_stream(
                     client.stream("POST", url, headers=headers, content=req_content)
                 )
 
-            resp = await asyncio.to_thread(run)
+            resp = await to_thread.run_sync(run)
         else:
             resp = await cleanup.enter_async_context(
                 client.stream("POST", url, headers=headers, content=req_content)
@@ -287,7 +287,7 @@ async def test_stream(
         }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connection_error(
     client: Client | SyncClient, url: str, otel_test_base: TestBase
 ) -> None:
@@ -299,7 +299,7 @@ async def test_connection_error(
 
     with pytest.raises(ConnectionError):
         if isinstance(client, SyncClient):
-            await asyncio.to_thread(client.get, url, headers=headers)
+            await to_thread.run_sync(partial(client.get, url, headers=headers))
         else:
             await client.get(url, headers=headers)
 
@@ -351,7 +351,7 @@ async def test_connection_error(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_response_error(
     client: Client | SyncClient,
     url: str,
@@ -372,7 +372,7 @@ async def test_response_error(
     )
     with pytest.raises(expected) as exc_info:
         if isinstance(client, SyncClient):
-            await asyncio.to_thread(client.get, url, headers=headers)
+            await to_thread.run_sync(partial(client.get, url, headers=headers))
         else:
             await client.get(url, headers=headers)
 
@@ -442,7 +442,7 @@ def ctx_with_tracestate(trace_state: TraceState) -> context.Context:
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_parent(
     client: Client | SyncClient,
     url: str,
@@ -465,8 +465,8 @@ async def test_parent(
         headers = [("content-type", "text/plain")]
         req_content = b"Hello, World!"
         if isinstance(client, SyncClient):
-            resp = await asyncio.to_thread(
-                client.post, url, headers=headers, content=req_content
+            resp = await to_thread.run_sync(
+                partial(client.post, url, headers=headers, content=req_content)
             )
         else:
             resp = await client.post(url, headers=headers, content=req_content)
@@ -506,7 +506,7 @@ async def test_parent(
     assert context.get_current() == {}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_disable_otel(
     url: str,
     otel_test_base: TestBase,

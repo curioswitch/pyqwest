@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import socket
 
 import pytest
+from anyio import to_thread
 
 from pyqwest import Client, HTTPVersion, SyncClient
 
@@ -28,11 +28,11 @@ def records_for(caplog: pytest.LogCaptureFixture, name: str) -> list[logging.Log
 
 async def _get(client: Client | SyncClient, url: str):
     if isinstance(client, SyncClient):
-        return await asyncio.to_thread(client.get, url)
+        return await to_thread.run_sync(client.get, url)
     return await client.get(url)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_access_log(
     client: Client | SyncClient,
     url: str,
@@ -55,7 +55,7 @@ async def test_access_log(
     assert not records_for(caplog, DEBUG_LOGGER)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_access_log_error_status(
     client: Client | SyncClient,
     url: str,
@@ -75,7 +75,7 @@ async def test_access_log_error_status(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_debug_log(
     client: Client | SyncClient,
     url: str,
@@ -102,7 +102,7 @@ async def test_debug_log(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_debug_log_with_access_overridden(
     client: Client | SyncClient, url: str, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -124,7 +124,7 @@ async def test_debug_log_with_access_overridden(
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_stream_logged(
     client: Client | SyncClient,
     url: str,
@@ -139,7 +139,7 @@ async def test_stream_logged(
                 with client.stream("POST", url, content=b"Hello, World!") as resp:
                     return b"".join(resp.content)
 
-            content = await asyncio.to_thread(run)
+            content = await to_thread.run_sync(run)
         else:
             async with client.stream("POST", url, content=b"Hello, World!") as resp:
                 content = b""
@@ -153,7 +153,7 @@ async def test_stream_logged(
     assert records[0].getMessage() == f'HTTP Request: POST {url} "{version} 200 OK"'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_logged_at_info(
     client: Client | SyncClient, url: str, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -168,7 +168,7 @@ async def test_not_logged_at_info(
     assert not records_for(caplog, ACCESS_LOGGER)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connection_error(
     client: Client | SyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:

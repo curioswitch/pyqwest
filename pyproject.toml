@@ -34,6 +34,7 @@ Repository = "https://github.com/curioswitch/pyqwest.git"
 [dependency-groups]
 dev = [
   "aiohttp[speedups]",
+  "anyio",
   "asgiref",
   "brotli",
   "httpx[http2]",
@@ -43,7 +44,6 @@ dev = [
   "poethepoet",
   "psutil",
   "pytest",
-  "pytest-asyncio",
   "pytest-benchmark",
   "pytest-cov",
   "pytest-order",
@@ -73,8 +73,6 @@ addopts = [
   "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
 ]
 testpaths = ["tests"]
-asyncio_default_fixture_loop_scope = "session"
-asyncio_default_test_loop_scope = "session"
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true
