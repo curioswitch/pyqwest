@@ -1938,14 +1938,6 @@ dependencies = [
     { name = "opentelemetry-api" },
 ]
 
-[package.optional-dependencies]
-trio = [
-    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
-    { name = "outcome" },
-    { name = "sniffio" },
-    { name = "trio" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "aiohttp", extra = ["speedups"] },
@@ -1979,14 +1971,7 @@ docs = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "exceptiongroup", marker = "python_full_version < '3.11' and extra == 'trio'" },
-    { name = "opentelemetry-api", specifier = ">=1.39.1" },
-    { name = "outcome", marker = "extra == 'trio'" },
-    { name = "sniffio", marker = "extra == 'trio'" },
-    { name = "trio", marker = "extra == 'trio'", specifier = ">=0.25" },
-]
-provides-extras = ["trio"]
+requires-dist = [{ name = "opentelemetry-api", specifier = ">=1.39.1" }]
 
 [package.metadata.requires-dev]
 dev = [

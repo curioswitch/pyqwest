@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Protocol
 import trio
 
 if sys.version_info < (3, 11):
+    # A dependency of trio 0.22 and later on these versions.
     from exceptiongroup import BaseExceptionGroup
 
 if TYPE_CHECKING:
@@ -156,8 +157,8 @@ def spawn_pump(fn: Callable[..., Awaitable[None]], *args: object) -> PumpHandle:
 
     The request body can stream after `execute()` returns (full-duplex
     HTTP/2), so the pump cannot live in the caller's scope. An exception
-    escaping a system task ends the whole run, so an `Exception` is logged
-    here; anything else, such as a cancellation, propagates.
+    escaping a system task ends the whole run, so everything but a
+    cancellation, which trio absorbs, is logged here.
     """
     scope = trio.CancelScope()
 
@@ -165,14 +166,16 @@ def spawn_pump(fn: Callable[..., Awaitable[None]], *args: object) -> PumpHandle:
         with scope:
             try:
                 await fn(*args)
-            except Exception:
-                _logger.exception("Exception in request body task")
+            except (trio.Cancelled, GeneratorExit):
+                raise
             except BaseExceptionGroup as group:
-                errors, rest = group.split(Exception)
+                cancelled, errors = group.split(trio.Cancelled)
                 if errors is not None:
                     _logger.exception("Exception in request body task", exc_info=errors)
-                if rest is not None:
-                    raise rest from None
+                if cancelled is not None:
+                    raise cancelled from None
+            except BaseException:
+                _logger.exception("Exception in request body task")
 
     trio.lowlevel.spawn_system_task(
         run, name="pyqwest request body", context=contextvars.copy_context()

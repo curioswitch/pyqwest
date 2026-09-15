@@ -19,7 +19,7 @@ from pyqwest._trio import spawn_pump, start_request
 from ._util import RUN_TIMEOUT, one_connection_server, run_trio
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable
+    from collections.abc import AsyncIterator, Awaitable, Callable
 
     from pyqwest._trio import Completed, Completion
 
@@ -181,10 +181,21 @@ def test_completion_after_run_finished_is_dropped() -> None:
     assert done == []
 
 
-def test_body_task_error_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+class BodyAbort(BaseException):
+    pass
+
+
+# Anything escaping the pump's system task would end the whole trio run.
+BODY_ERRORS = [ValueError, SystemExit, KeyboardInterrupt, BodyAbort]
+
+
+@pytest.mark.parametrize("error", BODY_ERRORS)
+def test_body_task_error_is_logged(
+    caplog: pytest.LogCaptureFixture, error: type[BaseException]
+) -> None:
     async def body_task() -> None:
         msg = "body failed"
-        raise ValueError(msg)
+        raise error(msg)
 
     async def main() -> None:
         spawn_pump(body_task)
@@ -195,21 +206,22 @@ def test_body_task_error_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     assert len(records) == 1
     record = records[0]
     assert record.getMessage() == "Exception in request body task"
-    assert "ValueError: body failed" in logging.Formatter().format(record)
+    assert f"{error.__name__}: body failed" in logging.Formatter().format(record)
 
 
+@pytest.mark.parametrize("error", BODY_ERRORS)
 def test_body_task_error_beside_cancellation_is_logged(
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, error: type[BaseException]
 ) -> None:
     async def failing_child() -> None:
         try:
             await trio.sleep_forever()
         finally:
             msg = "body failed"
-            raise ValueError(msg)
+            raise error(msg)
 
     async def body_task() -> None:
-        # Cancelling this nursery raises a group of Cancelled and ValueError.
+        # Cancelling this nursery raises a group of Cancelled and the child's error.
         async with trio.open_nursery() as nursery:
             nursery.start_soon(failing_child)
             await trio.sleep_forever()
@@ -225,7 +237,43 @@ def test_body_task_error_beside_cancellation_is_logged(
     assert len(records) == 1
     record = records[0]
     assert record.getMessage() == "Exception in request body task"
-    assert "ValueError: body failed" in logging.Formatter().format(record)
+    assert f"{error.__name__}: body failed" in logging.Formatter().format(record)
+
+
+async def sleep_in_nursery() -> None:
+    # Cancelling this nursery raises a group holding only Cancelled.
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(trio.sleep_forever)
+        await trio.sleep_forever()
+
+
+@pytest.mark.parametrize("sleep", [trio.sleep_forever, sleep_in_nursery])
+@pytest.mark.parametrize("cancel", [True, False], ids=["cancelled", "run-ended"])
+def test_stopped_body_task_is_not_logged(
+    caplog: pytest.LogCaptureFixture, sleep: Callable[[], Awaitable[None]], cancel: bool
+) -> None:
+    # Without `cancel`, the pump is still running when the run ends, and the
+    # run's shutdown cancels it.
+    stopped = False
+
+    async def body_task() -> None:
+        nonlocal stopped
+        try:
+            await sleep()
+        finally:
+            stopped = True
+
+    async def main() -> None:
+        handle = spawn_pump(body_task)
+        await trio.testing.wait_all_tasks_blocked()
+        if cancel:
+            handle.cancel()
+            await trio.testing.wait_all_tasks_blocked()
+            assert stopped
+
+    run_trio(main)
+    assert stopped
+    assert trio_records(caplog) == []
 
 
 def test_request_body_backpressure() -> None:
