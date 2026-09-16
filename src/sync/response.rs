@@ -8,7 +8,6 @@ use pyo3::{
     types::{PyAnyMethods as _, PyBytes, PyInt, PyTuple},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::{
@@ -18,6 +17,7 @@ use crate::{
         buffer::BytesMemoryView,
         constants::Constants,
         response::{ResponseBody, ResponseHead},
+        runtime::get_runtime,
     },
 };
 

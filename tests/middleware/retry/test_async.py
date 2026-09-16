@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, Scope
 
 
+# RetryTransport waits between attempts with asyncio.sleep.
+pytestmark = pytest.mark.asyncio_only
+
+
 class App:
     def __init__(self):
         self.status = [200]

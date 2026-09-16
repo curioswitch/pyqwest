@@ -53,6 +53,10 @@ if TYPE_CHECKING:
         from _typeshed.wsgi import StartResponse, WSGIEnvironment
 
 
+# AsyncPyqwestTransport uses asyncio for timeouts and thread handoff.
+pytestmark = pytest.mark.asyncio_only
+
+
 async def echo_app(
     scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:

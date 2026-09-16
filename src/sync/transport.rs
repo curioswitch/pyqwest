@@ -4,13 +4,13 @@ use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::sync::PyOnceLock;
 use pyo3::{prelude::*, IntoPyObjectExt as _};
-use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::oneshot;
 
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
+use crate::shared::runtime::get_runtime;
 use crate::shared::transport::{
     get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
 };

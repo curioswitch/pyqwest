@@ -143,3 +143,6 @@ async def forward(gen: AsyncIterator[T_contra], sender: Sender[T_contra]) -> Non
         sender.finish()
     finally:
         sender.close()
+        aclose = getattr(gen, "aclose", None)
+        if aclose is not None:
+            await aclose()

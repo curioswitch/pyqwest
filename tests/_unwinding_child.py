@@ -1,7 +1,8 @@
 """Frees a response while an exception propagates, for `test_unwinding`.
 
-Prints "ok" if the interpreter survives, the response's `Drop` cancelled the
-task streaming its request body, and nothing was reported as unraisable.
+Run with the library (`asyncio` or `trio`) as the argument. Prints "ok" if the
+interpreter survives, the response's `Drop` cancelled the task streaming its
+request body, and nothing was reported as unraisable.
 """
 
 from __future__ import annotations
@@ -13,10 +14,14 @@ import sys
 import threading
 from typing import TYPE_CHECKING, NoReturn
 
+import trio
+
 from pyqwest import HTTPTransport, Request
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+LIBRARIES = ("asyncio", "trio")
 
 unraisables: list[str] = []
 
@@ -35,6 +40,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         threading.Event().wait()  # hold the connection without reading the body
 
 
+def new_event(library: str) -> asyncio.Event | trio.Event:
+    return trio.Event() if library == "trio" else asyncio.Event()
+
+
+async def sleep(library: str, seconds: float) -> None:
+    if library == "trio":
+        await trio.sleep(seconds)
+    else:
+        await asyncio.sleep(seconds)
+
+
+async def wait_briefly(library: str, event: asyncio.Event | trio.Event) -> None:
+    """Waits for `event`, failing after 5 seconds."""
+    if library == "trio":
+        with trio.fail_after(5):
+            await event.wait()
+    else:
+        await asyncio.wait_for(event.wait(), timeout=5)
+
+
 def boom() -> NoReturn:
     msg = "boom"
     raise ValueError(msg)
@@ -43,29 +68,29 @@ def boom() -> NoReturn:
 def pair(_first: object, _second: object) -> None: ...
 
 
-async def main(url: str) -> None:
-    started, closed = asyncio.Event(), asyncio.Event()
+async def main(library: str, url: str) -> None:
+    started, closed = new_event(library), new_event(library)
 
     async def body() -> AsyncIterator[bytes]:
         started.set()
         try:
             yield b"x"
-            await asyncio.Event().wait()
+            await new_event(library).wait()
         finally:
             closed.set()
 
     async with HTTPTransport() as transport:
         responses = [await transport.execute(Request("POST", url, content=body()))]
-        await asyncio.wait_for(started.wait(), timeout=5)
-        # The finished future holding the response can outlive the await, and a
-        # tokio thread releases its reference as a decref that pyo3 defers until
-        # its next call into Python. `gc` sees neither pending decrefs nor Rust
-        # owners, so compare reference counts with an object only a list holds.
+        await wait_briefly(library, started)
+        # The response can stay referenced after the await: a tokio thread
+        # releases its reference as a decref that pyo3 defers until its next
+        # call into Python. `gc` sees neither pending decrefs nor Rust owners,
+        # so compare reference counts with an object only a list holds.
         probe = [object()]
         extra = -1
         for _ in range(100):
-            await asyncio.sleep(0.01)
-            # Reading `status` is a pyo3 call, so it applies the deferred decrefs.
+            await sleep(library, 0.01)
+            # Reading `status` is a pyo3 call, so it applies deferred decrefs.
             assert responses[0].status == 200  # noqa: S101
             extra = sys.getrefcount(responses[0]) - sys.getrefcount(probe[0])
             if not extra:
@@ -78,13 +103,20 @@ async def main(url: str) -> None:
             pair(responses.pop(), boom())
         except ValueError:
             # The Drop cancelled the body task.
-            await asyncio.wait_for(closed.wait(), timeout=5)
+            await wait_briefly(library, closed)
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2 or sys.argv[1] not in LIBRARIES:
+        sys.exit(f"usage: {sys.argv[0]} {{{'|'.join(LIBRARIES)}}}")
+    library = sys.argv[1]
     sys.unraisablehook = record_unraisable
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    asyncio.run(main(f"http://127.0.0.1:{server.server_address[1]}/"))
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    if library == "trio":
+        trio.run(main, library, url)
+    else:
+        asyncio.run(main(library, url))
     assert not unraisables, unraisables  # noqa: S101
     print("ok", flush=True)  # noqa: T201

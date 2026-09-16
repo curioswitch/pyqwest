@@ -1,17 +1,18 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::sync::PyOnceLock;
 use pyo3::{prelude::*, IntoPyObjectExt as _};
-use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::asyncio::awaitable::{EmptyAwaitable, ValueAwaitable};
 use crate::asyncio::request::Request;
 use crate::asyncio::response::Response;
+use crate::asyncio::runtime::{into_awaitable, AsyncLibrary};
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
+use crate::shared::exception::without_pending_exception;
 use crate::shared::otel::{Instrumentation, Operation};
 use crate::shared::transport::{
     get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
@@ -163,33 +164,32 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3)?;
-        let mut response = Response::pending(py, self.constants.clone())?;
+        let library = AsyncLibrary::current(py, &self.constants)?;
+        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3, library)?;
+        let mut response = Response::pending(py, self.constants.clone(), library)?;
         let operation = self.instrumentation.start(py, &request.head)?;
         operation.inject(py, &mut request_rs)?;
-        let fut = future_into_py(py, {
-            let client = client.clone();
-            let operation = operation.clone();
-            async move {
-                let res = client
-                    .execute(request_rs)
-                    .await
-                    .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
-                operation.fill_response(&res);
-                response.fill(res).await;
-                Ok(response)
-            }
-        })?;
-        fut.call_method1(
-            &self.constants.add_done_callback,
-            (EndOperationCallback {
-                operation,
-                constants: self.constants.clone(),
-                request_iter_task,
-            }
-            .into_bound_py_any(py)?,),
-        )?;
-        Ok(fut)
+        let on_done =
+            EndOperationCallback::new(operation.clone(), self.constants.clone(), request_iter_task)
+                .into_bound_py_any(py)?;
+        into_awaitable(
+            py,
+            library,
+            &self.constants,
+            {
+                let client = client.clone();
+                async move {
+                    let res = client
+                        .execute(request_rs)
+                        .await
+                        .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                    operation.fill_response(&res);
+                    response.fill(res).await;
+                    Ok(response)
+                }
+            },
+            Some(on_done),
+        )
     }
 
     pub(super) fn do_execute<'py>(
@@ -203,34 +203,33 @@ impl HttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3)?;
-        let mut response = Response::pending(py, self.constants.clone())?;
+        let library = AsyncLibrary::current(py, &self.constants)?;
+        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3, library)?;
+        let mut response = Response::pending(py, self.constants.clone(), library)?;
         let operation = self.instrumentation.start(py, &request.head)?;
         operation.inject(py, &mut request_rs)?;
-        let fut = future_into_py(py, {
-            let client = client.clone();
-            let operation = operation.clone();
-            async move {
-                let res = client
-                    .execute(request_rs)
-                    .await
-                    .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
-                operation.fill_response(&res);
-                response.fill(res).await;
-                let full_response = response.into_full_response().await?;
-                Ok(full_response)
-            }
-        })?;
-        fut.call_method1(
-            &self.constants.add_done_callback,
-            (EndOperationCallback {
-                operation,
-                constants: self.constants.clone(),
-                request_iter_task,
-            }
-            .into_bound_py_any(py)?,),
-        )?;
-        Ok(fut)
+        let on_done =
+            EndOperationCallback::new(operation.clone(), self.constants.clone(), request_iter_task)
+                .into_bound_py_any(py)?;
+        into_awaitable(
+            py,
+            library,
+            &self.constants,
+            {
+                let client = client.clone();
+                async move {
+                    let res = client
+                        .execute(request_rs)
+                        .await
+                        .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                    operation.fill_response(&res);
+                    response.fill(res).await;
+                    let full_response = response.into_full_response().await?;
+                    Ok(full_response)
+                }
+            },
+            Some(on_done),
+        )
     }
 
     pub(super) fn py_default(py: Python<'_>) -> PyResult<Self> {
@@ -256,15 +255,36 @@ pub(crate) fn get_default_transport(py: Python<'_>) -> PyResult<Py<HttpTransport
 
 #[pyclass(module = "_pyqwest.async", frozen)]
 struct EndOperationCallback {
-    operation: Operation,
+    /// Taken by whichever ends it: the call, or `Drop` if no call came.
+    operation: Mutex<Option<Operation>>,
     constants: Constants,
     request_iter_task: Arc<ArcSwapOption<Py<PyAny>>>,
+}
+
+impl EndOperationCallback {
+    const fn new(
+        operation: Operation,
+        constants: Constants,
+        request_iter_task: Arc<ArcSwapOption<Py<PyAny>>>,
+    ) -> Self {
+        Self {
+            operation: Mutex::new(Some(operation)),
+            constants,
+            request_iter_task,
+        }
+    }
 }
 
 #[pymethods]
 impl EndOperationCallback {
     fn __call__(&self, py: Python<'_>, fut: &Bound<'_, PyAny>) -> PyResult<()> {
+        let operation = self
+            .operation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         let res = fut.call_method0(&self.constants.result);
+        let mut cancelled = Ok(());
         if let Some(task) = self.request_iter_task.swap(None) {
             let response = res
                 .as_ref()
@@ -276,10 +296,48 @@ impl EndOperationCallback {
                 Some(response) => response.get().set_request_iter_task(task),
                 None => {
                     // Response already failed, cancel the request iterator here.
-                    task.call_method0(py, &self.constants.cancel)?;
+                    cancelled = task.call_method0(py, &self.constants.cancel).map(drop);
                 }
             }
         }
-        self.operation.end(py, res.as_ref().err())
+        // End the operation even if the cancel failed, since Drop no longer can.
+        let ended = operation.map_or(Ok(()), |operation| operation.end(py, res.as_ref().err()));
+        match (ended, cancelled) {
+            (Err(end_err), Err(cancel_err)) => {
+                cancel_err.write_unraisable(py, Some(fut));
+                Err(end_err)
+            }
+            (ended, cancelled) => ended.and(cancelled),
+        }
+    }
+}
+
+impl Drop for EndOperationCallback {
+    fn drop(&mut self) {
+        let operation = self
+            .operation
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some(operation) = operation.take() else {
+            return;
+        };
+        // A done callback freed without being called still ends its operation,
+        // so the span closes and the active request count comes back down. That
+        // happens when the event loop or trio run ends before the request
+        // completes, leaving its outcome nowhere to go.
+        Python::attach(|py| {
+            without_pending_exception(py, || {
+                if let Some(task) = self.request_iter_task.swap(None) {
+                    let task = task.bind(py);
+                    if let Err(e) = task.call_method0(&self.constants.cancel_soon) {
+                        e.write_unraisable(py, Some(task));
+                    }
+                }
+                let err = PyRuntimeError::new_err("request ended without completing");
+                if let Err(e) = operation.end(py, Some(&err)) {
+                    e.write_unraisable(py, None);
+                }
+            });
+        });
     }
 }

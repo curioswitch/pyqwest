@@ -41,6 +41,7 @@ dev = [
   "maturin",
   "niquests[http3]",
   "opentelemetry-test-utils",
+  "outcome",
   "poethepoet",
   "psutil",
   "pytest",
@@ -49,6 +50,8 @@ dev = [
   "pytest-order",
   "pyvoy",
   "ruff",
+  "sniffio",
+  "trio",
   "trustme",
   "ty",
   "uvloop; sys_platform != 'win32'",
@@ -73,6 +76,9 @@ addopts = [
   "--benchmark-group-by=func,param:http_scheme,param:http_version,param:content_size",
 ]
 testpaths = ["tests"]
+markers = [
+  "asyncio_only: the test exercises code that calls asyncio directly, so it runs on no other backend",
+]
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true

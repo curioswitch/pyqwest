@@ -14,10 +14,9 @@ use pyo3::{
     },
     Bound, IntoPyObject as _, Py, PyAny, PyErr, PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::runtime::RuntimeMetrics;
 
-use crate::shared::{constants::Constants, request::RequestHead};
+use crate::shared::{constants::Constants, request::RequestHead, runtime::get_runtime};
 
 struct InstrumentationInner {
     tracer: Py<PyAny>,

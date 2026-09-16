@@ -5,7 +5,6 @@ use pyo3::{
     types::{PyAnyMethods as _, PyIterator, PyString},
     Borrowed, Bound, FromPyObject, IntoPyObjectExt as _, Py, PyAny, PyErr, PyResult, Python,
 };
-use pyo3_async_runtimes::tokio::get_runtime;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -17,6 +16,7 @@ use crate::{
             maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
             RequestStreamError, RequestStreamResult, StartOnPoll,
         },
+        runtime::get_runtime,
     },
     sync::timeout::get_timeout,
 };
