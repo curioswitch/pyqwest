@@ -1,6 +1,5 @@
 use std::any::Any;
 
-#[cfg(Py_3_12)]
 use pyo3::ffi;
 use pyo3::Python;
 
