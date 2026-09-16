@@ -2,8 +2,7 @@
 
 These APIs work in async applications on asyncio, including asyncio-compatible event loops
 such as uvloop, or on Trio, so `anyio` works on either backend. Trio support requires Trio
-0.22 or later, and 0.25 or later on Python 3.13 and later, where older releases fail to
-import. Each request detects asyncio or Trio when it starts, and its response body is read
+0.22 or later. Each request detects asyncio or Trio when it starts, and its response body is read
 on the same library. Any other async library raises `RuntimeError`.
 
 `pyqwest.httpx.AsyncPyqwestTransport` and `pyqwest.testing.ASGITransport` call asyncio on
