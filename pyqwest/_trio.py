@@ -75,6 +75,8 @@ def start_request(
     not anything awaits, as an asyncio done callback does.
     """
     token = trio.lowlevel.current_trio_token()
+    # Need to manually propagate context vars into deliver for a system task.
+    context = contextvars.copy_context()
     done = trio.Event()
     outcome: list[tuple[object, BaseException | None]] = []
     # The exception that cancelled the wait, which then aborted the request.
@@ -99,13 +101,15 @@ def start_request(
                 error_ = error
             value_ = value if error_ is None else None
             outcome.append((value_, error_))
-            if on_done is not None:
-                tb = error_.__traceback__ if error_ is not None else None
-                _call_on_done(on_done, Completed(value_, error_))
-                if error_ is not None:
-                    # on_done reads the error by raising it, which adds frames.
-                    error_.__traceback__ = tb
-            done.set()
+            try:
+                if on_done is not None:
+                    tb = error_.__traceback__ if error_ is not None else None
+                    context.run(_call_on_done, on_done, Completed(value_, error_))
+                    if error_ is not None:
+                        # on_done reads the error by raising it, which adds frames.
+                        error_.__traceback__ = tb
+            finally:
+                done.set()
 
         # The trio run already finished; nobody is waiting.
         with contextlib.suppress(trio.RunFinishedError):

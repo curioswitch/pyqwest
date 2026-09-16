@@ -17,7 +17,6 @@ use std::{
 use futures_util::FutureExt as _;
 use pyo3::{
     exceptions::PyRuntimeError,
-    panic::PanicException,
     pyclass, pymethods,
     sync::{MutexExt as _, PyOnceLock},
     types::{PyAnyMethods as _, PyModule},
@@ -307,7 +306,7 @@ fn report<T>(
 
 /// The error for a panic in a request task.
 fn panic_error(payload: &(dyn Any + Send)) -> PyErr {
-    PanicException::new_err(format!("rust future panicked: {}", panic_message(payload)))
+    PyRuntimeError::new_err(format!("rust future panicked: {}", panic_message(payload)))
 }
 
 /// asyncio's done callback: a Future that asyncio cancelled aborts the request.

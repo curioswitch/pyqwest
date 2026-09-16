@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import gc
 import inspect
 import logging
@@ -84,6 +85,24 @@ def test_error_keeps_its_traceback_past_done_callback() -> None:
     with pytest.raises(ValueError, match="request failed") as info:
         run_trio(main)
     assert "result" not in [entry.name for entry in info.traceback]
+
+
+def test_done_callback_sees_caller_context() -> None:
+    request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id")
+    seen: list[str] = []
+
+    async def main() -> None:
+        request_id.set("abc")
+        completion, awaitable = start_request(
+            FakeAbort(), lambda _: seen.append(request_id.get("unset"))
+        )
+        # tokio reports from one of its threads, and trio runs `deliver` in its
+        # own context; the done callback must still see the caller's.
+        threading.Thread(target=completion, args=("value", None, False)).start()
+        await awaitable
+
+    run_trio(main)
+    assert seen == ["abc"]
 
 
 def test_failing_done_callback_is_logged(caplog: pytest.LogCaptureFixture) -> None:
