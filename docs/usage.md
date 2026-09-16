@@ -4,8 +4,8 @@ icon: material/hammer-wrench
 
 # Usage
 
-The entrypoint to pyqwest is [`Client`](/api/#pyqwest.Client) for asyncio and Trio
-applications and [`SyncClient`](/api/#pyqwest.SyncClient) for synchronous applications.
+The entrypoint to pyqwest is [`Client`](/api/#pyqwest.Client) for async applications and
+[`SyncClient`](/api/#pyqwest.SyncClient) for synchronous applications.
 
 === "async"
 
