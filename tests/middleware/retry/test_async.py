@@ -3,16 +3,21 @@ from __future__ import annotations
 import sys
 from email.utils import formatdate
 from time import monotonic, time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
 
-from pyqwest import Client, ReadError, Request, Response
+from pyqwest import Client, ReadError, Request, Response, WriteError
 from pyqwest import Transport as BaseTransport
 from pyqwest.middleware.retry import RetryMode, RetryTransport
+from pyqwest.middleware.retry._async import RetryingRequestContent
 from pyqwest.testing import ASGITransport
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from anyio.abc import TaskGroup
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, Scope
 
 
@@ -221,6 +226,221 @@ async def test_retry_content_iterator(app: App, client: Client) -> None:
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
+
+
+@pytest.mark.anyio
+async def test_content_iterator_error_not_retried(app: App, client: Client) -> None:
+    async def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    # The ASGI transport reports the body's error as a 500 from the app. A retry
+    # would send only the content read before the error, and succeed.
+    app.status = [200]
+    res = await client.put("http://localhost", content=content())
+    assert res.status == 500
+    assert app.count == 1
+
+
+@pytest.mark.anyio
+async def test_transport_body_error_not_retried() -> None:
+    class Transport(BaseTransport):
+        def __init__(self) -> None:
+            self.count = 0
+
+        async def execute(self, request: Request) -> Response:
+            self.count += 1
+            assert not isinstance(request.content, bytes)
+            try:
+                async for _ in request.content:
+                    pass
+            except ValueError as e:
+                msg = "Request failed"
+                raise WriteError(msg) from e
+            return Response(status=200, content=b"")
+
+    async def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    transport = Transport()
+    client = Client(
+        RetryTransport(transport, initial_interval=0.0, randomization_factor=0.0)
+    )
+    with pytest.raises(WriteError):
+        await client.put("http://localhost", content=content())
+    assert transport.count == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["response", "error"])
+async def test_content_read_in_progress_not_retried(outcome: str) -> None:
+    reading = anyio.Event()
+
+    async def content():
+        yield b"Hello "
+        reading.set()
+        await anyio.sleep_forever()
+        yield b"world!"
+
+    async def read_body(body: AsyncIterator[bytes]) -> None:
+        async for _ in body:
+            pass
+
+    class Transport(BaseTransport):
+        def __init__(self, tg: TaskGroup) -> None:
+            self.count = 0
+            self._tg = tg
+
+        async def execute(self, request: Request) -> Response:
+            self.count += 1
+            if self.count > 1:
+                return Response(status=200, content=b"")
+            assert not isinstance(request.content, bytes)
+            # A server can respond, or the connection fail, before the whole body
+            # is read.
+            self._tg.start_soon(read_body, request.content)
+            await reading.wait()
+            if outcome == "error":
+                msg = "Connection reset"
+                raise ReadError(msg)
+            return Response(status=503, content=b"")
+
+    async with anyio.create_task_group() as tg:
+        transport = Transport(tg)
+        client = Client(
+            RetryTransport(transport, initial_interval=0.0, randomization_factor=0.0)
+        )
+        if outcome == "error":
+            with pytest.raises(ReadError, match="Connection reset"):
+                await client.put("http://localhost", content=content())
+        else:
+            res = await client.put("http://localhost", content=content())
+            assert res.status == 503
+        tg.cancel_scope.cancel()
+    assert transport.count == 1
+
+
+@pytest.mark.anyio
+async def test_retrying_content_cancelled_mid_read() -> None:
+    # An abandoned attempt is cancelled, possibly while it is reading the
+    # content, which then cannot finish.
+    reading = anyio.Event()
+
+    async def content():
+        yield b"Hello "
+        reading.set()
+        await anyio.sleep_forever()
+        yield b"world!"
+
+    retrying = RetryingRequestContent(content())
+
+    async def read() -> None:
+        async for _ in retrying.get():
+            pass
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(read)
+        await reading.wait()
+        tg.cancel_scope.cancel()
+    assert not retrying.retryable
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        await anext(retrying.get())
+
+
+@pytest.mark.anyio
+async def test_retrying_content_read_in_progress() -> None:
+    reading, resume = anyio.Event(), anyio.Event()
+
+    async def content():
+        yield b"Hello "
+        reading.set()
+        await resume.wait()
+        yield b"world!"
+
+    retrying = RetryingRequestContent(content())
+    chunks: list[bytes] = []
+
+    async def read() -> None:
+        chunks.extend([chunk async for chunk in retrying.get()])
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(read)
+        await reading.wait()
+        assert not retrying.retryable
+        retry = retrying.get()
+        assert await anext(retry) == b"Hello "
+        with pytest.raises(RuntimeError, match="already being read"):
+            await anext(retry)
+        resume.set()
+    assert retrying.retryable
+    assert chunks == [b"Hello ", b"world!"]
+    assert [chunk async for chunk in retrying.get()] == [b"Hello world!"]
+
+
+@pytest.mark.anyio
+async def test_retrying_content_error() -> None:
+    async def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    retrying = RetryingRequestContent(content())
+    with pytest.raises(ValueError, match="boom"):
+        async for _ in retrying.get():
+            pass
+    assert not retrying.retryable
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        await anext(retrying.get())
+
+
+@pytest.mark.anyio
+async def test_retrying_content_chunk_not_bytes() -> None:
+    async def content():
+        yield b"Hello "
+        yield cast("bytes", "world")
+        yield b"!"
+
+    retrying = RetryingRequestContent(content())
+    with pytest.raises(TypeError):
+        async for _ in retrying.get():
+            pass
+    assert not retrying.retryable
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        await anext(retrying.get())
+
+
+@pytest.mark.anyio
+async def test_retrying_content_error_after_replay() -> None:
+    async def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    retrying = RetryingRequestContent(content())
+    first, retry = retrying.get(), retrying.get()
+    assert await anext(first) == b"Hello "
+    assert await anext(retry) == b"Hello "
+    with pytest.raises(ValueError, match="boom"):
+        await anext(first)
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        await anext(retry)
+
+
+@pytest.mark.anyio
+async def test_retrying_content_closed_between_chunks() -> None:
+    async def content():
+        yield b"Hello "
+        yield b"world!"
+
+    retrying = RetryingRequestContent(content())
+    attempt = retrying.get()
+    assert await anext(attempt) == b"Hello "
+    await attempt.aclose()
+    assert retrying.retryable
+    assert [chunk async for chunk in retrying.get()] == [b"Hello ", b"world!"]
 
 
 @pytest.mark.anyio

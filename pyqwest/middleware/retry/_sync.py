@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from http import HTTPStatus
-from threading import Event
+from threading import Event, Lock
 from typing import TYPE_CHECKING, final
 
 from pyqwest import HTTPHeaderName, ReadError, SyncTransport
@@ -18,7 +18,7 @@ from ._shared import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Generator, Iterator
 
 
 class SyncRetryTransport(SyncTransport):
@@ -90,6 +90,7 @@ class SyncRetryTransport(SyncTransport):
 
         content = request.content
         content_started = Event()
+        retrying_content: RetryingRequestContent | None = None
         unbuffered_stream = (
             not isinstance(content, bytes) and retry_mode == RetryMode.UNBUFFERED
         )
@@ -138,6 +139,9 @@ class SyncRetryTransport(SyncTransport):
                     if unbuffered_stream and content_started.is_set():
                         # I/O happened for an unbuffered stream, can't retry.
                         raise
+                    if retrying_content is not None and not retrying_content.retryable:
+                        # A retry could not send the whole content.
+                        raise
                     resp = e
                     retries += 1
                     self._check_retries(retries, e)
@@ -162,6 +166,9 @@ class SyncRetryTransport(SyncTransport):
 
         while True:
             if not self.should_retry_response(request, resp):
+                break
+            if retrying_content is not None and not retrying_content.retryable:
+                # A retry could not send the whole content.
                 break
             if isinstance(resp, SyncResponse):
                 resp.close()
@@ -229,10 +236,42 @@ class RetryingRequestContent:
     def __init__(self, content: Iterator[bytes]) -> None:
         self._content = content
         self._buffer = bytearray()
+        self._done = False
+        self._failed = False
+        # An abandoned attempt's body can still be reading on its own thread.
+        self._lock = Lock()
 
-    def get(self) -> Iterator[bytes]:
-        if self._buffer:
-            yield bytes(self._buffer)
-        for chunk in self._content:
-            self._buffer.extend(chunk)
+    @property
+    def retryable(self) -> bool:
+        """Whether a retry can send the whole content.
+
+        False after reading the content has raised, because the rest of it is
+        lost.
+        """
+        return not self._failed
+
+    def get(self) -> Generator[bytes, None, None]:
+        # Attempts share the source, so each replays what the others have read.
+        sent = 0
+        while True:
+            with self._lock:
+                if self._failed:
+                    msg = "Request content cannot be retried after reading it failed"
+                    raise RuntimeError(msg)
+                if sent < len(self._buffer):
+                    chunk = bytes(memoryview(self._buffer)[sent:])
+                elif self._done:
+                    return
+                else:
+                    try:
+                        chunk = next(self._content)
+                        self._buffer.extend(chunk)
+                    except StopIteration:
+                        self._done = True
+                        return
+                    except BaseException:
+                        # Includes a chunk that cannot be buffered.
+                        self._failed = True
+                        raise
+            sent += len(chunk)
             yield chunk
