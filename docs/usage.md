@@ -416,3 +416,19 @@ The log records are emitted directly from the Rust HTTP transports with no overh
 when neither logger is enabled for `DEBUG`. Requests that fail without a response,
 such as connection errors, appear only on the `pyqwest` logger, keeping the access
 log to requests with responses like httpx.
+
+## Worker threads
+
+Requests are driven by a process-wide [tokio](https://tokio.rs) runtime, built on
+first use with one worker thread per available core. You may want to cap the
+number of request worker threads, for example when running in a container
+sharing a node without setting CPU limits. Notably, container CPU _requests_ 
+don't enforce elastic limits and a worker will be spawned for each CPU on the
+shared node. This may cause excessive memory usage.
+
+Set the `TOKIO_WORKER_THREADS` environment variable to use a custom value of
+workers. The value must be numeric.
+
+```bash
+TOKIO_WORKER_THREADS=4 python app.py
+```
