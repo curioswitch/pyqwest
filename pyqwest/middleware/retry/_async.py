@@ -127,6 +127,7 @@ class RetryTransport(Transport):
         resp: Response | Exception
 
         retries = 0
+        returned = False
         # Retry connection errors regardless of retry mode.
         try:
             while True:
@@ -157,22 +158,14 @@ class RetryTransport(Transport):
                     await asyncio.sleep(wait_time)
                 else:
                     break
-        except BaseException:
-            if unbuffered_stream and not content_started:
-                await _close_content()
-            if retrying_content is not None:
-                retrying_content.finish(abandoned=True)
-            raise
 
-        # Don't retry responses with a streaming request when we can't buffer.
-        if unbuffered_stream:
-            if not content_started:
-                await _close_content()
-            if isinstance(resp, Exception):
-                raise resp
-            return resp
+            # Don't retry responses with a streaming request when we can't buffer.
+            if unbuffered_stream:
+                if isinstance(resp, Exception):
+                    raise resp
+                returned = True
+                return resp
 
-        try:
             while True:
                 if not self.should_retry_response(request, resp):
                     break
@@ -213,16 +206,16 @@ class RetryTransport(Transport):
                     )
                 except Exception as e:
                     resp = e
-        except BaseException:
-            if retrying_content is not None:
-                retrying_content.finish(abandoned=True)
-            raise
 
-        if retrying_content is not None:
-            retrying_content.finish(abandoned=isinstance(resp, Exception))
-        if isinstance(resp, Exception):
-            raise resp
-        return resp
+            if isinstance(resp, Exception):
+                raise resp
+            returned = True
+            return resp
+        finally:
+            if unbuffered_stream and not content_started:
+                await _close_content()
+            if retrying_content is not None:
+                retrying_content.finish(abandoned=not returned)
 
     def should_retry_request(self, request: Request) -> bool | RetryMode:
         return default_should_retry_request(request.method)
@@ -381,6 +374,9 @@ class RetryingRequestContent:
                 raise
             # The attempts that are waiting raise it. Nothing awaits this task.
         finally:
+            # The reader is exiting: cancelling it now would interrupt the
+            # content's cleanup.
+            self._stopped = True
             if not self._done:
                 # Whatever ended the reader, nothing will read the rest.
                 self._failed = True

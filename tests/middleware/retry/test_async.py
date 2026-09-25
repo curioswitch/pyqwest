@@ -652,7 +652,7 @@ async def test_retrying_content_finished_mid_read(last_attempt: str) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("stopped", ["mid read", "between reads"])
+@pytest.mark.parametrize("stopped", ["mid read", "between reads", "after failed read"])
 async def test_retrying_content_cleanup_not_interrupted(stopped: str) -> None:
     reading = anyio.Event()
     events: list[str] = []
@@ -663,6 +663,9 @@ async def test_retrying_content_cleanup_not_interrupted(stopped: str) -> None:
             if stopped == "mid read":
                 reading.set()
                 await anyio.sleep_forever()
+            if stopped == "after failed read":
+                # A chunk that cannot be buffered fails the read.
+                yield cast("bytes", "world!")
             yield b"world!"
         finally:
             try:
@@ -678,6 +681,9 @@ async def test_retrying_content_cleanup_not_interrupted(stopped: str) -> None:
     waiting = asyncio.create_task(anext(attempt))
     if stopped == "mid read":
         await reading.wait()
+    elif stopped == "after failed read":
+        with pytest.raises(TypeError):
+            await waiting
     else:
         await waiting
     # The last attempt's end and its collection stop the reading as well.
