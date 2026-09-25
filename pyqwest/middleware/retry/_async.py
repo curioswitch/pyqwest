@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import weakref
 from http import HTTPStatus
 from typing import TYPE_CHECKING, final
 
 from pyqwest import HTTPHeaderName, ReadError, Transport
 from pyqwest._pyqwest import Request, Response, _Backoff
+from pyqwest._runtime import current_runtime
 
 from ._shared import (
     RetryMode,
@@ -19,6 +18,8 @@ from ._shared import (
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Callable
+
+    from pyqwest._runtime import Event, Runtime, Task
 
 
 class RetryTransport(Transport):
@@ -81,6 +82,7 @@ class RetryTransport(Transport):
         if retry_mode is None:
             return await self._transport.execute(request)
 
+        runtime = current_runtime()
         backoff = _Backoff(
             self._initial_interval,
             self._randomization_factor,
@@ -121,7 +123,7 @@ class RetryTransport(Transport):
 
             get_content = _unbuffered_content
         else:
-            retrying_content = RetryingRequestContent(content)
+            retrying_content = RetryingRequestContent(content, runtime)
             get_content = retrying_content.get
 
         resp: Response | Exception
@@ -155,7 +157,7 @@ class RetryTransport(Transport):
                     wait_time = backoff.next_backoff()
                     if wait_time is None:
                         raise
-                    await asyncio.sleep(wait_time)
+                    await runtime.sleep(wait_time)
                 else:
                     break
 
@@ -193,7 +195,7 @@ class RetryTransport(Transport):
                 if wait_time is None:
                     break
 
-                await asyncio.sleep(wait_time)
+                await runtime.sleep(wait_time)
 
                 try:
                     resp = await self._transport.execute(
@@ -243,18 +245,26 @@ class RetryTransport(Transport):
 class RetryingRequestContent:
     """Request content that every attempt can replay.
 
-    A task reads the source for the whole request so that an attempt can be
-    canceled without caneling the read.
+    A task reads the source for the whole request, a chunk each time an
+    attempt asks for one, so that cancelling an attempt does not cancel a read
+    that the next attempt needs.
     """
 
-    def __init__(self, content: AsyncIterator[bytes]) -> None:
+    def __init__(
+        self, content: AsyncIterator[bytes], runtime: Runtime | None = None
+    ) -> None:
         self._content = content
+        self._runtime = runtime if runtime is not None else current_runtime()
         self._buffer = bytearray()
         self._done = False
         self._failed = False
-        self._reader: asyncio.Task[None] | None = None
-        self._read_wanted = asyncio.Event()
-        self._waiters: list[asyncio.Future[None]] = []
+        self._reader: Task | None = None
+        self._read_wanted: Event = self._runtime.new_event()
+        # Set when the wanted read ends. A read that raised leaves its error for
+        # the attempts that waited on it.
+        self._read_done: Event = self._runtime.new_event()
+        self._read_error: Exception | None = None
+        self._reading = False
         self._attempts = 0
         self._attempt_ended = False
         self._final = False
@@ -262,17 +272,21 @@ class RetryingRequestContent:
 
     @property
     def retryable(self) -> bool:
-        """Whether a retry can send the whole content, i.e. the request itself hasn't failed."""
+        """Whether a retry can send the whole content.
+
+        False once reading the content has raised or has been stopped, because
+        the rest of it is lost.
+        """
         return not self._failed
 
     def get(self) -> AsyncGenerator[bytes, None]:
-        loop = asyncio.get_running_loop()
         self._attempts += 1
         self._attempt_ended = False
         body = self._replay_and_read(self._attempts)
         # A body that is dropped before it is read never runs its finally block.
+        # The transport can drop it on a thread of its own.
         finalizer = weakref.finalize(
-            body, _call_in_loop, loop, self._end_attempt, self._attempts
+            body, self._runtime.call_soon_threadsafe, self._end_attempt, self._attempts
         )
         finalizer.atexit = False
         return body
@@ -293,6 +307,9 @@ class RetryingRequestContent:
         try:
             while True:
                 if self._failed:
+                    # An abandoned attempt's body raises its cancellation
+                    # instead, whether or not it has run yet.
+                    await self._runtime.checkpoint()
                     msg = "Request content cannot be retried after reading it failed"
                     raise RuntimeError(msg)
                 if sent < len(self._buffer):
@@ -303,6 +320,8 @@ class RetryingRequestContent:
                     return
                 else:
                     await self._next_read()
+                    if self._read_error is not None:
+                        raise self._read_error
         finally:
             self._end_attempt(attempt)
 
@@ -322,32 +341,31 @@ class RetryingRequestContent:
             self._failed = True
         if self._reader is not None:
             self._reader.cancel()
-        # A task that is cancelled before its first step runs none of its code,
-        # so the reader cannot be left to end the waits.
-        self._end_read(asyncio.CancelledError())
+        # An asyncio task that is cancelled before its first step runs none of
+        # its code, so the reader cannot be left to end the wait.
+        self._end_read(None)
 
-    def _next_read(self) -> asyncio.Future[None]:
-        # Each attempt waits on a future of its own, so that cancelling the
-        # attempt cancels neither the read nor another attempt's wait.
-        loop = asyncio.get_running_loop()
-        waiter = loop.create_future()
-        # A wait that is already listed means a read is wanted or under way,
-        # possibly for an attempt that has since been abandoned.
-        if not self._waiters:
+    async def _next_read(self) -> None:
+        # Attempts wait on an event, so that cancelling one cancels neither the
+        # read nor another attempt's wait. A read that is already wanted or
+        # under way, possibly for an attempt that has since been abandoned,
+        # serves every attempt that waits.
+        if not self._reading:
+            self._reading = True
+            self._read_done = self._runtime.new_event()
             self._read_wanted.set()
-        self._waiters.append(waiter)
-        if self._reader is None:
-            self._reader = loop.create_task(
-                self._read_when_wanted(), name="pyqwest retry content reader"
-            )
-        return waiter
+            if self._reader is None:
+                self._reader = self._runtime.spawn(
+                    self._read_when_wanted, "pyqwest retry content reader"
+                )
+        await self._read_done.wait()
 
     async def _read_when_wanted(self) -> None:
         error: BaseException | None = None
         try:
             while True:
                 await self._read_wanted.wait()
-                self._read_wanted.clear()
+                self._read_wanted = self._runtime.new_event()
                 await self._read()
                 # Content can catch the cancellation and return a chunk.
                 if self._done or self._stopped:
@@ -370,7 +388,8 @@ class RetryingRequestContent:
             # garbage collector, in another task.
             aclose = getattr(self._content, "aclose", None)
             if aclose is not None and not self._done:
-                await aclose()
+                with self._runtime.shield():
+                    await aclose()
 
     async def _read(self) -> None:
         try:
@@ -384,22 +403,7 @@ class RetryingRequestContent:
             raise
 
     def _end_read(self, error: BaseException | None) -> None:
-        waiters, self._waiters = self._waiters, []
-        for waiter in waiters:
-            if waiter.done():
-                continue
-            if error is None:
-                waiter.set_result(None)
-            elif isinstance(error, asyncio.CancelledError):
-                waiter.cancel()
-            else:
-                waiter.set_exception(error)
-
-
-def _call_in_loop(
-    loop: asyncio.AbstractEventLoop, callback: Callable[[int], None], attempt: int
-) -> None:
-    # The transport can drop a body on a thread of its own. Calling into a
-    # closed loop raises, and by then the reader cannot run either.
-    with contextlib.suppress(RuntimeError):
-        loop.call_soon_threadsafe(callback, attempt)
+        self._reading = False
+        if isinstance(error, Exception):
+            self._read_error = error
+        self._read_done.set()

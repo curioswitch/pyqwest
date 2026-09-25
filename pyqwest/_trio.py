@@ -26,8 +26,8 @@ if sys.version_info < (3, 11):
     from exceptiongroup import BaseExceptionGroup
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-    from typing import TypeAlias
+    from collections.abc import Awaitable, Callable, Coroutine
+    from typing import Any, TypeAlias
 
     # (value, error, cancelled) — one of the three describes the outcome.
     Completion: TypeAlias = Callable[[object, BaseException | None, bool], None]
@@ -156,7 +156,11 @@ class _ScopeHandle:
             self._token.run_sync_soon(self._scope.cancel)
 
 
-def spawn_pump(fn: Callable[..., Awaitable[None]], *args: object) -> PumpHandle:
+def spawn_pump(
+    fn: Callable[..., Awaitable[None]],
+    *args: object,
+    name: str = "pyqwest request body",
+) -> PumpHandle:
     """Start `fn(*args)` as a system task with the caller's context.
 
     The request body can stream after `execute()` returns (full-duplex
@@ -181,7 +185,38 @@ def spawn_pump(fn: Callable[..., Awaitable[None]], *args: object) -> PumpHandle:
             except BaseException:
                 _logger.exception("Exception in request body task")
 
-    trio.lowlevel.spawn_system_task(
-        run, name="pyqwest request body", context=contextvars.copy_context()
-    )
+    trio.lowlevel.spawn_system_task(run, name=name, context=contextvars.copy_context())
     return _ScopeHandle(trio.lowlevel.current_trio_token(), scope)
+
+
+class TrioRuntime:
+    """`pyqwest._runtime.Runtime` under trio."""
+
+    __slots__ = ("_token",)
+
+    def __init__(self) -> None:
+        self._token = trio.lowlevel.current_trio_token()
+
+    async def sleep(self, seconds: float) -> None:
+        await trio.sleep(seconds)
+
+    async def checkpoint(self) -> None:
+        await trio.lowlevel.checkpoint()
+
+    def new_event(self) -> trio.Event:
+        return trio.Event()
+
+    def spawn(
+        self, fn: Callable[[], Coroutine[Any, Any, None]], name: str
+    ) -> PumpHandle:
+        return spawn_pump(fn, name=name)
+
+    def call_soon_threadsafe(
+        self, callback: Callable[..., None], *args: object
+    ) -> None:
+        with contextlib.suppress(trio.RunFinishedError):
+            self._token.run_sync_soon(callback, *args)
+
+    def shield(self) -> trio.CancelScope:
+        # Cancellation is level-triggered: cleanup after it runs only shielded.
+        return trio.CancelScope(shield=True)
