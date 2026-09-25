@@ -15,7 +15,7 @@ brotli = "9.0.0"
 bytes = "1.12.1"
 errors = "0.1.0"
 futures-core = "0.3.34"
-futures-util = { version = "0.3.32", default-features = false, features = ["std"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 h2 = "0.4.19"
 h3 = "0.0.8"
 http = "1.5.0"
