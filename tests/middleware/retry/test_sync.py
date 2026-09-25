@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from email.utils import formatdate
+from threading import Event, Lock
 from time import monotonic, time
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from pyqwest import ReadError, SyncClient, SyncRequest, SyncResponse, SyncTransport
+from pyqwest import (
+    ReadError,
+    SyncClient,
+    SyncRequest,
+    SyncResponse,
+    SyncTransport,
+    WriteError,
+)
 from pyqwest.middleware.retry import RetryMode, SyncRetryTransport
+from pyqwest.middleware.retry._sync import RetryingRequestContent
 from pyqwest.testing import WSGITransport
 
 if TYPE_CHECKING:
@@ -206,6 +216,156 @@ def test_retry_content_iterator(app: App, client: SyncClient) -> None:
     assert res.status == 200
     assert app.count == 2
     assert app.read_content == b"Hello world!"
+
+
+def test_content_iterator_error_not_retried(app: App, client: SyncClient) -> None:
+    def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    # The WSGI transport reports the body's error as a 500 from the app. A retry
+    # would send only the content read before the error, and succeed.
+    app.status = [200]
+    res = client.put("http://localhost", content=content())
+    assert res.status == 500
+    assert app.count == 1
+
+
+def test_transport_body_error_not_retried() -> None:
+    class Transport(SyncTransport):
+        def __init__(self) -> None:
+            self.count = 0
+
+        def execute_sync(self, request: SyncRequest) -> SyncResponse:
+            self.count += 1
+            try:
+                for _ in request.content:
+                    pass
+            except ValueError as e:
+                msg = "Request failed"
+                raise WriteError(msg) from e
+            return SyncResponse(status=200, content=b"")
+
+    def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    transport = Transport()
+    client = SyncClient(
+        SyncRetryTransport(transport, initial_interval=0.0, randomization_factor=0.0)
+    )
+    with pytest.raises(WriteError):
+        client.put("http://localhost", content=content())
+    assert transport.count == 1
+
+
+def test_retrying_content_error() -> None:
+    def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    retrying = RetryingRequestContent(content())
+    with pytest.raises(ValueError, match="boom"):
+        list(retrying.get())
+    assert not retrying.retryable
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        next(retrying.get())
+
+
+def test_retrying_content_chunk_not_bytes() -> None:
+    def content():
+        yield b"Hello "
+        yield cast("bytes", "world")
+        yield b"!"
+
+    retrying = RetryingRequestContent(content())
+    with pytest.raises(TypeError):
+        list(retrying.get())
+    assert not retrying.retryable
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        next(retrying.get())
+
+
+def test_retrying_content_error_after_replay() -> None:
+    def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    retrying = RetryingRequestContent(content())
+    first, retry = retrying.get(), retrying.get()
+    assert next(first) == b"Hello "
+    assert next(retry) == b"Hello "
+    with pytest.raises(ValueError, match="boom"):
+        next(first)
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        next(retry)
+
+
+def test_retrying_content_read_by_abandoned_attempt() -> None:
+    reading, resume, contended = Event(), Event(), Event()
+
+    class ContendedLock:
+        """Reports when a thread has to wait for the lock."""
+
+        def __init__(self) -> None:
+            self._lock = Lock()
+
+        def __enter__(self) -> None:
+            if not self._lock.acquire(blocking=False):
+                contended.set()
+                self._lock.acquire()
+
+        def __exit__(self, *_: object) -> None:
+            self._lock.release()
+
+    class Content:
+        """Not a generator, so a concurrent read doesn't raise."""
+
+        def __init__(self) -> None:
+            self._chunks = [b"Hello ", b"world", b"!"]
+
+        def __iter__(self) -> Content:
+            return self
+
+        def __next__(self) -> bytes:
+            if len(self._chunks) == 2:
+                reading.set()
+                assert resume.wait(5)
+            if not self._chunks:
+                raise StopIteration
+            return self._chunks.pop(0)
+
+    retrying = RetryingRequestContent(Content())
+    retrying._lock = cast("Lock", ContendedLock())
+    abandoned = retrying.get()
+    assert next(abandoned) == b"Hello "
+    # An abandoned attempt's body keeps reading on its own thread.
+    with ThreadPoolExecutor(2) as pool:
+        abandoned_read = pool.submit(next, abandoned)
+        assert reading.wait(5)
+        retry = pool.submit(lambda: b"".join(retrying.get()))
+        # The retry waits for the abandoned read before it replays anything.
+        assert contended.wait(5)
+        resume.set()
+        assert abandoned_read.result(5) == b"world"
+        assert retry.result(5) == b"Hello world!"
+
+
+def test_retrying_content_closed_between_chunks() -> None:
+    def content():
+        yield b"Hello "
+        yield b"world!"
+
+    retrying = RetryingRequestContent(content())
+    attempt = retrying.get()
+    assert next(attempt) == b"Hello "
+    attempt.close()
+    assert retrying.retryable
+    assert list(retrying.get()) == [b"Hello ", b"world!"]
 
 
 @pytest.mark.parametrize(
