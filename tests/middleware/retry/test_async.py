@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, cast
 import anyio
 import anyio.lowlevel
 import pytest
+import sniffio
+import trio
+from anyio.abc import SocketAttribute
+from anyio.streams.buffered import BufferedByteReceiveStream
 
 from pyqwest import Client, HTTPTransport, ReadError, Request, Response, WriteError
 from pyqwest import Transport as BaseTransport
@@ -21,12 +25,18 @@ from pyqwest.testing import ASGITransport
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from anyio.abc import TaskGroup
+    from anyio.abc import SocketStream, TaskGroup
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, Scope
 
 
-# RetryTransport waits between attempts with asyncio.sleep.
-pytestmark = pytest.mark.asyncio_only
+def living_tasks() -> int:
+    if sniffio.current_async_library() == "trio":
+        return trio.lowlevel.current_statistics().tasks_living
+    return len(asyncio.all_tasks())
+
+
+def cancelled_name() -> str:
+    return anyio.get_cancelled_exc_class().__name__
 
 
 class App:
@@ -93,7 +103,8 @@ class ConfiguredRetryTransport(RetryTransport):
         return self._mode
 
 
-@pytest.fixture
+# The ASGI testing transport runs only on asyncio.
+@pytest.fixture(params=[pytest.param("asgi", marks=pytest.mark.asyncio_only)])
 def app():
     return App()
 
@@ -376,25 +387,28 @@ async def test_content_read_in_progress_retried(outcome: str) -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize("outcome", ["response", "reset"])
 async def test_http_attempt_fails_before_content_read(outcome: str) -> None:
-    reading, resume = asyncio.Event(), asyncio.Event()
+    reading, resume = anyio.Event(), anyio.Event()
     requests: list[bytes] = []
 
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        await reader.readuntil(b"\r\n\r\n")
-        if not requests:
-            # Unread content would turn the response into a reset.
-            requests.append(await reader.readuntil(b"Hello \r\n"))
-            await reading.wait()
-            if outcome == "reset":
-                writer.transport.abort()
-                return
-            writer.write(b"HTTP/1.1 503 X\r\ncontent-length: 0\r\n\r\n")
-        else:
-            resume.set()
-            requests.append(await reader.readuntil(b"\r\n0\r\n\r\n"))
-            writer.write(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
-        await writer.drain()
-        writer.close()
+    async def handle(stream: SocketStream) -> None:
+        async with stream:
+            buffered = BufferedByteReceiveStream(stream)
+
+            async def read_through(delimiter: bytes) -> bytes:
+                return await buffered.receive_until(delimiter, 65536) + delimiter
+
+            await read_through(b"\r\n\r\n")
+            if not requests:
+                # Unread content would turn the response into a reset.
+                requests.append(await read_through(b"Hello \r\n"))
+                await reading.wait()
+                if outcome == "reset":
+                    return
+                await stream.send(b"HTTP/1.1 503 X\r\ncontent-length: 0\r\n\r\n")
+            else:
+                resume.set()
+                requests.append(await read_through(b"\r\n0\r\n\r\n"))
+                await stream.send(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
 
     async def content():
         yield b"Hello "
@@ -411,14 +425,16 @@ async def test_http_attempt_fails_before_content_read(outcome: str) -> None:
             body = body[int(size, 16) + 2 :]
         return content
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    port = server.sockets[0].getsockname()[1]
-    async with server, HTTPTransport() as transport:
+    listener = await anyio.create_tcp_listener(local_host="127.0.0.1")
+    port = listener.listeners[0].extra(SocketAttribute.local_port)  # noqa: S610
+    async with listener, HTTPTransport() as transport, anyio.create_task_group() as tg:
+        tg.start_soon(listener.serve, handle)
         client = Client(
             RetryTransport(transport, initial_interval=0.0, randomization_factor=0.0)
         )
         with anyio.fail_after(10):
             res = await client.put(f"http://127.0.0.1:{port}", content=content())
+        tg.cancel_scope.cancel()
     assert res.status == 200
     assert [without_chunk_framing(body) for body in requests] == [
         b"Hello ",
@@ -557,7 +573,7 @@ async def test_content_read_stopped_when_request_ends(outcome: str) -> None:
                 response, ValueError
             ) and super().should_retry_response(request, response)
 
-    before = asyncio.all_tasks()
+    before = living_tasks()
     async with anyio.create_task_group() as tg:
         transport = Transport(tg)
         client = Client(
@@ -577,8 +593,8 @@ async def test_content_read_stopped_when_request_ends(outcome: str) -> None:
                     await client.put("http://localhost", content=content())
     await anyio.wait_all_tasks_blocked()
     assert transport.count == (2 if outcome == "retries exceeded" else 1)
-    assert events == ["CancelledError"]
-    assert not asyncio.all_tasks() - before
+    assert events == [cancelled_name()]
+    assert living_tasks() == before
 
 
 @pytest.mark.anyio
@@ -589,13 +605,13 @@ async def test_retrying_content_read_by_one_task() -> None:
 
     async def content():
         nonlocal reader
-        reader = asyncio.current_task()
+        reader = anyio.get_current_task()
         try:
             for chunk in (b"Hello ", b"world", b"!"):
-                tasks.add(asyncio.current_task())
+                tasks.add(anyio.get_current_task())
                 yield chunk
         finally:
-            closed_by.append(asyncio.current_task())
+            closed_by.append(anyio.get_current_task())
 
     reader = None
     retrying = RetryingRequestContent(content())
@@ -615,7 +631,7 @@ async def test_retrying_content_read_by_one_task() -> None:
     # The content is closed where it was read.
     assert tasks == {reader}
     assert closed_by == [reader]
-    assert asyncio.current_task() is not reader
+    assert anyio.get_current_task() != reader
 
 
 @pytest.mark.anyio
@@ -641,7 +657,12 @@ async def test_retrying_content_finished_mid_read(last_attempt: str) -> None:
         async for _ in retrying.get():
             pass
 
-    before = asyncio.all_tasks()
+    async def read_stopped() -> None:
+        # An attempt waiting on a read that is stopped cannot be retried.
+        with pytest.raises(RuntimeError, match="cannot be retried"):
+            await read()
+
+    before = living_tasks()
     async with anyio.create_task_group() as tg:
         tg.start_soon(read)
         await reading.wait()
@@ -651,12 +672,11 @@ async def test_retrying_content_finished_mid_read(last_attempt: str) -> None:
 
     match last_attempt:
         case "abandoned":
-            waiting = asyncio.create_task(read())
-            await anyio.wait_all_tasks_blocked()
-            retrying.finish(abandoned=True)
             with anyio.fail_after(1):
-                await asyncio.wait([waiting])
-            assert waiting.cancelled()
+                async with anyio.create_task_group() as tg:
+                    tg.start_soon(read_stopped)
+                    await anyio.wait_all_tasks_blocked()
+                    retrying.finish(abandoned=True)
         case "ended":
             attempt = retrying.get()
 
@@ -684,11 +704,11 @@ async def test_retrying_content_finished_mid_read(last_attempt: str) -> None:
             attempt = retrying.get()
             retrying.finish(abandoned=False)
             del attempt
-    # The finalizer of an unread body calls into the loop.
+    # The finalizer of an unread body calls into the run.
     await anyio.lowlevel.checkpoint()
     await anyio.wait_all_tasks_blocked()
-    assert events == ["CancelledError"]
-    assert not asyncio.all_tasks() - before
+    assert events == [cancelled_name()]
+    assert living_tasks() == before
     assert not retrying.retryable
 
 
@@ -710,28 +730,34 @@ async def test_retrying_content_cleanup_not_interrupted(stopped: str) -> None:
             yield b"world!"
         finally:
             try:
-                await anyio.sleep(0.01)
+                # Content that is cancelled mid read shields its own cleanup,
+                # as trio's level-triggered cancellation requires. Otherwise
+                # the reader shields it.
+                with anyio.CancelScope(shield=stopped == "mid read"):
+                    await anyio.sleep(0.01)
                 events.append("cleaned up")
             except BaseException as e:
                 events.append(type(e).__name__)
                 raise
 
+    async def read_next(attempt: AsyncIterator[bytes]) -> None:
+        # The read is stopped, fails, or returns the chunk.
+        with contextlib.suppress(RuntimeError, TypeError):
+            await anext(attempt)
+
     retrying = RetryingRequestContent(content())
     attempt = retrying.get()
     assert await anext(attempt) == b"Hello "
-    waiting = asyncio.create_task(anext(attempt))
-    if stopped == "mid read":
-        await reading.wait()
-    elif stopped == "after failed read":
-        with pytest.raises(TypeError):
-            await waiting
-    else:
-        await waiting
-    # The last attempt's end and its collection stop the reading as well.
-    retrying.finish(abandoned=True)
     with anyio.fail_after(1):
-        await asyncio.wait([waiting])
-    del attempt, waiting
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(read_next, attempt)
+            if stopped == "mid read":
+                await reading.wait()
+            else:
+                await anyio.wait_all_tasks_blocked()
+            # The last attempt's end and its collection stop the reading as well.
+            retrying.finish(abandoned=True)
+    del attempt
     await anyio.sleep(0.05)
     assert events == ["cleaned up"]
 
@@ -743,27 +769,30 @@ async def test_retrying_content_ignores_cancellation() -> None:
     async def content():
         yield b"Hello "
         reading.set()
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(anyio.get_cancelled_exc_class()):
             await anyio.sleep_forever()
         yield b"world!"
 
     retrying = RetryingRequestContent(content())
 
-    async def read() -> None:
-        async for _ in retrying.get():
-            pass
+    async def read_stopped() -> None:
+        with pytest.raises(RuntimeError, match="cannot be retried"):
+            async for _ in retrying.get():
+                pass
 
-    before = asyncio.all_tasks()
-    waiting = asyncio.create_task(read())
-    await reading.wait()
-    retrying.finish(abandoned=True)
+    before = living_tasks()
     with anyio.fail_after(1):
-        await asyncio.wait([waiting])
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(read_stopped)
+            await reading.wait()
+            retrying.finish(abandoned=True)
     await anyio.wait_all_tasks_blocked()
-    assert not asyncio.all_tasks() - before
+    assert living_tasks() == before
     assert not retrying.retryable
 
 
+# Cancels asyncio tasks directly.
+@pytest.mark.asyncio_only
 @pytest.mark.anyio
 async def test_retrying_content_reader_cancelled() -> None:
     async def content():
@@ -789,21 +818,23 @@ async def test_retrying_content_finished_before_read_starts() -> None:
 
     retrying = RetryingRequestContent(content())
 
-    async def read() -> None:
-        async for _ in retrying.get():
-            pass
+    async def read_stopped() -> None:
+        with pytest.raises(RuntimeError, match="cannot be retried"):
+            async for _ in retrying.get():
+                pass
 
-    waiting = asyncio.create_task(read())
-    # Long enough for the attempt to ask for a chunk, and not for the read to
-    # start.
-    await anyio.lowlevel.checkpoint()
-    retrying.finish(abandoned=True)
     with anyio.fail_after(1):
-        await asyncio.wait([waiting])
-    assert waiting.cancelled()
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(read_stopped)
+            # Long enough for the attempt to ask for a chunk, and not for the
+            # read to start.
+            await anyio.lowlevel.checkpoint()
+            retrying.finish(abandoned=True)
     assert not retrying.retryable
 
 
+# Tracks what the asyncio loop reports as unhandled.
+@pytest.mark.asyncio_only
 @pytest.mark.anyio
 async def test_retrying_content_error_in_abandoned_read() -> None:
     unhandled: list[dict[str, object]] = []
@@ -956,6 +987,8 @@ async def test_unbuffered_stream_connection_error(app: App) -> None:
     assert closed
 
 
+# The ASGI testing transport runs only on asyncio.
+@pytest.mark.asyncio_only
 @pytest.mark.anyio
 async def test_unread_unbuffered_stream_closed() -> None:
     class Content:
@@ -1080,6 +1113,8 @@ async def test_retry_connection_error_content_iterator(
     assert read_attempts == [2]
 
 
+# The ASGI testing transport runs only on asyncio.
+@pytest.mark.asyncio_only
 @pytest.mark.anyio
 async def test_no_retry_exception(app: App) -> None:
     class NoExceptionRetry(RetryTransport):

@@ -186,8 +186,7 @@ Retry middleware automatically reissues requests on errors. The default behavior
 retry known-safe errors, which include connection errors and transient error responses for
 GET, HEAD, PUT, and DELETE. Whether a request or response is retryable can be customized by
 subclassing the middleware class and implementing `should_retry_request` or
-`should_retry_response`, for example to match against `request.url`. `RetryTransport`
-requires asyncio.
+`should_retry_response`, for example to match against `request.url`.
 
 `should_retry_request` may return `False` to disable retries, `True` to retry if
 `should_retry_response` also returns `True`, or a `RetryMode` explicitly.
