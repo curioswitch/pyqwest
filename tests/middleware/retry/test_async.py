@@ -279,6 +279,47 @@ async def test_transport_body_error_not_retried() -> None:
 
 
 @pytest.mark.anyio
+async def test_streamed_content_without_retry() -> None:
+    class Transport(BaseTransport):
+        def __init__(self) -> None:
+            self.read_content = b""
+
+        async def execute(self, request: Request) -> Response:
+            assert not isinstance(request.content, bytes)
+            async for chunk in request.content:
+                self.read_content += chunk
+            return Response(status=200, content=b"")
+
+    async def content():
+        yield b"Hello "
+        await anyio.lowlevel.checkpoint()
+        yield b"world!"
+
+    transport = Transport()
+    res = await Client(RetryTransport(transport)).put(
+        "http://localhost", content=content()
+    )
+    assert res.status == 200
+    assert transport.read_content == b"Hello world!"
+
+
+@pytest.mark.anyio
+async def test_retrying_content_error() -> None:
+    async def content():
+        yield b"Hello "
+        msg = "boom"
+        raise ValueError(msg)
+
+    retrying = RetryingRequestContent(content())
+    with pytest.raises(ValueError, match="boom"):
+        async for _ in retrying.get():
+            pass
+    assert not retrying.retryable
+    with pytest.raises(RuntimeError, match="cannot be retried"):
+        await anext(retrying.get())
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("outcome", ["response", "error"])
 async def test_content_read_in_progress_retried(outcome: str) -> None:
     reading, resume = anyio.Event(), anyio.Event()

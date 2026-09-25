@@ -243,9 +243,8 @@ class RetryTransport(Transport):
 class RetryingRequestContent:
     """Request content that every attempt can replay.
 
-    One task reads the source for the whole request, a chunk each time an
-    attempt asks for one, so that cancelling an abandoned attempt does not
-    cancel a read that the next attempt needs.
+    A task reads the source for the whole request so that an attempt can be
+    canceled without caneling the read.
     """
 
     def __init__(self, content: AsyncIterator[bytes]) -> None:
@@ -263,20 +262,11 @@ class RetryingRequestContent:
 
     @property
     def retryable(self) -> bool:
-        """Whether a retry can send the whole content.
-
-        False once reading the content has raised or has been stopped, because
-        the rest of it is lost.
-        """
+        """Whether a retry can send the whole content, i.e. the request itself hasn't failed."""
         return not self._failed
 
     def get(self) -> AsyncGenerator[bytes, None]:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No asyncio loop is running, so execute cannot wait for a second
-            # attempt. The only attempt reads the content itself.
-            return self._replay_and_read(None)
+        loop = asyncio.get_running_loop()
         self._attempts += 1
         self._attempt_ended = False
         body = self._replay_and_read(self._attempts)
@@ -297,9 +287,7 @@ class RetryingRequestContent:
         if abandoned or self._attempt_ended:
             self._stop_reading()
 
-    async def _replay_and_read(
-        self, attempt: int | None
-    ) -> AsyncGenerator[bytes, None]:
+    async def _replay_and_read(self, attempt: int) -> AsyncGenerator[bytes, None]:
         # Attempts share the source, so each replays what the others have read.
         sent = 0
         try:
@@ -313,13 +301,10 @@ class RetryingRequestContent:
                     yield chunk
                 elif self._done:
                     return
-                elif attempt is None:
-                    await self._read()
                 else:
                     await self._next_read()
         finally:
-            if attempt is not None:
-                self._end_attempt(attempt)
+            self._end_attempt(attempt)
 
     def _end_attempt(self, attempt: int) -> None:
         if attempt != self._attempts:
