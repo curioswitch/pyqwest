@@ -172,6 +172,42 @@ If using mTLS with client certificates, just add `tls_cert` and `tls_key` simila
         application = MyApplication(client)
     ```
 
+### Connections
+
+The transport keeps one HTTP/2 connection per origin, and requests share it as streams. Servers and
+proxies limit the concurrent streams on a connection with `SETTINGS_MAX_CONCURRENT_STREAMS`, commonly
+100 for Envoy, nginx, and cloud load balancers, and requests beyond the limit wait for a stream to end
+rather than opening another connection (see [hyper#3623](https://github.com/hyperium/hyper/issues/3623)).
+With short requests the wait is brief, but long-lived streams such as server-sent events or RPC server
+streams occupy their stream for their whole life, so the limit becomes a concurrency ceiling for the
+process and unrelated requests to the same origin stall behind it.
+
+Set `max_streams_per_connection` to the server's limit to have the transport balance requests over
+several connections instead, like `Agent({ connections })` in Node's undici. Each request goes to the
+connection with the fewest requests in flight, and when they are all at the limit another connection is
+opened, up to `max_connections` if set. A request counts against its connection from dispatch until
+its response body is fully read, closed, or dropped, so streams count for their whole life. Idle
+connections still close after `pool_idle_timeout`. Cookies, when enabled, are shared by all connections.
+
+=== "async"
+
+    ```python
+    async with HTTPTransport(max_streams_per_connection=100, max_connections=8) as transport:
+        client = Client(transport)
+        application = MyApplication(client)
+    ```
+
+=== "sync"
+
+    ```python
+    with SyncHTTPTransport(max_streams_per_connection=100, max_connections=8) as transport:
+        client = SyncClient(transport)
+        application = MyApplication(client)
+    ```
+
+When `enable_otel` is on, a balancing transport reports the gauges `pyqwest.transport.connections`
+and `pyqwest.transport.in_flight_requests`.
+
 ### Middleware
 
 HTTP middleware are themselves just `Transport` implementations that accept another

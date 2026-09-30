@@ -16,6 +16,7 @@ use crate::{
     common::httpversion::HTTPVersion,
     headers::Headers,
     shared::{
+        balancer::InFlight,
         buffer::BytesMemoryView,
         constants::Constants,
         exception::without_pending_exception,
@@ -61,7 +62,7 @@ impl Response {
         })
     }
 
-    pub(super) async fn fill(&mut self, response: reqwest::Response) {
+    pub(super) async fn fill(&mut self, response: reqwest::Response, in_flight: Option<InFlight>) {
         let response: http::Response<_> = response.into();
         let (head, body) = response.into_parts();
         self.head.fill(head);
@@ -69,7 +70,7 @@ impl Response {
             let content_body = content.get().body.load();
             // SAFETY: We do not return the response to the user before calling fill so it
             // cannot be closed yet.
-            content_body.as_ref().unwrap().fill(body).await;
+            content_body.as_ref().unwrap().fill(body, in_flight).await;
         } else {
             unreachable!("fill is only called on HTTP responses");
         }

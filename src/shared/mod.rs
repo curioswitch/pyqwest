@@ -1,5 +1,7 @@
 /// Backoff utility for retry middleware.
 pub(crate) mod backoff;
+/// Balancing of requests over several clients.
+pub(crate) mod balancer;
 /// Shared utilities for bytes buffers.
 pub(crate) mod buffer;
 /// Shared constants.

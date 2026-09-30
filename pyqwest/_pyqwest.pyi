@@ -534,6 +534,8 @@ class HTTPTransport:
         enable_cookie_store: bool = False,
         follow_redirects: bool = True,
         max_redirects: int = 10,
+        max_streams_per_connection: int | None = None,
+        max_connections: int | None = None,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
@@ -587,6 +589,20 @@ class HTTPTransport:
                               follow_redirects setting and track redirects in response.history.
             max_redirects: Maximum number of redirects to follow when follow_redirects is enabled.
                            A request exceeding it fails with TooManyRedirects.
+            max_streams_per_connection: Balance requests over several connections per origin,
+                                        each carrying at most this many requests at once. HTTP/2
+                                        servers and proxies limit the concurrent streams on a
+                                        connection (commonly 100), and the single connection used
+                                        by default queues requests beyond it, which with long-lived
+                                        streams caps concurrency. Set this to the server's limit
+                                        to open another connection instead, like undici's
+                                        Agent({ connections }). A request counts against its
+                                        connection from dispatch until its response body is fully
+                                        read, closed, or dropped. Unset, requests use one connection
+                                        per origin and no accounting is done.
+            max_connections: Maximum number of connections to balance requests over, or None for
+                             no limit. Once reached, requests go to the least loaded connection.
+                             Requires max_streams_per_connection.
         """
 
     def __aenter__(self) -> Awaitable[HTTPTransport]:
@@ -1049,6 +1065,8 @@ class SyncHTTPTransport:
         enable_cookie_store: bool = False,
         follow_redirects: bool = True,
         max_redirects: int = 10,
+        max_streams_per_connection: int | None = None,
+        max_connections: int | None = None,
         enable_otel: bool = True,
         meter_provider: MeterProvider | None = None,
         tracer_provider: TracerProvider | None = None,
@@ -1102,6 +1120,20 @@ class SyncHTTPTransport:
                               follow_redirects setting and track redirects in response.history.
             max_redirects: Maximum number of redirects to follow when follow_redirects is enabled.
                            A request exceeding it fails with TooManyRedirects.
+            max_streams_per_connection: Balance requests over several connections per origin,
+                                        each carrying at most this many requests at once. HTTP/2
+                                        servers and proxies limit the concurrent streams on a
+                                        connection (commonly 100), and the single connection used
+                                        by default queues requests beyond it, which with long-lived
+                                        streams caps concurrency. Set this to the server's limit
+                                        to open another connection instead, like undici's
+                                        Agent({ connections }). A request counts against its
+                                        connection from dispatch until its response body is fully
+                                        read, closed, or dropped. Unset, requests use one connection
+                                        per origin and no accounting is done.
+            max_connections: Maximum number of connections to balance requests over, or None for
+                             no limit. Once reached, requests go to the least loaded connection.
+                             Requires max_streams_per_connection.
         """
 
     def __enter__(self) -> SyncHTTPTransport:

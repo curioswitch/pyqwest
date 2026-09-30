@@ -1,9 +1,10 @@
 use std::{
     str::FromStr as _,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::Instant,
 };
 
+use arc_swap::ArcSwapOption;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use pyo3::{
     exceptions::PyValueError,
@@ -16,9 +17,12 @@ use pyo3::{
 };
 use tokio::runtime::RuntimeMetrics;
 
-use crate::shared::{constants::Constants, request::RequestHead, runtime::get_runtime};
+use crate::shared::{
+    balancer::ClientSet, constants::Constants, request::RequestHead, runtime::get_runtime,
+};
 
 struct InstrumentationInner {
+    meter: Py<PyAny>,
     tracer: Py<PyAny>,
 
     metric_http_client_active_requests: Py<PyAny>,
@@ -86,6 +90,7 @@ impl Instrumentation {
 
         Ok(Self {
             inner: Some(Arc::new(InstrumentationInner {
+                meter: meter.unbind(),
                 tracer: tracer.unbind(),
                 metric_http_client_active_requests: metric_http_client_active_requests.unbind(),
                 metric_http_client_request_duration: metric_http_client_request_duration.unbind(),
@@ -93,6 +98,56 @@ impl Instrumentation {
             })),
             constants: constants.clone(),
         })
+    }
+
+    /// Registers gauges observing the balancer of `clients`, if it has one and
+    /// metrics are enabled. The instruments are returned for the transport to
+    /// keep, since it is not clear that the meter keeps them alive.
+    pub(crate) fn observe_balancer(
+        &self,
+        py: Python<'_>,
+        clients: &Arc<ArcSwapOption<ClientSet>>,
+    ) -> PyResult<Option<Arc<BalancerMetrics>>> {
+        let Some(inner) = self.inner.as_ref() else {
+            return Ok(None);
+        };
+        if clients
+            .load()
+            .as_ref()
+            .is_none_or(|clients| clients.loads().is_none())
+        {
+            return Ok(None);
+        }
+        let meter = inner.meter.bind(py);
+        let callback = |metric_type| BalancerMetricsCallback {
+            clients: Arc::downgrade(clients),
+            metric_type,
+            constants: self.constants.clone(),
+        };
+        // Inline strings, like the runtime metrics: this runs once per transport.
+        let connections = meter.call_method1(
+            "create_observable_gauge",
+            (
+                "pyqwest.transport.connections",
+                (callback(BalancerMetricType::Connections),),
+                "{connection}",
+                "Number of connections the transport balances requests over",
+            ),
+        )?;
+        let in_flight_requests = meter.call_method1(
+            "create_observable_gauge",
+            (
+                "pyqwest.transport.in_flight_requests",
+                (callback(BalancerMetricType::InFlightRequests),),
+                "{request}",
+                "Number of requests in flight on the transport's connections, \
+                 from dispatch until the response body is done",
+            ),
+        )?;
+        Ok(Some(Arc::new(BalancerMetrics {
+            _connections: connections.unbind(),
+            _in_flight_requests: in_flight_requests.unbind(),
+        })))
     }
 
     /// Prepares log records for this request if the "pyqwest" logger (granular
@@ -557,6 +612,49 @@ fn start_runtime_metrics(
         })
     })?;
     Ok(())
+}
+
+/// The observable instruments of a transport's balancer.
+pub(crate) struct BalancerMetrics {
+    _connections: Py<PyAny>,
+    _in_flight_requests: Py<PyAny>,
+}
+
+enum BalancerMetricType {
+    Connections,
+    InFlightRequests,
+}
+
+#[pyclass(module = "_pyqwest.otel", name = "BalancerMetricsCallback", frozen)]
+struct BalancerMetricsCallback {
+    /// Weak so that the instruments, which the meter may hold onto, do not
+    /// keep a closed transport's clients alive.
+    clients: Weak<ArcSwapOption<ClientSet>>,
+    metric_type: BalancerMetricType,
+    constants: Constants,
+}
+
+#[pymethods]
+impl BalancerMetricsCallback {
+    fn __call__<'py>(
+        &self,
+        py: Python<'py>,
+        _options: &Bound<'py, PyAny>,
+    ) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        let Some(clients) = self.clients.upgrade() else {
+            return Ok(Vec::new());
+        };
+        let clients = clients.load();
+        let Some(loads) = clients.as_ref().and_then(|clients| clients.loads()) else {
+            return Ok(Vec::new());
+        };
+        let value = match self.metric_type {
+            BalancerMetricType::Connections => loads.len(),
+            BalancerMetricType::InFlightRequests => loads.iter().sum(),
+        };
+        let observation = self.constants.observation_class.bind(py).call1((value,))?;
+        Ok(vec![observation])
+    }
 }
 
 enum RuntimeMetricType {

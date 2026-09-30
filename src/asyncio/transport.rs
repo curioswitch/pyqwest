@@ -11,21 +11,24 @@ use crate::asyncio::response::Response;
 use crate::asyncio::runtime::{into_awaitable, AsyncLibrary};
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
+use crate::shared::balancer::ClientSet;
 use crate::shared::constants::Constants;
 use crate::shared::exception::without_pending_exception;
-use crate::shared::otel::{Instrumentation, Operation};
+use crate::shared::otel::{BalancerMetrics, Instrumentation, Operation};
 use crate::shared::transport::{
-    get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
+    get_default_reqwest_client, ClientConfig, ClientParams, DEFAULT_MAX_REDIRECTS,
 };
 
 #[pyclass(module = "_pyqwest", name = "HTTPTransport", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct HttpTransport {
-    client: Arc<ArcSwapOption<reqwest::Client>>,
+    clients: Arc<ArcSwapOption<ClientSet>>,
     http3: bool,
     close: bool,
 
     instrumentation: Instrumentation,
+    /// Kept so the balancer's observable metrics stay registered.
+    _balancer_metrics: Option<Arc<BalancerMetrics>>,
     constants: Constants,
 }
 
@@ -53,6 +56,8 @@ impl HttpTransport {
         enable_cookie_store = false,
         follow_redirects = true,
         max_redirects = DEFAULT_MAX_REDIRECTS,
+        max_streams_per_connection = None,
+        max_connections = None,
         enable_otel = true,
         meter_provider = None,
         tracer_provider = None,
@@ -78,11 +83,13 @@ impl HttpTransport {
         enable_cookie_store: bool,
         follow_redirects: bool,
         max_redirects: usize,
+        max_streams_per_connection: Option<usize>,
+        max_connections: Option<usize>,
         enable_otel: bool,
         meter_provider: Option<Bound<'_, PyAny>>,
         tracer_provider: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let (client, http3) = new_reqwest_client(ClientParams {
+        let config = ClientConfig::new(ClientParams {
             tls_ca_cert,
             tls_include_system_certs,
             tls_key,
@@ -103,18 +110,22 @@ impl HttpTransport {
             follow_redirects,
             max_redirects,
         })?;
+        let http3 = config.http3();
+        let clients = Arc::new(ArcSwapOption::from_pointee(ClientSet::new(
+            config,
+            max_streams_per_connection,
+            max_connections,
+        )?));
         let constants = Constants::get(py)?;
+        let instrumentation =
+            Instrumentation::new(py, enable_otel, meter_provider, tracer_provider, &constants)?;
+        let balancer_metrics = instrumentation.observe_balancer(py, &clients)?;
         Ok(Self {
-            client: Arc::new(ArcSwapOption::from_pointee(client)),
+            clients,
             http3,
             close: true,
-            instrumentation: Instrumentation::new(
-                py,
-                enable_otel,
-                meter_provider,
-                tracer_provider,
-                &constants,
-            )?,
+            instrumentation,
+            _balancer_metrics: balancer_metrics,
             constants,
         })
     }
@@ -146,9 +157,19 @@ impl HttpTransport {
 
     fn aclose(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if self.close {
-            self.client.store(None);
+            self.clients.store(None);
         }
         EmptyAwaitable.into_py_any(py)
+    }
+
+    /// The requests in flight on each of the transport's connections, in
+    /// creation order, or `None` when `max_streams_per_connection` is unset.
+    #[getter]
+    fn _connection_loads(&self) -> Option<Vec<usize>> {
+        self.clients
+            .load()
+            .as_ref()
+            .and_then(|clients| clients.loads())
     }
 }
 
@@ -158,8 +179,8 @@ impl HttpTransport {
         py: Python<'py>,
         request: &Request,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client_guard = self.client.load();
-        let Some(client) = client_guard.as_ref() else {
+        let clients = self.clients.load();
+        let Some(clients) = clients.as_ref() else {
             return Err(PyRuntimeError::new_err(
                 "Executing request on already closed transport",
             ));
@@ -172,21 +193,20 @@ impl HttpTransport {
         let on_done =
             EndOperationCallback::new(operation.clone(), self.constants.clone(), request_iter_task)
                 .into_bound_py_any(py)?;
+        let (client, in_flight) = clients.acquire()?;
         into_awaitable(
             py,
             library,
             &self.constants,
-            {
-                let client = client.clone();
-                async move {
-                    let res = client
-                        .execute(request_rs)
-                        .await
-                        .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
-                    operation.fill_response(&res);
-                    response.fill(res).await;
-                    Ok(response)
-                }
+            async move {
+                // A failed request drops `in_flight` here, releasing its hold.
+                let res = client
+                    .execute(request_rs)
+                    .await
+                    .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                operation.fill_response(&res);
+                response.fill(res, in_flight).await;
+                Ok(response)
             },
             Some(on_done),
         )
@@ -197,8 +217,8 @@ impl HttpTransport {
         py: Python<'py>,
         request: &Request,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client_guard = self.client.load();
-        let Some(client) = client_guard.as_ref() else {
+        let clients = self.clients.load();
+        let Some(clients) = clients.as_ref() else {
             return Err(PyRuntimeError::new_err(
                 "Executing request on already closed transport",
             ));
@@ -211,22 +231,20 @@ impl HttpTransport {
         let on_done =
             EndOperationCallback::new(operation.clone(), self.constants.clone(), request_iter_task)
                 .into_bound_py_any(py)?;
+        let (client, in_flight) = clients.acquire()?;
         into_awaitable(
             py,
             library,
             &self.constants,
-            {
-                let client = client.clone();
-                async move {
-                    let res = client
-                        .execute(request_rs)
-                        .await
-                        .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
-                    operation.fill_response(&res);
-                    response.fill(res).await;
-                    let full_response = response.into_full_response().await?;
-                    Ok(full_response)
-                }
+            async move {
+                let res = client
+                    .execute(request_rs)
+                    .await
+                    .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                operation.fill_response(&res);
+                response.fill(res, in_flight).await;
+                let full_response = response.into_full_response().await?;
+                Ok(full_response)
             },
             Some(on_done),
         )
@@ -235,10 +253,13 @@ impl HttpTransport {
     pub(super) fn py_default(py: Python<'_>) -> PyResult<Self> {
         let constants = Constants::get(py)?;
         Ok(Self {
-            client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
+            clients: Arc::new(ArcSwapOption::from_pointee(ClientSet::single(
+                get_default_reqwest_client(py),
+            ))),
             http3: false,
             close: false,
             instrumentation: Instrumentation::new(py, true, None, None, &constants)?,
+            _balancer_metrics: None,
             constants,
         })
     }

@@ -14,7 +14,7 @@ use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
     pyerrors::{self, ReadError, RemoteProtocolError},
-    shared::constants::Constants,
+    shared::{balancer::InFlight, constants::Constants},
 };
 
 pub(crate) struct ResponseHead {
@@ -67,8 +67,16 @@ impl ResponseHead {
     }
 }
 
+/// A response body with the request's hold on its transport's balancer
+/// slot. They go together so the hold is released exactly when the body is
+/// dropped: exhausted, failed, closed, or freed with its response.
+struct Body {
+    inner: reqwest::Body,
+    _in_flight: Option<InFlight>,
+}
+
 struct ResponseBodyInner {
-    body: Mutex<Option<reqwest::Body>>,
+    body: Mutex<Option<Body>>,
     trailers: Py<Headers>,
     read_lock: Mutex<()>,
     cancel_tx: watch::Sender<bool>,
@@ -92,9 +100,12 @@ impl ResponseBody {
         }
     }
 
-    pub(crate) async fn fill(&self, body: reqwest::Body) {
+    pub(crate) async fn fill(&self, body: reqwest::Body, in_flight: Option<InFlight>) {
         let mut self_body = self.inner.body.lock().await;
-        *self_body = Some(body);
+        *self_body = Some(Body {
+            inner: body,
+            _in_flight: in_flight,
+        });
     }
 
     pub(crate) async fn chunk(&self) -> PyResult<Option<Bytes>> {
@@ -114,7 +125,7 @@ impl ResponseBody {
                 _ = cancel_rx.changed() => {
                     return Err(ReadError::new_err("Response body read cancelled"));
                 }
-                res = body.frame() => res,
+                res = body.inner.frame() => res,
             };
             let Some(res) = res else {
                 return Ok(None);
@@ -185,7 +196,7 @@ impl ResponseBody {
             _ = cancel_rx.changed() => {
                 return Err(ReadError::new_err("Read cancelled"));
             }
-            res = body.collect() => res,
+            res = body.inner.collect() => res,
         };
         let collected =
             collected.map_err(|e| pyerrors::from_reqwest(&e, "Error reading full content"))?;

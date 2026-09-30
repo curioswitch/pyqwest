@@ -8,11 +8,12 @@ use tokio::sync::oneshot;
 
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
+use crate::shared::balancer::ClientSet;
 use crate::shared::constants::Constants;
-use crate::shared::otel::{Instrumentation, Operation};
+use crate::shared::otel::{BalancerMetrics, Instrumentation, Operation};
 use crate::shared::runtime::get_runtime;
 use crate::shared::transport::{
-    get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
+    get_default_reqwest_client, ClientConfig, ClientParams, DEFAULT_MAX_REDIRECTS,
 };
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
@@ -25,11 +26,13 @@ use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse}
 )]
 #[derive(Clone)]
 pub struct SyncHttpTransport {
-    client: Arc<ArcSwapOption<reqwest::Client>>,
+    clients: Arc<ArcSwapOption<ClientSet>>,
     http3: bool,
     close: bool,
 
     instrumentation: Instrumentation,
+    /// Kept so the balancer's observable metrics stay registered.
+    _balancer_metrics: Option<Arc<BalancerMetrics>>,
     constants: Constants,
 }
 
@@ -57,6 +60,8 @@ impl SyncHttpTransport {
         enable_cookie_store = false,
         follow_redirects = true,
         max_redirects = DEFAULT_MAX_REDIRECTS,
+        max_streams_per_connection = None,
+        max_connections = None,
         enable_otel = true,
         meter_provider = None,
         tracer_provider = None,
@@ -82,11 +87,13 @@ impl SyncHttpTransport {
         enable_cookie_store: bool,
         follow_redirects: bool,
         max_redirects: usize,
+        max_streams_per_connection: Option<usize>,
+        max_connections: Option<usize>,
         enable_otel: bool,
         meter_provider: Option<Bound<'_, PyAny>>,
         tracer_provider: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let (client, http3) = new_reqwest_client(ClientParams {
+        let config = ClientConfig::new(ClientParams {
             tls_ca_cert,
             tls_include_system_certs,
             tls_key,
@@ -107,18 +114,22 @@ impl SyncHttpTransport {
             follow_redirects,
             max_redirects,
         })?;
+        let http3 = config.http3();
+        let clients = Arc::new(ArcSwapOption::from_pointee(ClientSet::new(
+            config,
+            max_streams_per_connection,
+            max_connections,
+        )?));
         let constants = Constants::get(py)?;
+        let instrumentation =
+            Instrumentation::new(py, enable_otel, meter_provider, tracer_provider, &constants)?;
+        let balancer_metrics = instrumentation.observe_balancer(py, &clients)?;
         Ok(Self {
-            client: Arc::new(ArcSwapOption::from_pointee(client)),
+            clients,
             http3,
             close: true,
-            instrumentation: Instrumentation::new(
-                py,
-                enable_otel,
-                meter_provider,
-                tracer_provider,
-                &constants,
-            )?,
+            instrumentation,
+            _balancer_metrics: balancer_metrics,
             constants,
         })
     }
@@ -141,8 +152,18 @@ impl SyncHttpTransport {
 
     fn close(&self) {
         if self.close {
-            self.client.store(None);
+            self.clients.store(None);
         }
+    }
+
+    /// The requests in flight on each of the transport's connections, in
+    /// creation order, or `None` when `max_streams_per_connection` is unset.
+    #[getter]
+    fn _connection_loads(&self) -> Option<Vec<usize>> {
+        self.clients
+            .load()
+            .as_ref()
+            .and_then(|clients| clients.loads())
     }
 }
 
@@ -183,8 +204,8 @@ impl SyncHttpTransport {
         request: &SyncRequest,
         operation: &Operation,
     ) -> PyResult<SyncResponse> {
-        let client_guard = self.client.load();
-        let Some(client) = client_guard.as_ref() else {
+        let clients = self.clients.load();
+        let Some(clients) = clients.as_ref() else {
             return Err(PyRuntimeError::new_err(
                 "Executing request on already closed transport",
             ));
@@ -194,16 +215,17 @@ impl SyncHttpTransport {
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
         let mut response = SyncResponse::pending(py, request_iter.clone(), self.constants.clone())?;
         operation.inject(py, &mut request_rs)?;
-        let client = client.clone();
+        let (client, in_flight) = clients.acquire()?;
         let operation = operation.clone();
         get_runtime().spawn(async move {
             match client.execute(request_rs).await {
                 Ok(res) => {
                     operation.fill_response(&res);
-                    response.fill(res).await;
+                    response.fill(res, in_flight).await;
                     let _ = tx.send(Ok(response));
                 }
                 Err(e) => {
+                    // Dropping `in_flight` releases the failed request's hold.
                     let _ = tx.send(Err(pyerrors::from_reqwest(&e, "Request failed")));
                 }
             }
@@ -219,10 +241,13 @@ impl SyncHttpTransport {
     pub(super) fn py_default(py: Python<'_>) -> PyResult<Self> {
         let constants = Constants::get(py)?;
         Ok(Self {
-            client: Arc::new(ArcSwapOption::from_pointee(get_default_reqwest_client(py))),
+            clients: Arc::new(ArcSwapOption::from_pointee(ClientSet::single(
+                get_default_reqwest_client(py),
+            ))),
             http3: false,
             close: false,
             instrumentation: Instrumentation::new(py, true, None, None, &constants)?,
+            _balancer_metrics: None,
             constants,
         })
     }

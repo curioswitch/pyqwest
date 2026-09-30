@@ -11,6 +11,7 @@ while presenting a familiar Pythonic API.
 ## Features
 
 - All features of HTTP, including bidirectional streaming, trailers, and HTTP/3
+- Balancing of long-lived streams over several HTTP/2 connections per origin, past a server's concurrent stream limit
 - Async and sync clients
 - The stability and performance of the Rust HTTP client stack
 - A fully-typed, Pythonic API - no runtime-checked union types
