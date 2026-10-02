@@ -377,6 +377,26 @@ A request that exceeds `max_redirects` fails with `pyqwest.TooManyRedirects`.
 When using pyqwest as an httpx transport, you may prefer to disable `follow_redirects`
 so HTTPX handles them as usual, notably filling `response.history`.
 
+### Refused HTTP/2 streams
+
+An HTTP/2 server retiring a connection, for example a proxy enforcing a maximum connection
+age, sends a `GOAWAY` frame naming the last stream it may have processed. Requests the
+client had already sent on streams after that one race with the frame: the server never
+processes them, and the client learns that only when the `GOAWAY` arrives. A server may
+also refuse a stream outright with a `RST_STREAM` carrying `REFUSED_STREAM`. In both
+cases, RFC 9113 guarantees the request was not processed, so transports resend it, on a
+connection the server is not retiring, up to two times. Nothing else is resent: a stream
+reset with any other code, or after the response started, failed in a way the server may
+have acted on.
+
+Resending needs the request content again. Content provided as `bytes` is always
+replayable. Streamed content, an iterator or async iterator, is not replayed since the
+iterator cannot be read twice, so a streamed request that was refused fails with a
+`StreamError` whose `code` is `StreamErrorCode.REFUSED_STREAM`. That code identifies a
+request that is safe to send again. The [retry middleware](#retry) resends it for
+streamed content when `should_retry_request` returns `RetryMode.BUFFERED` and
+`should_retry_response` accepts the error, which the defaults do for idempotent methods.
+
 ## Logging
 
 pyqwest integrates with Python's standard [`logging`](https://docs.python.org/3/library/logging.html)

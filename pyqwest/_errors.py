@@ -36,7 +36,15 @@ class RemoteProtocolError(Exception):
 
 
 class StreamError(RemoteProtocolError):
-    """An error representing an HTTP/2+ stream error."""
+    """An error representing an HTTP/2+ stream error.
+
+    A request refused by the server before it processed any of it has the code
+    REFUSED_STREAM, whether the server reset the stream with that code or
+    retired the connection with a graceful GOAWAY before the stream. Both are
+    safe to resend, and HTTPTransport and SyncHTTPTransport do so when the
+    request content is bytes, so this reaches the caller for streamed content
+    and when the resends ran out.
+    """
 
     code: StreamErrorCode
     """The error code associated with the stream error."""
