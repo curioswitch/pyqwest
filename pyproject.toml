@@ -37,6 +37,7 @@ dev = [
   "anyio",
   "asgiref",
   "brotli",
+  "h2",
   "httpx[http2]",
   "maturin",
   "niquests[http3]",
