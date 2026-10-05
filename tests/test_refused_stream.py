@@ -2,9 +2,16 @@
 
 A server retiring a connection sends GOAWAY naming the last stream it may have
 processed. A request the client had already sent on a later stream was not
-processed (RFC 9113 §6.8), and neither was a stream reset with REFUSED_STREAM
-(§8.7), so both are safe to send again, and the transports do so when the
-content can be replayed. Nothing else is resent.
+processed (RFC 9113 §6.8), so it is safe to send again, and the transports do
+so when the content can be replayed.
+
+The tests run against Envoy, through pyvoy, retiring every connection after
+one request. Envoy's final GOAWAY names the highest stream it has received and
+it discards later ones, so a request only loses the race when its HEADERS are
+in flight as that GOAWAY is sent, a window of one round trip on loopback. A
+relay stands in for the network: it forwards Envoy's frames unmodified, but
+delays the GOAWAYs toward the client and the next request's bytes toward Envoy
+until the test lets them through.
 """
 
 from __future__ import annotations
@@ -17,7 +24,6 @@ from typing import TYPE_CHECKING
 import anyio
 import pytest
 from anyio import to_thread
-from h2.errors import ErrorCodes
 
 from pyqwest import (
     HTTPTransport,
@@ -33,10 +39,9 @@ from pyqwest import (
 
 from ._goaway_server import GoawayTestServer
 from ._h2_relay import Relay
-from ._h2_server import H2TestServer, ServedConnection, ServedRequest
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncIterator, Iterator
 
 
 HELD_STREAM_ID = 1
@@ -92,62 +97,9 @@ def deliver(relay: Relay) -> None:
     relay.release_client()
 
 
-# ===== scripted server =====
-
-
-def serve(connection: ServedConnection, request: ServedRequest) -> None:
-    connection.respond(request.stream_id, b"served")
-
-
-def refuse_first(
-    refuse: Callable[[ServedConnection, ServedRequest], None],
-) -> Callable[[ServedConnection, ServedRequest], None]:
-    """A server that refuses the first request of its first connection with
-    `refuse`, and serves every other one."""
-
-    def on_request(connection: ServedConnection, request: ServedRequest) -> None:
-        if connection.index == 0 and len(connection.requests) == 1:
-            refuse(connection, request)
-        else:
-            serve(connection, request)
-
-    return on_request
-
-
-def reset_with(code: ErrorCodes) -> Callable[[ServedConnection, ServedRequest], None]:
-    def reset(connection: ServedConnection, request: ServedRequest) -> None:
-        connection.reset(request.stream_id, code)
-
-    return reset
-
-
-def reset_after_headers(connection: ServedConnection, request: ServedRequest) -> None:
-    connection.send_headers(request.stream_id)
-    connection.reset(request.stream_id, ErrorCodes.REFUSED_STREAM)
-
-
-OTHER_RESETS = [
-    pytest.param(ErrorCodes.CANCEL, id="cancel"),
-    pytest.param(ErrorCodes.INTERNAL_ERROR, id="internal-error"),
-]
-
-
 def assert_refused(error: StreamError) -> None:
     assert error.code == StreamErrorCode.REFUSED_STREAM
     assert str(error).startswith("Request failed: ")
-
-
-def assert_attempts(server: H2TestServer, path: str, connections: list[int]) -> None:
-    """The request for `path` reached the server once per entry of
-    `connections`, on the connections with those indexes, in that order. The
-    server processed only the last attempt, which received the whole content.
-    The server records a request at its headers and answers it at once, so the
-    content may still be on its way when the client has the response."""
-    attempts = server.requests(path)
-    assert [index for index, _ in attempts] == connections
-    served = attempts[-1][1]
-    server.wait_until(lambda: served.ended, what="the served request's content")
-    assert bytes(served.body) == PAYLOAD
 
 
 async def aread(content: AsyncIterator[bytes | memoryview | bytearray]) -> bytes:
@@ -266,61 +218,6 @@ async def test_async_request_after_goaway_notice_uses_new_connection(
         assert relay.connections == 2
 
 
-@pytest.mark.anyio
-async def test_async_refused_stream_is_resent() -> None:
-    with H2TestServer(refuse_first(reset_with(ErrorCodes.REFUSED_STREAM))) as server:
-        async with HTTPTransport(http_version=HTTPVersion.HTTP2) as transport:
-            response = await transport.execute(
-                Request("POST", f"{server.url}/", content=PAYLOAD)
-            )
-            assert response.status == 200
-            await aread(response.content)
-            # The connection itself is fine, so the resend may reuse it.
-            assert_attempts(server, "/", connections=[0, 0])
-
-
-@pytest.mark.anyio
-async def test_async_refused_stream_streamed_content_is_not_replayed() -> None:
-    with H2TestServer(refuse_first(reset_with(ErrorCodes.REFUSED_STREAM))) as server:
-        async with HTTPTransport(http_version=HTTPVersion.HTTP2) as transport:
-            with pytest.raises(StreamError) as info:
-                await transport.execute(
-                    Request("POST", f"{server.url}/", content=streamed())
-                )
-            assert_refused(info.value)
-            await anyio.sleep(SETTLE)
-            assert len(server.requests("/")) == 1
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("code", OTHER_RESETS)
-async def test_async_other_reset_before_headers_is_not_resent(code: ErrorCodes) -> None:
-    with H2TestServer(refuse_first(reset_with(code))) as server:
-        async with HTTPTransport(http_version=HTTPVersion.HTTP2) as transport:
-            with pytest.raises(StreamError) as info:
-                await transport.execute(
-                    Request("POST", f"{server.url}/", content=PAYLOAD)
-                )
-            assert info.value.code == StreamErrorCode(int(code))
-            await anyio.sleep(SETTLE)
-            assert len(server.requests("/")) == 1
-
-
-@pytest.mark.anyio
-async def test_async_reset_after_headers_is_not_resent() -> None:
-    with H2TestServer(refuse_first(reset_after_headers)) as server:
-        async with HTTPTransport(http_version=HTTPVersion.HTTP2) as transport:
-            response = await transport.execute(
-                Request("POST", f"{server.url}/", content=PAYLOAD)
-            )
-            assert response.status == 200
-            with pytest.raises(StreamError) as info:
-                await aread(response.content)
-            assert info.value.code == StreamErrorCode.REFUSED_STREAM
-            await anyio.sleep(SETTLE)
-            assert len(server.requests("/")) == 1
-
-
 def read(content: Iterator[bytes | memoryview | bytearray]) -> bytes:
     return b"".join(content)
 
@@ -424,61 +321,3 @@ def test_sync_request_after_goaway_notice_uses_new_connection(
             ("POST", "/next", PAYLOAD.decode()),
         ]
         assert relay.connections == 2
-
-
-def test_sync_refused_stream_is_resent() -> None:
-    with (
-        H2TestServer(refuse_first(reset_with(ErrorCodes.REFUSED_STREAM))) as server,
-        SyncHTTPTransport(http_version=HTTPVersion.HTTP2) as transport,
-    ):
-        response = transport.execute_sync(
-            SyncRequest("POST", f"{server.url}/", content=PAYLOAD)
-        )
-        assert response.status == 200
-        read(response.content)
-        assert_attempts(server, "/", connections=[0, 0])
-
-
-def test_sync_refused_stream_streamed_content_is_not_replayed() -> None:
-    with (
-        H2TestServer(refuse_first(reset_with(ErrorCodes.REFUSED_STREAM))) as server,
-        SyncHTTPTransport(http_version=HTTPVersion.HTTP2) as transport,
-    ):
-        with pytest.raises(StreamError) as info:
-            transport.execute_sync(
-                SyncRequest("POST", f"{server.url}/", content=streamed_sync())
-            )
-        assert_refused(info.value)
-        time.sleep(SETTLE)
-        assert len(server.requests("/")) == 1
-
-
-@pytest.mark.parametrize("code", OTHER_RESETS)
-def test_sync_other_reset_before_headers_is_not_resent(code: ErrorCodes) -> None:
-    with (
-        H2TestServer(refuse_first(reset_with(code))) as server,
-        SyncHTTPTransport(http_version=HTTPVersion.HTTP2) as transport,
-    ):
-        with pytest.raises(StreamError) as info:
-            transport.execute_sync(
-                SyncRequest("POST", f"{server.url}/", content=PAYLOAD)
-            )
-        assert info.value.code == StreamErrorCode(int(code))
-        time.sleep(SETTLE)
-        assert len(server.requests("/")) == 1
-
-
-def test_sync_reset_after_headers_is_not_resent() -> None:
-    with (
-        H2TestServer(refuse_first(reset_after_headers)) as server,
-        SyncHTTPTransport(http_version=HTTPVersion.HTTP2) as transport,
-    ):
-        response = transport.execute_sync(
-            SyncRequest("POST", f"{server.url}/", content=PAYLOAD)
-        )
-        assert response.status == 200
-        with pytest.raises(StreamError) as info:
-            read(response.content)
-        assert info.value.code == StreamErrorCode.REFUSED_STREAM
-        time.sleep(SETTLE)
-        assert len(server.requests("/")) == 1
