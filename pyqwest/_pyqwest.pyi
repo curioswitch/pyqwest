@@ -616,13 +616,6 @@ class HTTPTransport:
     def execute(self, request: Request) -> Awaitable[Response]:
         """Executes the given request, returning the response.
 
-        An HTTP/2 request the server refused without processing, because it
-        retired the connection with a GOAWAY before the request's stream or
-        reset the stream with REFUSED_STREAM before responding, is resent up to
-        two times, on a connection the server is not retiring, when its content
-        is bytes. Streamed content is not replayed, so such a request fails with
-        a StreamError whose code is REFUSED_STREAM.
-
         Args:
             request: The request to execute.
 
@@ -1148,13 +1141,6 @@ class SyncHTTPTransport:
 
     def execute_sync(self, request: SyncRequest) -> SyncResponse:
         """Executes the given request, returning the response.
-
-        An HTTP/2 request the server refused without processing, because it
-        retired the connection with a GOAWAY before the request's stream or
-        reset the stream with REFUSED_STREAM before responding, is resent up to
-        two times, on a connection the server is not retiring, when its content
-        is bytes. Streamed content is not replayed, so such a request fails with
-        a StreamError whose code is REFUSED_STREAM.
 
         Args:
             request: The request to execute.
