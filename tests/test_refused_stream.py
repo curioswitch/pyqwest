@@ -4,14 +4,6 @@ A server retiring a connection sends GOAWAY naming the last stream it may have
 processed. A request the client had already sent on a later stream was not
 processed (RFC 9113 §6.8), so it is safe to send again, and the transports do
 so when the content can be replayed.
-
-The tests run against Envoy, through pyvoy, retiring every connection after
-one request. Envoy's final GOAWAY names the highest stream it has received and
-it discards later ones, so a request only loses the race when its HEADERS are
-in flight as that GOAWAY is sent, a window of one round trip on loopback. A
-relay stands in for the network: it forwards Envoy's frames unmodified, but
-delays the GOAWAYs toward the client and the next request's bytes toward Envoy
-until the test lets them through.
 """
 
 from __future__ import annotations
