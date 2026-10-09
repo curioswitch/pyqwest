@@ -78,7 +78,8 @@ jobs:
 
       # Needed for connect integration tests runner
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: github.event_name == 'push' && matrix.python != '3.15t' && !startsWith(matrix.os, 'windows-')
+        # TODO: Enable on Python 3.15 after next connect-py release
+        if: github.event_name == 'push' && !startsWith(matrix.python, '3.15') && !startsWith(matrix.os, 'windows-')
         with:
           go-version: stable
 

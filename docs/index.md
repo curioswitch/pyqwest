@@ -26,6 +26,7 @@ while presenting a familiar Pythonic API.
 - Async and sync clients, supporting all features
 - The stability and performance of the Rust HTTP client stack
 - A fully-typed, Pythonic API - no runtime-checked union types
+- Client-side DNS load balancing
 - Production-ready features like flexible middleware and built-in observability
 - An [adapter](api.md#httpx-adapter) to allow dropping into existing codebases using [HTTPX](https://www.python-httpx.org/)
 
