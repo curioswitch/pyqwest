@@ -33,7 +33,7 @@ Repository = "https://github.com/curioswitch/pyqwest.git"
 
 [dependency-groups]
 dev = [
-  "aiohttp[speedups]==3.14.4",
+  "aiohttp[speedups]==3.14.5",
   "anyio==4.15.1",
   "asgiref==3.12.1",
   "brotli==1.2.0",
