@@ -16,13 +16,13 @@ bytes = "1.12.1"
 errors = "0.1.0"
 futures-core = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
-h2 = "0.4.19"
+h2 = "0.4.20"
 h3 = "0.0.8"
 http = "1.5.0"
 http-body = "1.1.0"
 http-body-util = "0.1.5"
 # Only used to classify reqwest's errors; must track the version reqwest depends on.
-hyper = { version = "1.11.1", features = ["client", "http1"] }
+hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy"] }
 mime = "0.3.17"
 pyo3 = { version = "0.29.3", features = ["bytes"] }
@@ -43,7 +43,7 @@ reqwest = {
 tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = "0.1.19"
 url = "2.5.8"
-zstd = "0.14.0"
+zstd = "0.14.2"
 
 [build-dependencies]
 pyo3-build-config = { version = "0.29.3", features = ["resolve-config"] }
