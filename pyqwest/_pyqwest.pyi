@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -1602,7 +1602,7 @@ class HTTPHeaderName:
     """The "x-xss-protection" header."""
 
 def set_sync_timeout(timeout: float) -> AbstractContextManager[None]: ...
-def get_sync_timeout() -> datetime.timedelta | None: ...
+def get_sync_timeout() -> dt.timedelta | None: ...
 
 class _BrotliDecompressor:
     def feed(self, data: bytes, *, end: bool) -> bytes: ...
