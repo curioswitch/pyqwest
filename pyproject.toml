@@ -3,7 +3,7 @@ name = "pyqwest"
 version = "0.12.0"
 description = "A modern, high-performance HTTP client for Python and Rust."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14.8"
 license-files = ["LICENSE"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -33,7 +33,7 @@ Repository = "https://github.com/curioswitch/pyqwest.git"
 
 [dependency-groups]
 dev = [
-  "aiohttp[speedups]==3.14.4",
+  "aiohttp[speedups]==3.14.5",
   "anyio==4.15.1",
   "asgiref==3.12.1",
   "brotli==1.2.0",
@@ -51,14 +51,14 @@ dev = [
   "pytest-order==1.5.0",
   "pyvoy==1.3.0",
   "pyreqwest==0.15.0; python_version < '3.15'",
-  "ruff==0.16.10",
+  "ruff==0.17.0",
   "ry==0.0.102; python_version < '3.15'",
   "sniffio==1.3.1",
   "trio==0.34.0",
   "trustme==1.2.1",
-  "ty==0.0.85",
+  "ty==0.0.86",
   "uvloop==0.23.0; sys_platform != 'win32'",
-  "winloop==0.7.1; sys_platform == 'win32'",
+  "winloop==0.8.0; sys_platform == 'win32'",
   "wreq==0.13.0; python_version < '3.15'",
   "zstd==1.5.7.2",
 ]
@@ -66,7 +66,7 @@ dev = [
 docs = ["mkdocstrings-python", "zensical"]
 
 [build-system]
-requires = ["maturin>=1.12,<2.0"]
+requires = ["maturin>=1.15.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
