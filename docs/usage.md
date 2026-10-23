@@ -323,6 +323,28 @@ as `HTTP_PROXY` still apply.
         application = MyApplication(client)
     ```
 
+### Unix domain sockets
+
+On Unix, the transport can be configured to connect to a Unix domain socket for all
+requests instead of the host and port of the URL. The URL still provides the scheme,
+`Host` header, and path, and `https` URLs still use TLS over the socket.
+
+=== "async"
+
+    ```python
+    async with HTTPTransport(uds="/run/app.sock") as transport:
+        client = Client(transport)
+        response = await client.get("http://localhost/status")
+    ```
+
+=== "sync"
+
+    ```python
+    with SyncHTTPTransport(uds="/run/app.sock") as transport:
+        client = SyncClient(transport)
+        response = client.get("http://localhost/status")
+    ```
+
 ### Timeouts
 
 The transport can be configured with timeouts for overall operations, connect, and reads.

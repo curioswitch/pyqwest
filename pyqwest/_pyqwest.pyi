@@ -1,4 +1,5 @@
 import datetime as dt
+import os
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -521,6 +522,7 @@ class HTTPTransport:
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
         proxy: str | Proxy | Sequence[str | Proxy] | None = None,
+        uds: str | os.PathLike[str] | None = None,
         timeout: float | None = None,
         connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
@@ -565,6 +567,10 @@ class HTTPTransport:
                    is used for each request. An empty sequence, like None,
                    configures no explicit proxy, in which case proxy
                    environment variables such as HTTP_PROXY still apply.
+            uds: The path of a Unix domain socket to connect to for all requests
+                 instead of the host and port of the URL. TLS is still used for https
+                 URLs. Cannot be used with proxy or HTTP/3, and options for DNS and TCP
+                 do not apply. Only supported on Unix.
             timeout: Default timeout for requests in seconds. This is the timeout from
                      the start of the request to the end of the response.
             connect_timeout: Timeout for connection establishment in seconds.
@@ -1047,6 +1053,7 @@ class SyncHTTPTransport:
         tls_cert: bytes | None = None,
         http_version: HTTPVersion | None = None,
         proxy: str | Proxy | Sequence[str | Proxy] | None = None,
+        uds: str | os.PathLike[str] | None = None,
         timeout: float | None = None,
         connect_timeout: float | None = 30.0,
         read_timeout: float | None = None,
@@ -1091,6 +1098,10 @@ class SyncHTTPTransport:
                    is used for each request. An empty sequence, like None,
                    configures no explicit proxy, in which case proxy
                    environment variables such as HTTP_PROXY still apply.
+            uds: The path of a Unix domain socket to connect to for all requests
+                 instead of the host and port of the URL. TLS is still used for https
+                 URLs. Cannot be used with proxy or HTTP/3, and options for DNS and TCP
+                 do not apply. Only supported on Unix.
             timeout: Default timeout for requests in seconds. This is the timeout from
                      the start of the request to the end of the response.
             connect_timeout: Timeout for connection establishment in seconds.

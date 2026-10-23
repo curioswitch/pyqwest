@@ -1,5 +1,6 @@
 use std::{
     net::{IpAddr, SocketAddr},
+    path::PathBuf,
     time::Duration,
 };
 
@@ -31,6 +32,7 @@ pub(crate) struct ClientParams<'a> {
     pub(crate) tls_cert: Option<&'a [u8]>,
     pub(crate) http_version: Option<Bound<'a, HTTPVersion>>,
     pub(crate) proxy: Option<Bound<'a, PyAny>>,
+    pub(crate) uds: Option<PathBuf>,
     pub(crate) timeout: Option<f64>,
     pub(crate) connect_timeout: Option<f64>,
     pub(crate) read_timeout: Option<f64>,
@@ -95,10 +97,15 @@ pub(crate) fn new_reqwest_client(params: ClientParams) -> PyResult<(reqwest::Cli
             "Both tls_key and tls_cert must be provided",
         ));
     }
+    let mut has_proxy = false;
     if let Some(proxy) = params.proxy {
         for proxy in proxies_from_py(&proxy)? {
+            has_proxy = true;
             builder = builder.proxy(proxy);
         }
+    }
+    if let Some(uds) = params.uds {
+        builder = configure_uds(builder, uds, http3, has_proxy)?;
     }
 
     if let Some(timeout) = validate_timeout(params.timeout)? {
@@ -174,6 +181,31 @@ fn configure_pool(
     Ok((builder, pool_options))
 }
 
+/// Connects every request over the Unix socket at `uds`, which replaces DNS
+/// resolution, TCP, and proxies.
+fn configure_uds(
+    builder: reqwest::ClientBuilder,
+    uds: PathBuf,
+    http3: bool,
+    has_proxy: bool,
+) -> PyResult<reqwest::ClientBuilder> {
+    if http3 {
+        return Err(PyValueError::new_err("uds cannot be used with HTTP/3"));
+    }
+    if has_proxy {
+        return Err(PyValueError::new_err("uds cannot be used with proxy"));
+    }
+    #[cfg(unix)]
+    {
+        Ok(builder.unix_socket(uds))
+    }
+    #[cfg(not(unix))]
+    {
+        _ = (builder, uds);
+        Err(PyValueError::new_err("uds is only supported on Unix"))
+    }
+}
+
 fn dns_override_addr(addr: &str) -> PyResult<SocketAddr> {
     if let Ok(addr) = addr.parse::<SocketAddr>() {
         return Ok(addr);
@@ -234,6 +266,7 @@ pub(crate) fn get_default_reqwest_client(
                 tls_include_system_certs: true,
                 http_version: None,
                 proxy: None,
+                uds: None,
                 timeout: None,
                 connect_timeout: Some(30.0),
                 read_timeout: None,

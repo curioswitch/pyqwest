@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use arc_swap::ArcSwapOption;
@@ -40,6 +41,7 @@ impl HttpTransport {
         tls_cert = None,
         http_version = None,
         proxy = None,
+        uds = None,
         timeout = None,
         connect_timeout = 30.0,
         read_timeout = None,
@@ -68,6 +70,7 @@ impl HttpTransport {
         tls_cert: Option<&[u8]>,
         http_version: Option<Bound<'_, HTTPVersion>>,
         proxy: Option<Bound<'_, PyAny>>,
+        uds: Option<PathBuf>,
         timeout: Option<f64>,
         connect_timeout: Option<f64>,
         read_timeout: Option<f64>,
@@ -98,6 +101,7 @@ impl HttpTransport {
             tls_cert,
             http_version,
             proxy,
+            uds,
             timeout,
             connect_timeout,
             read_timeout,
