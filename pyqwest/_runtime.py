@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 try:
     import sniffio
@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
     from contextlib import AbstractContextManager
     from typing import Any
+
+T = TypeVar("T")
 
 
 class Event(Protocol):
@@ -36,6 +38,22 @@ class Task(Protocol):
 
     def cancel(self) -> object: ...
 
+    async def wait(self) -> None:
+        """Waits for the task to finish, without raising its outcome."""
+        ...
+
+
+class Queue(Protocol[T]):
+    """A FIFO queue: `asyncio.Queue` or a trio memory channel."""
+
+    async def put(self, item: T) -> None: ...
+
+    def put_nowait(self, item: T) -> None:
+        """Puts `item` without waiting, raising if the queue is full."""
+        ...
+
+    async def get(self) -> T: ...
+
 
 class Runtime(Protocol):
     async def sleep(self, seconds: float) -> None: ...
@@ -45,6 +63,10 @@ class Runtime(Protocol):
         ...
 
     def new_event(self) -> Event: ...
+
+    def new_queue(self, max_size: int | None = None) -> Queue[T]:
+        """A queue holding up to `max_size` (positive) items, or any number for `None`."""
+        ...
 
     def spawn(self, fn: Callable[[], Coroutine[Any, Any, None]], name: str) -> Task:
         """Start `fn()` as a task that outlives the caller's scope.
@@ -84,10 +106,13 @@ class AsyncioRuntime:
     def new_event(self) -> Event:
         return asyncio.Event()
 
+    def new_queue(self, max_size: int | None = None) -> Queue[T]:
+        return asyncio.Queue(0 if max_size is None else max_size)
+
     def spawn(self, fn: Callable[[], Coroutine[Any, Any, None]], name: str) -> Task:
         task = self._loop.create_task(fn(), name=name)
         task.add_done_callback(_consume_task)
-        return task
+        return _AsyncioTask(task)
 
     def call_soon_threadsafe(
         self, callback: Callable[..., None], *args: object
@@ -100,6 +125,25 @@ class AsyncioRuntime:
         # A cancellation is delivered once, so cleanup after it is not cancelled
         # again.
         return contextlib.nullcontext()
+
+
+class _AsyncioTask:
+    """The `Task` of an `asyncio.Task`."""
+
+    __slots__ = ("_task",)
+
+    def __init__(self, task: asyncio.Task[None]) -> None:
+        self._task = task
+
+    def cancel(self) -> bool:
+        return self._task.cancel()
+
+    async def wait(self) -> None:
+        # Awaiting the task directly would raise its exception or its
+        # cancellation. asyncio.wait raises only the caller's own cancellation.
+        # A task cancelled before it starts never runs its body, so waiting on
+        # an event that the body sets could hang.
+        await asyncio.wait((self._task,))
 
 
 def _consume_task(task: asyncio.Task[None]) -> None:

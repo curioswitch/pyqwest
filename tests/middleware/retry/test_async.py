@@ -119,8 +119,7 @@ class ConfiguredRetryTransport(RetryTransport):
         return self._mode
 
 
-# The ASGI testing transport runs only on asyncio.
-@pytest.fixture(params=[pytest.param("asgi", marks=pytest.mark.asyncio_only)])
+@pytest.fixture
 def app():
     return App()
 
@@ -1003,8 +1002,6 @@ async def test_unbuffered_stream_connection_error(app: App) -> None:
     assert closed
 
 
-# The ASGI testing transport runs only on asyncio.
-@pytest.mark.asyncio_only
 @pytest.mark.anyio
 async def test_unread_unbuffered_stream_closed() -> None:
     class Content:
@@ -1129,8 +1126,6 @@ async def test_retry_connection_error_content_iterator(
     assert read_attempts == [2]
 
 
-# The ASGI testing transport runs only on asyncio.
-@pytest.mark.asyncio_only
 @pytest.mark.anyio
 async def test_no_retry_exception(app: App) -> None:
     class NoExceptionRetry(RetryTransport):

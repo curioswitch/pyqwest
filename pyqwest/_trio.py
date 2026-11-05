@@ -16,7 +16,8 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import logging
-from typing import TYPE_CHECKING, Protocol
+import math
+from typing import TYPE_CHECKING, Generic, Protocol, TypeVar
 
 import trio
 
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     Completion: TypeAlias = Callable[[object, BaseException | None, bool], None]
 
 _logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class AbortHandle(Protocol):
@@ -184,6 +187,42 @@ def spawn_pump(
     return _ScopeHandle(trio.lowlevel.current_trio_token(), scope)
 
 
+class _Task:
+    """The `pyqwest._runtime.Task` of a system task from `TrioRuntime.spawn`."""
+
+    __slots__ = ("_done", "_handle")
+
+    def __init__(self, handle: PumpHandle, done: trio.Event) -> None:
+        self._handle = handle
+        self._done = done
+
+    def cancel(self) -> None:
+        self._handle.cancel()
+
+    async def wait(self) -> None:
+        await self._done.wait()
+
+
+class _Queue(Generic[T]):
+    """The `pyqwest._runtime.Queue` of a trio memory channel."""
+
+    __slots__ = ("_receive", "_send")
+
+    def __init__(self, max_size: int | None) -> None:
+        self._send, self._receive = trio.open_memory_channel[T](
+            math.inf if max_size is None else max_size
+        )
+
+    async def put(self, item: T) -> None:
+        await self._send.send(item)
+
+    def put_nowait(self, item: T) -> None:
+        self._send.send_nowait(item)
+
+    async def get(self) -> T:
+        return await self._receive.receive()
+
+
 class TrioRuntime:
     """`pyqwest._runtime.Runtime` under trio."""
 
@@ -201,10 +240,21 @@ class TrioRuntime:
     def new_event(self) -> trio.Event:
         return trio.Event()
 
-    def spawn(
-        self, fn: Callable[[], Coroutine[Any, Any, None]], name: str
-    ) -> PumpHandle:
-        return spawn_pump(fn, name=name)
+    def new_queue(self, max_size: int | None = None) -> _Queue[T]:
+        return _Queue(max_size)
+
+    def spawn(self, fn: Callable[[], Coroutine[Any, Any, None]], name: str) -> _Task:
+        done = trio.Event()
+
+        async def run() -> None:
+            # trio runs a system task even when its scope is cancelled before it
+            # starts, so the finally block always sets the event.
+            try:
+                await fn()
+            finally:
+                done.set()
+
+        return _Task(spawn_pump(run, name=name), done)
 
     def call_soon_threadsafe(
         self, callback: Callable[..., None], *args: object

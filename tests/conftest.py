@@ -201,14 +201,10 @@ async def async_transport(
 
 @pytest.fixture(scope="session")
 async def async_asgi_transport(
-    anyio_backend: str, http_version: HTTPVersion | None, http_scheme: str
-) -> AsyncIterator[Transport | None]:
-    if anyio_backend != "asyncio":
-        # asyncio-only; every test that would use it is deselected. It stays a
-        # regular dependency of the client fixtures so they are torn down with
-        # it, which a `getfixturevalue` would not arrange.
-        yield None
-        return
+    anyio_backend: object,  # noqa: ARG001  # torn down when the backend changes
+    http_version: HTTPVersion | None,
+    http_scheme: str,
+) -> AsyncIterator[Transport]:
     if not http_version:
         match http_scheme:
             case "https":
@@ -221,26 +217,17 @@ async def async_asgi_transport(
         yield transport
 
 
-def asgi_transport(transport: Transport | None) -> Transport:
-    if transport is None:
-        pytest.fail("the ASGI testing transport runs only on asyncio")
-    return transport
-
-
-@pytest.fixture(
-    scope="session",
-    params=["async", pytest.param("async_asgi", marks=pytest.mark.asyncio_only)],
-)
+@pytest.fixture(scope="session", params=["async", "async_asgi"])
 def async_client(
     request: pytest.FixtureRequest,
     async_transport: HTTPTransport,
-    async_asgi_transport: Transport | None,
+    async_asgi_transport: Transport,
 ) -> Client:
     match request.param:
         case "async":
             return Client(async_transport)
         case "async_asgi":
-            return Client(asgi_transport(async_asgi_transport))
+            return Client(async_asgi_transport)
         case _:
             msg = "Invalid client type"
             raise ValueError(msg)
@@ -298,7 +285,7 @@ def sync_client(
     params=[
         "async",
         "sync",
-        pytest.param("async_asgi", marks=pytest.mark.asyncio_only),
+        "async_asgi",
         pytest.param("sync_wsgi", marks=pytest.mark.asyncio_only),
     ]
 )
@@ -310,7 +297,7 @@ def client_type(request: pytest.FixtureRequest) -> str:
 def transport(
     async_transport: HTTPTransport,
     sync_transport: SyncHTTPTransport,
-    async_asgi_transport: Transport | None,
+    async_asgi_transport: Transport,
     sync_wsgi_transport: SyncTransport,
     client_type: str,
 ) -> HTTPTransport | SyncHTTPTransport | Transport | SyncTransport:
@@ -320,7 +307,7 @@ def transport(
         case "sync":
             return sync_transport
         case "async_asgi":
-            return asgi_transport(async_asgi_transport)
+            return async_asgi_transport
         case "sync_wsgi":
             return sync_wsgi_transport
         case _:
@@ -332,7 +319,7 @@ def transport(
 def client(
     async_transport: HTTPTransport,
     sync_transport: SyncHTTPTransport,
-    async_asgi_transport: Transport | None,
+    async_asgi_transport: Transport,
     sync_wsgi_transport: SyncTransport,
     client_type: str,
 ) -> Client | SyncClient:
@@ -342,7 +329,7 @@ def client(
         case "sync":
             return SyncClient(sync_transport)
         case "async_asgi":
-            return Client(asgi_transport(async_asgi_transport))
+            return Client(async_asgi_transport)
         case "sync_wsgi":
             return SyncClient(sync_wsgi_transport)
         case _:
