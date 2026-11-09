@@ -14,7 +14,7 @@ use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
     headers::Headers,
     pyerrors::{self, ReadError, RemoteProtocolError},
-    shared::constants::Constants,
+    shared::{constants::Constants, request::BodyError},
 };
 
 pub(crate) struct ResponseHead {
@@ -75,6 +75,7 @@ struct ResponseBodyInner {
     trailers: Py<Headers>,
     read_lock: Mutex<()>,
     cancel_tx: watch::Sender<bool>,
+    body_error: BodyError,
 }
 
 #[derive(Clone)]
@@ -83,7 +84,7 @@ pub(crate) struct ResponseBody {
 }
 
 impl ResponseBody {
-    pub(crate) fn pending(trailers: Py<Headers>) -> Self {
+    pub(crate) fn pending(trailers: Py<Headers>, body_error: BodyError) -> Self {
         let (cancel_tx, _) = watch::channel(false);
         ResponseBody {
             inner: Arc::new(ResponseBodyInner {
@@ -92,6 +93,7 @@ impl ResponseBody {
                 trailers,
                 read_lock: Mutex::new(()),
                 cancel_tx,
+                body_error,
             }),
         }
     }
@@ -130,23 +132,26 @@ impl ResponseBody {
                 self.finish();
                 return Ok(None);
             };
-            let frame = match res {
-                Ok(frame) => frame,
-                Err(e) => {
-                    self.finish();
-                    if let Some(e) = errors::find::<h2::Error>(&e) {
-                        if matches!(e.reason(), Some(h2::Reason::NO_ERROR)) {
-                            return Ok(None);
+            let frame =
+                match res {
+                    Ok(frame) => frame,
+                    Err(e) => {
+                        self.finish();
+                        if let Some(e) = errors::find::<h2::Error>(&e) {
+                            if matches!(e.reason(), Some(h2::Reason::NO_ERROR)) {
+                                return Ok(None);
+                            }
                         }
-                    }
-                    if let Some(e) = errors::find::<h3::error::StreamError>(&e) {
-                        if e.is_h3_no_error() {
-                            return Ok(None);
+                        if let Some(e) = errors::find::<h3::error::StreamError>(&e) {
+                            if e.is_h3_no_error() {
+                                return Ok(None);
+                            }
                         }
+                        return Err(self.inner.body_error.take().unwrap_or_else(|| {
+                            pyerrors::from_reqwest(&e, "Error reading content")
+                        }));
                     }
-                    return Err(pyerrors::from_reqwest(&e, "Error reading content"));
-                }
-            };
+                };
             // A frame is either data or trailers.
             match frame.into_data().map_err(Frame::into_trailers) {
                 Ok(buf) => {
@@ -202,8 +207,12 @@ impl ResponseBody {
             res = body.collect() => res,
         };
         self.finish();
-        let collected =
-            collected.map_err(|e| pyerrors::from_reqwest(&e, "Error reading full content"))?;
+        let collected = collected.map_err(|e| {
+            self.inner
+                .body_error
+                .take()
+                .unwrap_or_else(|| pyerrors::from_reqwest(&e, "Error reading full content"))
+        })?;
 
         if let Some(trailers) = collected.trailers() {
             self.inner.trailers.get().fill(trailers.clone());

@@ -19,6 +19,7 @@ use crate::{
         buffer::BytesMemoryView,
         constants::Constants,
         exception::without_pending_exception,
+        request::BodyError,
         response::{ResponseBody, ResponseHead, RustFullResponse},
     },
 };
@@ -41,6 +42,7 @@ pub(crate) struct Response {
 impl Response {
     pub(super) fn pending(
         py: Python<'_>,
+        body_error: BodyError,
         constants: Constants,
         library: AsyncLibrary,
     ) -> PyResult<Response> {
@@ -50,7 +52,7 @@ impl Response {
             content: Content::Http(Py::new(
                 py,
                 ContentGenerator::new(
-                    ResponseBody::pending(trailers.clone_ref(py)),
+                    ResponseBody::pending(trailers.clone_ref(py), body_error),
                     library,
                     constants.clone(),
                 ),

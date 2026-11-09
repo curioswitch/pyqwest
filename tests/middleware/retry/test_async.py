@@ -265,11 +265,9 @@ async def test_content_iterator_error_not_retried(app: App, client: Client) -> N
         msg = "boom"
         raise ValueError(msg)
 
-    # The ASGI transport reports the body's error as a 500 from the app. A retry
-    # would send only the content read before the error, and succeed.
     app.status = [200]
-    res = await client.put("http://localhost", content=content())
-    assert res.status == 500
+    with pytest.raises(ValueError, match="boom"):
+        await client.put("http://localhost", content=content())
     assert app.count == 1
 
 

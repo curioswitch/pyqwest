@@ -19,10 +19,11 @@ use crate::{
         stream::into_stream,
     },
     headers::Headers,
+    pyerrors::WriteError,
     shared::{
         constants::Constants,
         request::{
-            maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
+            maybe_encode_json_content, maybe_encode_multipart_content, BodyError, RequestHead,
             RequestStreamResult, StartOnPoll,
         },
     },
@@ -130,10 +131,11 @@ impl Request {
         py: Python<'_>,
         http3: bool,
         library: AsyncLibrary,
+        body_error: &BodyError,
     ) -> PyResult<(reqwest::Request, Arc<ArcSwapOption<Py<PyAny>>>)> {
         let mut req = self.head.new_reqwest(py, http3)?;
         let request_iter_task: Arc<ArcSwapOption<Py<PyAny>>> = Arc::new(ArcSwapOption::empty());
-        if let (Some(body), task) = self.content_into_reqwest(py, library)? {
+        if let (Some(body), task) = self.content_into_reqwest(py, library, body_error)? {
             *req.body_mut() = Some(body);
             if let Some(task) = task {
                 request_iter_task.store(Some(Arc::new(task)));
@@ -146,6 +148,7 @@ impl Request {
         &self,
         py: Python<'_>,
         library: AsyncLibrary,
+        body_error: &BodyError,
     ) -> PyResult<(Option<reqwest::Body>, Option<Py<PyAny>>)> {
         match &self.content {
             Some(Content::Bytes(bytes)) => Ok((
@@ -155,7 +158,8 @@ impl Request {
             Some(Content::AsyncIter(iter)) => {
                 let (start_tx, start_rx) = oneshot::channel();
                 let iter = wrap_async_iter(py, iter, start_rx, library, &self.constants)?;
-                let (stream, task) = into_stream(py, iter, &self.constants, library)?;
+                let (stream, task) =
+                    into_stream(py, iter, &self.constants, library, body_error.clone())?;
                 let res = StartOnPoll::new(stream, start_tx).map(bytes_from_chunk);
                 Ok((Some(reqwest::Body::wrap_stream(res)), Some(task)))
             }
@@ -222,7 +226,9 @@ struct BodyChunk {
 
 #[pyfunction]
 fn wrap_body_chunk(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<Py<BodyChunk>> {
-    let bytes = data.extract::<Bytes>()?;
+    let bytes = data
+        .extract::<Bytes>()
+        .map_err(|e| WriteError::new_err(format!("Invalid bytes item: {e}")))?;
     Py::new(py, BodyChunk { bytes })
 }
 

@@ -11,6 +11,7 @@ use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
+use crate::shared::request::BodyError;
 use crate::shared::runtime::get_runtime;
 use crate::shared::transport::{
     get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
@@ -199,10 +200,16 @@ impl SyncHttpTransport {
                 "Executing request on already closed transport",
             ));
         };
-        let (mut request_rs, request_iter) = request.new_reqwest(py, self.http3)?;
+        let body_error = BodyError::default();
+        let (mut request_rs, request_iter) = request.new_reqwest(py, self.http3, &body_error)?;
         let request_iter: RequestIterHandle = Arc::new(Mutex::new(request_iter));
         let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
-        let mut response = SyncResponse::pending(py, request_iter.clone(), self.constants.clone())?;
+        let mut response = SyncResponse::pending(
+            py,
+            request_iter.clone(),
+            body_error.clone(),
+            self.constants.clone(),
+        )?;
         operation.inject(py, &mut request_rs)?;
         let client = client.clone();
         let operation = operation.clone();
@@ -214,7 +221,10 @@ impl SyncHttpTransport {
                     let _ = tx.send(Ok(response));
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(pyerrors::from_reqwest(&e, "Request failed")));
+                    let err = body_error
+                        .take()
+                        .unwrap_or_else(|| pyerrors::from_reqwest(&e, "Request failed"));
+                    let _ = tx.send(Err(err));
                 }
             }
         });

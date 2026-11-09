@@ -128,6 +128,7 @@ class ASGITransport(Transport):
         runtime = current_runtime()
         receive_queue: Queue[bytes | Exception | None] = runtime.new_queue(1)
         receive_started = runtime.new_event()
+        request_body = RequestBody()
 
         async def read_request_content() -> None:
             try:
@@ -143,6 +144,7 @@ class ASGITransport(Transport):
                     await receive_queue.put(chunk)
                 await receive_queue.put(None)
             except Exception as e:
+                request_body.exception = e
                 await receive_queue.put(e)
             finally:
                 try:
@@ -164,13 +166,6 @@ class ASGITransport(Transport):
             chunk = await receive_queue.get()
             if chunk is None:
                 return {"type": "http.request", "body": b"", "more_body": False}
-            if isinstance(chunk, Exception):
-                if self._http_version != HTTPVersion.HTTP2:
-                    msg = f"Request failed: {chunk}"
-                else:
-                    # With HTTP/2, reqwest seems to squash the original error message.
-                    msg = "Request failed: stream error sent by user"
-                raise WriteError(msg) from chunk
             if isinstance(chunk, BaseException):
                 raise chunk
             return {"type": "http.request", "body": chunk, "more_body": True}
@@ -200,7 +195,9 @@ class ASGITransport(Transport):
             request_task.cancel()
             await app_task.wait()
             await request_task.wait()
-            if isinstance(message, (ConnectionError, TimeoutError)):
+            if message is request_body.exception or isinstance(
+                message, (ConnectionError, TimeoutError)
+            ):
                 raise message
             return Response(
                 status=500,
@@ -228,6 +225,7 @@ class ASGITransport(Transport):
         response_content = ResponseContent(
             send_queue,
             request_task,
+            request_body,
             trailers,
             app_task,
             decompressor,
@@ -326,11 +324,19 @@ class CancelResponse(Exception):
     pass
 
 
+@dataclass
+class RequestBody:
+    """Holds the exception the request body raised, if any."""
+
+    exception: Exception | None = None
+
+
 class ResponseContent(AsyncIterator[bytes]):
     def __init__(
         self,
         send_queue: Queue[ASGISendEvent | Exception],
         request_task: Task,
+        request_body: RequestBody,
         trailers: Headers | None,
         task: Task,
         decompressor: Decompressor,
@@ -339,6 +345,7 @@ class ResponseContent(AsyncIterator[bytes]):
     ) -> None:
         self._send_queue = send_queue
         self._request_task = request_task
+        self._request_body = request_body
         self._trailers = trailers
         self._task = task
         self._decompressor = decompressor
@@ -362,6 +369,9 @@ class ResponseContent(AsyncIterator[bytes]):
             finally:
                 self._read_pending = False
             if isinstance(message, Exception):
+                if message is self._request_body.exception:
+                    err = message
+                    break
                 match message:
                     case CancelResponse():
                         err = StopAsyncIteration()
