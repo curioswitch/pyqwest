@@ -129,6 +129,7 @@ class ASGITransport(Transport):
         receive_queue: Queue[bytes | Exception | None] = runtime.new_queue(1)
         receive_started = runtime.new_event()
         request_body = RequestBody()
+        send_queue: Queue[ASGISendEvent | Exception] = runtime.new_queue()
 
         async def read_request_content() -> None:
             try:
@@ -145,6 +146,7 @@ class ASGITransport(Transport):
                 await receive_queue.put(None)
             except Exception as e:
                 request_body.exception = e
+                send_queue.put_nowait(e)
                 await receive_queue.put(e)
             finally:
                 try:
@@ -170,8 +172,6 @@ class ASGITransport(Transport):
                 raise chunk
             return {"type": "http.request", "body": chunk, "more_body": True}
 
-        send_queue: Queue[ASGISendEvent | Exception] = runtime.new_queue()
-
         async def send(message: ASGISendEvent) -> None:
             await send_queue.put(message)
 
@@ -193,6 +193,8 @@ class ASGITransport(Transport):
             raise
         if isinstance(message, Exception):
             request_task.cancel()
+            if message is request_body.exception:
+                app_task.cancel()
             await app_task.wait()
             await request_task.wait()
             if message is request_body.exception or isinstance(

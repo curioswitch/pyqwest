@@ -134,6 +134,28 @@ async def _read_all(
     await send({"type": "http.response.body", "body": bytes(buf), "more_body": False})
 
 
+async def _read_all_catch(
+    _scope: HTTPScope, receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    buf = bytearray()
+    try:
+        while True:
+            message = await receive()
+            match message["type"]:
+                case "http.disconnect":
+                    break
+                case "http.request":
+                    buf.extend(message["body"])
+                    if not message["more_body"]:
+                        break
+    except Exception as e:
+        buf.extend(str(e).encode())
+    await send(
+        {"type": "http.response.start", "status": 200, "headers": (), "trailers": False}
+    )
+    await send({"type": "http.response.body", "body": bytes(buf), "more_body": False})
+
+
 async def _set_cookie(
     _scope: HTTPScope, _receive: ASGIReceiveCallable, send: ASGISendCallable
 ) -> None:
@@ -191,6 +213,8 @@ async def app(
             await _content_encoding(scope, receive, send)
         case "/read_all":
             await _read_all(scope, receive, send)
+        case "/read_all_catch":
+            await _read_all_catch(scope, receive, send)
         case "/set-cookie":
             await _set_cookie(scope, receive, send)
         case "/get-cookie":

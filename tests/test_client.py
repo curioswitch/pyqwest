@@ -780,6 +780,33 @@ async def test_request_content_error_raised(
     assert exc_info.value is error
 
 
+@pytest.mark.anyio
+async def test_request_content_error_caught_by_app(
+    client: Client | SyncClient, url: str
+) -> None:
+    error = RuntimeError("Test error")
+    with pytest.raises(RuntimeError) as exc_info:
+        if isinstance(client, SyncClient):
+
+            def req_content_sync() -> Iterator[bytes]:
+                yield b"Hello, World!"
+                raise error
+
+            await to_thread.run_sync(
+                partial(
+                    client.post, f"{url}/read_all_catch", content=req_content_sync()
+                )
+            )
+        else:
+
+            async def req_content() -> AsyncIterator[bytes]:
+                yield b"Hello, World!"
+                raise error
+
+            await client.post(f"{url}/read_all_catch", content=req_content())
+    assert exc_info.value is error
+
+
 class BodyInterruptedError(BaseException):
     pass
 

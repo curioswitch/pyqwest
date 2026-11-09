@@ -115,7 +115,14 @@ class WSGITransport(SyncTransport):
             for k, v in headers:
                 trailers.add(k, v)
 
-        request_input = RequestInput(request.content)
+        response_queue: Queue[bytes | Exception | None] = Queue()
+        response_started = threading.Event()
+
+        def fail_request(exception: Exception) -> None:
+            response_queue.put(exception)
+            response_started.set()
+
+        request_input = RequestInput(request.content, fail_request)
         environ: WSGIEnvironment = {
             "REQUEST_METHOD": request.method,
             "SCRIPT_NAME": "",
@@ -154,8 +161,6 @@ class WSGITransport(SyncTransport):
         if request._json and "content-type" not in request.headers:  # noqa: SLF001
             environ["CONTENT_TYPE"] = "application/json"
 
-        response_queue: Queue[bytes | Exception | None] = Queue()
-
         status_str: str = _UNSET_STATUS
         headers: list[tuple[str, str]] = []
         exc: (
@@ -163,7 +168,6 @@ class WSGITransport(SyncTransport):
             | tuple[None, None, None]
             | None
         ) = None
-        response_started = threading.Event()
 
         def start_response(
             status: str,
@@ -214,13 +218,10 @@ class WSGITransport(SyncTransport):
             msg = "Application did not start response before timeout"
             raise WSGITimeoutError(msg, app_future)
 
+        if request_input.exception is not None:
+            raise request_input.exception
+
         if status_str is _UNSET_STATUS:
-            try:
-                message = response_queue.get_nowait()
-            except Empty:
-                message = None
-            if message is not None and message is request_input.exception:
-                raise message
             return SyncResponse(
                 status=500,
                 http_version=self._http_version,
@@ -278,10 +279,15 @@ class WSGITransport(SyncTransport):
 
 
 class RequestInput:
-    def __init__(self, content: bytes | Iterator[bytes]) -> None:
+    def __init__(
+        self,
+        content: bytes | Iterator[bytes],
+        on_exception: Callable[[Exception], None] | None = None,
+    ) -> None:
         if isinstance(content, bytes):
             content = iter([content])
         self._content = content
+        self._on_exception = on_exception
         self._closed = False
         self._buffer = bytearray()
         self.exception: Exception | None = None
@@ -353,6 +359,8 @@ class RequestInput:
         except Exception as e:
             self.exception = e
             self.close()
+            if self._on_exception is not None:
+                self._on_exception(e)
             raise
 
     def close(self) -> None:
