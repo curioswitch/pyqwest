@@ -84,6 +84,17 @@ def _read_all(
     yield bytes(request_body)
 
 
+def _read_all_catch(
+    environ: WSGIEnvironment, start_response: StartResponse
+) -> Iterable[bytes]:
+    try:
+        request_body = cast("WSGIInputStream", environ["wsgi.input"]).read()
+    except Exception as e:
+        request_body = str(e).encode()
+    start_response("200 OK", [])
+    return [request_body]
+
+
 def _set_cookie(
     _environ: WSGIEnvironment, start_response: StartResponse
 ) -> Iterable[bytes]:
@@ -119,6 +130,8 @@ def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[byt
             return _content_encoding(environ, start_response)
         case "/read_all":
             return _read_all(environ, start_response)
+        case "/read_all_catch":
+            return _read_all_catch(environ, start_response)
         case "/set-cookie":
             return _set_cookie(environ, start_response)
         case "/get-cookie":
