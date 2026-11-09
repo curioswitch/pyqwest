@@ -15,6 +15,7 @@ use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::exception::without_pending_exception;
 use crate::shared::otel::{Instrumentation, Operation};
+use crate::shared::request::BodyError;
 use crate::shared::transport::{
     get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
 };
@@ -175,8 +176,11 @@ impl HttpTransport {
             ));
         };
         let library = AsyncLibrary::current(py, &self.constants)?;
-        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3, library)?;
-        let mut response = Response::pending(py, self.constants.clone(), library)?;
+        let body_error = BodyError::default();
+        let (mut request_rs, request_iter_task) =
+            request.new_reqwest(py, self.http3, library, &body_error)?;
+        let mut response =
+            Response::pending(py, body_error.clone(), self.constants.clone(), library)?;
         let operation = self.instrumentation.start(py, &request.head)?;
         operation.inject(py, &mut request_rs)?;
         let on_done =
@@ -189,10 +193,11 @@ impl HttpTransport {
             {
                 let client = client.clone();
                 async move {
-                    let res = client
-                        .execute(request_rs)
-                        .await
-                        .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                    let res = client.execute(request_rs).await.map_err(|e| {
+                        body_error
+                            .take()
+                            .unwrap_or_else(|| pyerrors::from_reqwest(&e, "Request failed"))
+                    })?;
                     operation.fill_response(&res);
                     response.fill(res).await;
                     Ok(response)
@@ -214,8 +219,11 @@ impl HttpTransport {
             ));
         };
         let library = AsyncLibrary::current(py, &self.constants)?;
-        let (mut request_rs, request_iter_task) = request.new_reqwest(py, self.http3, library)?;
-        let mut response = Response::pending(py, self.constants.clone(), library)?;
+        let body_error = BodyError::default();
+        let (mut request_rs, request_iter_task) =
+            request.new_reqwest(py, self.http3, library, &body_error)?;
+        let mut response =
+            Response::pending(py, body_error.clone(), self.constants.clone(), library)?;
         let operation = self.instrumentation.start(py, &request.head)?;
         operation.inject(py, &mut request_rs)?;
         let on_done =
@@ -228,10 +236,11 @@ impl HttpTransport {
             {
                 let client = client.clone();
                 async move {
-                    let res = client
-                        .execute(request_rs)
-                        .await
-                        .map_err(|e| pyerrors::from_reqwest(&e, "Request failed"))?;
+                    let res = client.execute(request_rs).await.map_err(|e| {
+                        body_error
+                            .take()
+                            .unwrap_or_else(|| pyerrors::from_reqwest(&e, "Request failed"))
+                    })?;
                     operation.fill_response(&res);
                     response.fill(res).await;
                     let full_response = response.into_full_response().await?;

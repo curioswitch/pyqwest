@@ -16,6 +16,7 @@ use crate::{
     shared::{
         buffer::BytesMemoryView,
         constants::Constants,
+        request::BodyError,
         response::{ResponseBody, ResponseHead},
         runtime::get_runtime,
     },
@@ -53,6 +54,7 @@ impl SyncResponse {
     pub(super) fn pending(
         py: Python<'_>,
         request_iter: RequestIterHandle,
+        body_error: BodyError,
         constants: Constants,
     ) -> PyResult<SyncResponse> {
         let trailers = Py::new(py, Headers::empty())?;
@@ -63,6 +65,7 @@ impl SyncResponse {
                 SyncContentGenerator {
                     body: ArcSwapOption::from_pointee(ResponseBody::pending(
                         trailers.clone_ref(py),
+                        body_error,
                     )),
                     request_iter: request_iter.clone(),
                     constants: constants.clone(),

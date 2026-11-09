@@ -162,18 +162,15 @@ async def test_multipart_multiple_streams(
 
 @pytest.mark.anyio
 async def test_multipart_stream_error(client: Client | SyncClient, url: str) -> None:
-    # There is a race between whether the error is handled on the request
-    # or response side, which can look like a connection error when the server
-    # aborts or a response error. We match any.
-    with pytest.raises(Exception, match=r"Request|connection|reading content"):
+    error = RuntimeError("Test error")
+    with pytest.raises(RuntimeError) as exc_info:
         method = "POST"
         url = f"{url}/echo"
         if isinstance(client, SyncClient):
 
             def stream_sync() -> Iterator[bytes]:
                 yield b"Hello, World!"
-                msg = "Test error"
-                raise RuntimeError(msg)
+                raise error
 
             def run():
                 multipart = SyncMultipart({"file": SyncPart(stream_sync())})
@@ -185,11 +182,11 @@ async def test_multipart_stream_error(client: Client | SyncClient, url: str) -> 
 
             async def stream_async() -> AsyncIterator[bytes]:
                 yield b"Hello, World!"
-                msg = "Test error"
-                raise RuntimeError(msg)
+                raise error
 
             multipart = Multipart({"file": Part(stream_async())})
             async with client.stream(method, url, content=multipart) as resp:
                 content = b""
                 async for chunk in resp.content:
                     content += chunk
+    assert exc_info.value is error

@@ -12,7 +12,7 @@ use pyo3::{
     exceptions::{PyBaseException, PyRuntimeError},
     pyclass, pymethods,
     sync::MutexExt as _,
-    Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
+    Bound, IntoPyObjectExt as _, Py, PyAny, PyErr, PyResult, Python,
 };
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::ReceiverStream;
@@ -21,7 +21,7 @@ use crate::{
     asyncio::runtime::{into_awaitable, spawn_pump, AsyncLibrary},
     shared::{
         constants::Constants,
-        request::{RequestStreamError, RequestStreamResult},
+        request::{BodyError, RequestStreamError, RequestStreamResult},
     },
 };
 
@@ -32,6 +32,7 @@ pub(super) fn into_stream(
     gen: Bound<'_, PyAny>,
     constants: &Constants,
     library: AsyncLibrary,
+    body_error: BodyError,
 ) -> PyResult<(
     impl Stream<Item = RequestStreamResult<Py<PyAny>>>,
     Py<PyAny>,
@@ -45,6 +46,7 @@ pub(super) fn into_stream(
             constants: constants.clone(),
             tx: Mutex::new(Some(tx)),
             finished: Arc::clone(&finished),
+            body_error,
         },
     )?;
 
@@ -88,13 +90,17 @@ struct Sender {
     constants: Constants,
     tx: Mutex<Option<mpsc::Sender<RequestStreamResult<Py<PyAny>>>>>,
     finished: Arc<AtomicBool>,
+    body_error: BodyError,
 }
 
 #[pymethods]
 impl Sender {
     fn send(&self, py: Python<'_>, item: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let item = if let Ok(item) = item.cast::<PyBaseException>() {
-            Err(RequestStreamError::from_py(item))
+            let err = RequestStreamError::from_py(item);
+            self.body_error
+                .set(PyErr::from_value(item.clone().into_any()));
+            Err(err)
         } else {
             Ok(item.unbind())
         };

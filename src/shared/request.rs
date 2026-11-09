@@ -1,13 +1,15 @@
 use std::{
     fmt,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
+use arc_swap::ArcSwapOption;
 use futures_core::Stream;
 use http::HeaderValue;
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyString, PyStringMethods as _};
-use pyo3::{exceptions::PyValueError, Py, PyResult, Python};
+use pyo3::{exceptions::PyValueError, Py, PyErr, PyResult, Python};
 use pyo3::{Bound, PyAny};
 use tokio::sync::oneshot;
 use url::form_urlencoded::Serializer;
@@ -136,6 +138,23 @@ impl<S: Stream + Unpin> Stream for StartOnPoll<S> {
             let _ = start.send(());
         }
         Pin::new(&mut this.inner).poll_next(cx)
+    }
+}
+
+/// The exception a request body iterator raised, which the request then
+/// fails with.
+#[derive(Clone, Default)]
+pub(crate) struct BodyError {
+    inner: Arc<ArcSwapOption<PyErr>>,
+}
+
+impl BodyError {
+    pub(crate) fn set(&self, err: PyErr) {
+        self.inner.store(Some(Arc::new(err)));
+    }
+
+    pub(crate) fn take(&self) -> Option<PyErr> {
+        self.inner.swap(None).and_then(Arc::into_inner)
     }
 }
 

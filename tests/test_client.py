@@ -725,23 +725,16 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
 
 
 @pytest.mark.anyio
-async def test_request_content_error(
-    client: Client | SyncClient, url: str, http_version: HTTPVersion
-) -> None:
-    # There is a race between whether the error is handled on the request
-    # or response side, which can look like a connection error when the server
-    # aborts or a response error. We match any.
-    with pytest.raises(
-        Exception, match=r"Request|connection|reading content"
-    ) as exc_info:
+async def test_request_content_error(client: Client | SyncClient, url: str) -> None:
+    error = RuntimeError("Test error")
+    with pytest.raises(RuntimeError) as exc_info:
         method = "POST"
         url = f"{url}/echo"
         if isinstance(client, SyncClient):
 
             def req_content_sync() -> Iterator[bytes]:
                 yield b"Hello, World!"
-                msg = "Test error"
-                raise RuntimeError(msg)
+                raise error
 
             def run():
                 request_content = req_content_sync()
@@ -753,24 +746,38 @@ async def test_request_content_error(
 
             async def req_content() -> AsyncIterator[bytes]:
                 yield b"Hello, World!"
-                msg = "Test error"
-                raise RuntimeError(msg)
+                raise error
 
             async with client.stream(method, url, content=req_content()) as resp:
                 content = b""
                 async for chunk in resp.content:
                     content += chunk
-    if isinstance(exc_info.value, WriteError):
-        if http_version is None:
-            msg = "Request failed"
-        elif http_version != HTTPVersion.HTTP2:
-            msg = "Test error"
+    assert exc_info.value is error
+
+
+@pytest.mark.anyio
+async def test_request_content_error_raised(
+    client: Client | SyncClient, url: str
+) -> None:
+    error = RuntimeError("Test error")
+    with pytest.raises(RuntimeError) as exc_info:
+        if isinstance(client, SyncClient):
+
+            def req_content_sync() -> Iterator[bytes]:
+                yield b"Hello, World!"
+                raise error
+
+            await to_thread.run_sync(
+                partial(client.post, f"{url}/read_all", content=req_content_sync())
+            )
         else:
-            # With HTTP/2, reqwest seems to squash the original error message.
-            msg = "stream error sent by user"
-        assert msg in str(exc_info.value)
-    else:
-        assert isinstance(exc_info.value, ReadError)
+
+            async def req_content() -> AsyncIterator[bytes]:
+                yield b"Hello, World!"
+                raise error
+
+            await client.post(f"{url}/read_all", content=req_content())
+    assert exc_info.value is error
 
 
 class BodyInterruptedError(BaseException):

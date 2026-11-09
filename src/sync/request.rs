@@ -13,7 +13,7 @@ use crate::{
     shared::{
         constants::Constants,
         request::{
-            maybe_encode_json_content, maybe_encode_multipart_content, RequestHead,
+            maybe_encode_json_content, maybe_encode_multipart_content, BodyError, RequestHead,
             RequestStreamError, RequestStreamResult, StartOnPoll,
         },
         runtime::get_runtime,
@@ -121,20 +121,25 @@ impl SyncRequest {
         &self,
         py: Python<'_>,
         http3: bool,
+        body_error: &BodyError,
     ) -> PyResult<(reqwest::Request, Option<Py<PyAny>>)> {
         let mut req = self.head.new_reqwest(py, http3)?;
         if let Some(timeout) = get_timeout(py)? {
             *req.timeout_mut() = Some(timeout);
         }
         let mut request_iter: Option<Py<PyAny>> = None;
-        if let Some((body, iter)) = self.content_into_reqwest(py) {
+        if let Some((body, iter)) = self.content_into_reqwest(py, body_error) {
             *req.body_mut() = Some(body);
             request_iter = iter;
         }
         Ok((req, request_iter))
     }
 
-    fn content_into_reqwest(&self, py: Python<'_>) -> Option<(reqwest::Body, Option<Py<PyAny>>)> {
+    fn content_into_reqwest(
+        &self,
+        py: Python<'_>,
+        body_error: &BodyError,
+    ) -> Option<(reqwest::Body, Option<Py<PyAny>>)> {
         match &self.content {
             Some(Content::Bytes(bytes)) => Some((
                 reqwest::Body::from(Bytes::from_owner(bytes.clone_ref(py))),
@@ -144,6 +149,7 @@ impl SyncRequest {
                 let (tx, rx) = mpsc::channel::<RequestStreamResult<Bytes>>(1);
                 let (start_tx, start_rx) = oneshot::channel();
                 let read_iter = iter.clone_ref(py);
+                let body_error = body_error.clone();
                 get_runtime().spawn(async move {
                     if start_rx.await.is_err() || tx.is_closed() {
                         return;
@@ -157,8 +163,9 @@ impl SyncRequest {
                                         RequestStreamError::new(format!("Invalid bytes item: {e}"))
                                     }),
                                     Some(Err(e)) => {
-                                        let e_py = e.into_value(py);
-                                        Err(RequestStreamError::from_py(e_py.bind(py).as_any()))
+                                        let err = RequestStreamError::from_py(e.value(py));
+                                        body_error.set(e);
+                                        Err(err)
                                     }
                                     None => break,
                                 };

@@ -115,7 +115,7 @@ class WSGITransport(SyncTransport):
             for k, v in headers:
                 trailers.add(k, v)
 
-        request_input = RequestInput(request.content, self._http_version)
+        request_input = RequestInput(request.content)
         environ: WSGIEnvironment = {
             "REQUEST_METHOD": request.method,
             "SCRIPT_NAME": "",
@@ -215,6 +215,12 @@ class WSGITransport(SyncTransport):
             raise WSGITimeoutError(msg, app_future)
 
         if status_str is _UNSET_STATUS:
+            try:
+                message = response_queue.get_nowait()
+            except Empty:
+                message = None
+            if message is not None and message is request_input.exception:
+                raise message
             return SyncResponse(
                 status=500,
                 http_version=self._http_version,
@@ -272,15 +278,13 @@ class WSGITransport(SyncTransport):
 
 
 class RequestInput:
-    def __init__(
-        self, content: bytes | Iterator[bytes], http_version: HTTPVersion
-    ) -> None:
+    def __init__(self, content: bytes | Iterator[bytes]) -> None:
         if isinstance(content, bytes):
             content = iter([content])
         self._content = content
-        self._http_version = http_version
         self._closed = False
         self._buffer = bytearray()
+        self.exception: Exception | None = None
 
     def read(self, size: int = -1) -> bytes:
         return self._do_read(size)
@@ -324,6 +328,9 @@ class RequestInput:
         try:
             while True:
                 chunk = next(self._content)
+                if not isinstance(chunk, bytes):
+                    msg = "Request not bytes object"
+                    raise WriteError(msg)  # noqa: TRY301
                 if size < 0:
                     self._buffer.extend(chunk)
                     continue
@@ -344,13 +351,9 @@ class RequestInput:
             self._buffer = bytearray()
             return res
         except Exception as e:
+            self.exception = e
             self.close()
-            if self._http_version != HTTPVersion.HTTP2:
-                msg = f"Request failed: {e}"
-            else:
-                # With HTTP/2, reqwest seems to squash the original error message.
-                msg = "Request failed: stream error sent by user"
-            raise WriteError(msg) from e
+            raise
 
     def close(self) -> None:
         if self._closed:
@@ -405,6 +408,8 @@ class ResponseContent(Iterator[bytes]):
             self._read_pending = False
         if isinstance(message, Exception):
             match message:
+                case _ if message is self._request_input.exception:
+                    err = message
                 case WriteError() | TimeoutError():
                     err = message
                 case _:
