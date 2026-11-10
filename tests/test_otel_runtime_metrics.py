@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from threading import Barrier
 from typing import TYPE_CHECKING, cast
 
@@ -126,13 +126,19 @@ async def test_blocking_threads(
     url = f"{url}/echo"
 
     def work() -> None:
-        request = SyncRequestBody()
-        with client.stream("POST", url, content=request) as res:
-            assert res.status == 200
-            request_sent.wait()
-            finish_request.wait()
-            # Don't explicitly close request. We want to make sure there are no
-            # thread leaks when the response closes it.
+        try:
+            request = SyncRequestBody()
+            with client.stream("POST", url, content=request) as res:
+                assert res.status == 200
+                request_sent.wait()
+                finish_request.wait()
+                # Don't explicitly close request. We want to make sure there are no
+                # thread leaks when the response closes it.
+        except BaseException:
+            # A broken barrier lets the main thread fail without waiting for
+            # its timeout.
+            request_sent.abort()
+            raise
 
     futs: list[Future] = []
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -140,27 +146,42 @@ async def test_blocking_threads(
             fut = executor.submit(work)
             futs.append(fut)
 
-        request_sent.wait()
+        # The workers wait on finish_request, and leaving the executor joins
+        # them. The test hangs if finish_request is not set after a failure.
+        try:
+            request_sent.wait(timeout=30)
 
-        metrics = get_runtime_metrics(otel_test_base)
-        blocking_threads = metrics[1]
-        assert blocking_threads.name == "rust.async_runtime.blocking_threads.count"
-        blocking_threads_data = cast("Sum", blocking_threads.data)
-        assert len(blocking_threads_data.data_points) == 2
-        active_blocking_threads = blocking_threads_data.data_points[0]
-        assert active_blocking_threads.value >= 32
-        assert active_blocking_threads.attributes == {
-            "rust.runtime": "tokio",
-            "rust.thread.state": "active",
-        }
-        idle_blocking_threads = blocking_threads_data.data_points[1]
-        assert idle_blocking_threads.value == 0
-        assert idle_blocking_threads.attributes == {
-            "rust.runtime": "tokio",
-            "rust.thread.state": "idle",
-        }
+            metrics = get_runtime_metrics(otel_test_base)
+            blocking_threads = metrics[1]
+            assert blocking_threads.name == "rust.async_runtime.blocking_threads.count"
+            blocking_threads_data = cast("Sum", blocking_threads.data)
+            assert len(blocking_threads_data.data_points) == 2
+            active_blocking_threads = blocking_threads_data.data_points[0]
+            assert active_blocking_threads.value >= 32
+            assert active_blocking_threads.attributes == {
+                "rust.runtime": "tokio",
+                "rust.thread.state": "active",
+            }
+            idle_blocking_threads = blocking_threads_data.data_points[1]
+            assert idle_blocking_threads.value == 0
+            assert idle_blocking_threads.attributes == {
+                "rust.runtime": "tokio",
+                "rust.thread.state": "idle",
+            }
+        except threading.BrokenBarrierError:
+            # The barrier error hides the worker error that broke it.
+            finish_request.set()
+            wait(futs, timeout=30)
+            for fut in futs:
+                exc = fut.exception() if fut.done() else None
+                if exc is not None and not isinstance(
+                    exc, threading.BrokenBarrierError
+                ):
+                    raise exc from None
+            raise
+        finally:
+            finish_request.set()
 
-        finish_request.set()
         for fut in futs:
             fut.result()
 
