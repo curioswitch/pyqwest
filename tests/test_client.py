@@ -677,10 +677,10 @@ async def test_close_pending_read(async_client: Client, url: str) -> None:
 
         tg.start_soon(read_content)
 
-        while not resp._read_pending:  # ty: ignore[unresolved-attribute]  # noqa: ASYNC110
+        while not resp._read_pending:  # ty: ignore[missing-attribute]  # noqa: ASYNC110
             await anyio.sleep(0.001)
 
-    assert not resp._read_pending  # ty: ignore[unresolved-attribute]
+    assert not resp._read_pending  # ty: ignore[missing-attribute]
 
 
 @pytest.mark.anyio
@@ -712,7 +712,7 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
             read_thread = threading.Thread(target=read_content)
             read_thread.start()
 
-            while not resp._read_pending:  # ty: ignore[unresolved-attribute]
+            while not resp._read_pending:  # ty: ignore[missing-attribute]
                 time.sleep(0.001)
 
         read_thread.join()

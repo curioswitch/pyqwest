@@ -326,7 +326,7 @@ async def test_cancel_while_reading_content(url: str) -> None:
             async for _ in res.content:
                 pass
         assert scope.cancelled_caught
-        await res.content.aclose()  # ty: ignore[unresolved-attribute]
+        await res.content.aclose()  # ty: ignore[missing-attribute]
         res = await transport.execute(Request("GET", f"{url}/echo"))
         assert res.status == 200
 
@@ -339,7 +339,7 @@ async def test_aclose_partially_read_body(url: str) -> None:
         )
         first = await anext(res.content)
         assert len(first) > 0
-        await res.content.aclose()  # ty: ignore[unresolved-attribute]
+        await res.content.aclose()  # ty: ignore[missing-attribute]
         assert await anext(res.content, None) is None
 
 

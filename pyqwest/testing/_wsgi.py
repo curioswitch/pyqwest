@@ -207,7 +207,7 @@ class WSGITransport(SyncTransport):
                     request_input.close()
                     response_started.set()
                 with contextlib.suppress(Exception):
-                    response_iter.close()  # ty: ignore[unresolved-attribute]
+                    response_iter.close()  # ty: ignore[missing-attribute]
 
         app_future = self._executor.submit(run_app)
 
@@ -368,7 +368,7 @@ class RequestInput:
             return
         self._closed = True
         with contextlib.suppress(Exception):
-            self._content.close()  # ty: ignore[unresolved-attribute]
+            self._content.close()  # ty: ignore[missing-attribute]
 
 
 class ResponseContent(Iterator[bytes]):
