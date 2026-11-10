@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 name = "pyqwest"
 
 [dependencies]
-arc-swap = "1.9.3"
+arc-swap = "1.9.5"
 backoff = "0.4.0"
 brotli = "9.1.1"
 bytes = "1.12.1"
@@ -24,7 +24,7 @@ http-body-util = "0.1.5"
 # Only used to classify reqwest's errors; must track the version reqwest depends on.
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy"] }
-mime = "0.3.17"
+mime = "0.3.18"
 pyo3 = { version = "0.30.1", features = ["bytes"] }
 reqwest = {
   version = "0.13.5",
