@@ -63,7 +63,7 @@ async def test_encode_closes_part_stream_on_close() -> None:
     async for chunk in content:
         if chunk == b"first":
             break
-    await content.aclose()  # ty: ignore[unresolved-attribute]
+    await content.aclose()  # ty: ignore[missing-attribute]
     assert closed
 
 
@@ -83,5 +83,5 @@ def test_encode_sync_closes_part_stream_on_close() -> None:
     for chunk in content:
         if chunk == b"first":
             break
-    content.close()  # ty: ignore[unresolved-attribute]
+    content.close()  # ty: ignore[missing-attribute]
     assert closed

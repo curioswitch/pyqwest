@@ -150,7 +150,7 @@ class ASGITransport(Transport):
                 await receive_queue.put(e)
             finally:
                 try:
-                    aclose = request.content.aclose  # ty: ignore[unresolved-attribute]
+                    aclose = request.content.aclose  # ty: ignore[missing-attribute]
                 except AttributeError:
                     pass
                 else:
