@@ -16,9 +16,9 @@ permissions:
 env:
   # When bumping, also bump MATURIN_DEVELOP_ARGS in ci.yaml
   # maturin flags to build targets we publish non-abi3 wheels for
-  UNSTABLE_API_FLAGS: -i 3.13 -i 3.14 -i 3.14t -i 3.15 -i 3.15t -i pypy3.11
+  UNSTABLE_API_FLAGS: -i 3.13 -i 3.14 -i 3.15 -i 3.15t -i pypy3.11
   # maturin flags to build targets we publish abi3 wheels for
-  ABI3_FLAGS: -i 3.11 --features pyo3/abi3-py311
+  ABI3_FLAGS: -i 3.11 --features pyo3/abi3-py311 -i 3.14t
   ABI3T_FLAGS: -i 3.15t --features pyo3/abi3t-py315
 
 jobs:
@@ -31,18 +31,22 @@ jobs:
             target: x86_64-unknown-linux-gnu
             arch: x86_64
             manylinux: manylinux_2_28
+            unstable_abi: true
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
             arch: x86_64
             manylinux: musllinux_1_2
+            unstable_abi: true
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: aarch64
             manylinux: manylinux_2_28
+            unstable_abi: true
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             arch: aarch64
             manylinux: musllinux_1_2
+            unstable_abi: true
           - runner: ubuntu-24.04-riscv
             target: riscv64gc-unknown-linux-gnu
             arch: riscv64
@@ -66,9 +70,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # We only publish abi3 wheels for Windows
+      # We only publish unstable abi wheels for Linux amd64 and aarch64
       - name: Build wheels
-        if: runner.os != 'Windows'
+        if: matrix.unstable_abi
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
