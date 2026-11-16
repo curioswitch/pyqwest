@@ -561,7 +561,7 @@ dependencies = [
 [[package]]
 name = "h2"
 version = "0.4.20"
-source = "git+https://github.com/anuraaga/h2?branch=expose-initial-settings#bb8a2428123a192cf49c649a3d029d09c58cd814"
+source = "git+https://github.com/anuraaga/h2?branch=expose-initial-settings#678c315b7614757031b124edd6385811bde4c304"
 dependencies = [
  "atomic-waker",
  "bytes",
