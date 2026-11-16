@@ -84,8 +84,8 @@ impl Request {
         }
     }
 
-    #[getter]
-    fn _json(&self) -> bool {
+    #[getter(_json)]
+    fn json_flag(&self) -> bool {
         self.head.json()
     }
 }

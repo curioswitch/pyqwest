@@ -201,8 +201,8 @@ impl Response {
         }
     }
 
-    #[getter]
-    fn _read_pending(&self, py: Python<'_>) -> bool {
+    #[getter(_read_pending)]
+    fn read_pending(&self, py: Python<'_>) -> bool {
         match &self.content {
             Content::Http(content) => {
                 let body = content.get().body.load();
@@ -222,7 +222,8 @@ impl Response {
         }
     }
 
-    fn _set_request_iter_task(&self, task: Py<PyAny>) {
+    #[pyo3(name = "_set_request_iter_task")]
+    fn py_set_request_iter_task(&self, task: Py<PyAny>) {
         self.request_iter_task.store(Arc::from(task));
     }
 }

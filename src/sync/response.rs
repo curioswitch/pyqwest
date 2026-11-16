@@ -189,8 +189,8 @@ impl SyncResponse {
         }
     }
 
-    #[getter]
-    fn _read_pending(&self, py: Python<'_>) -> bool {
+    #[getter(_read_pending)]
+    fn read_pending(&self, py: Python<'_>) -> bool {
         match &self.content {
             Content::Http(content) => {
                 let body = content.get().body.load();
