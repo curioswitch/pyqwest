@@ -3,9 +3,10 @@
 //! A Rust future is spawned on the tokio runtime as soon as it is created, on
 //! either async library, and races an abort signal. Each library supplies the
 //! awaitable Python gets back and the way tokio reports the outcome. asyncio's
-//! are built here: an `asyncio.Future`, completed through the loop's
-//! `call_soon_threadsafe`. trio's come from `pyqwest._trio`: a coroutine
-//! waiting on a `trio.Event`, which only Python can await.
+//! are built here: an `asyncio.Future`, completed on the loop thread through the
+//! loop's waker, or `call_soon_threadsafe` for a loop without one. trio's come
+//! from `pyqwest._trio`: a coroutine waiting on a `trio.Event`, which only
+//! Python can await.
 
 use std::{
     any::Any,
@@ -24,6 +25,7 @@ use pyo3::{
 };
 use tokio::sync::oneshot;
 
+use super::waker::{loop_queue, LoopQueue};
 use crate::shared::{constants::Constants, exception::panic_message, runtime::get_runtime};
 
 /// The async library a request runs on. `execute()` detects it once, and every
@@ -201,12 +203,7 @@ where
             // A panic in the future is caught so it still reaches the awaiter.
             res = AssertUnwindSafe(fut).catch_unwind() => Some(res),
         };
-        // Converting the result and calling back into Python need the GIL,
-        // which a tokio worker must not wait for, so both happen on the
-        // blocking pool.
-        tokio::task::spawn_blocking(move || {
-            Python::try_attach(move |py| report(py, &constants, &completion, outcome));
-        });
+        completion.send(constants, outcome);
     });
     Ok(awaitable)
 }
@@ -237,9 +234,12 @@ fn asyncio_awaitable<'py>(
             constants: constants.clone(),
         },
     )?;
-    let completion = Completion::Asyncio {
-        event_loop: event_loop.unbind(),
-        deliver,
+    let completion = match loop_queue(py, &event_loop)? {
+        Some(queue) => Completion::AsyncioOnLoop { queue, deliver },
+        None => Completion::Asyncio {
+            event_loop: event_loop.unbind(),
+            deliver,
+        },
     };
     Ok((completion, future))
 }
@@ -247,7 +247,14 @@ fn asyncio_awaitable<'py>(
 /// How tokio reports a request's outcome, `(value, error, cancelled)`, to
 /// Python.
 enum Completion {
-    /// `deliver(value, error, cancelled)`, scheduled on the event loop.
+    /// `deliver(value, error, cancelled)`, run on the loop thread by the event
+    /// loop's waker.
+    AsyncioOnLoop {
+        queue: LoopQueue,
+        deliver: Py<Deliver>,
+    },
+    /// `deliver(value, error, cancelled)`, scheduled on an event loop without a
+    /// waker.
     Asyncio {
         event_loop: Py<PyAny>,
         deliver: Py<Deliver>,
@@ -256,13 +263,62 @@ enum Completion {
     Trio(Py<PyAny>),
 }
 
-/// Reports `outcome` exactly once: `None` for an abort, otherwise the future's
-/// result or its panic.
+/// A request future's outcome: `None` for an abort, otherwise its result or its
+/// panic.
+type Outcome<T> = Option<Result<PyResult<T>, Box<dyn Any + Send>>>;
+
+impl Completion {
+    /// Reports `outcome` exactly once. Converting it and calling back into
+    /// Python need the GIL, which a tokio worker must not wait for, so both
+    /// happen on the loop thread when it has a waker, or on the blocking pool.
+    fn send<T>(self, constants: Constants, outcome: Outcome<T>)
+    where
+        T: for<'a> IntoPyObject<'a> + Send + 'static,
+    {
+        match self {
+            Completion::AsyncioOnLoop { queue, deliver } => {
+                queue.dispatch(Box::new(move |py| {
+                    report(py, outcome, |args| deliver.call1(py, args).map(drop));
+                }));
+            }
+            Completion::Asyncio {
+                event_loop,
+                deliver,
+            } => on_blocking_pool(move |py| {
+                report(py, outcome, |(value, error, cancelled)| {
+                    event_loop
+                        .call_method1(
+                            py,
+                            &constants.call_soon_threadsafe,
+                            (deliver, value, error, cancelled),
+                        )
+                        .map(drop)
+                        // A closed loop raises RuntimeError: nobody waits.
+                        .or_else(|e| {
+                            e.is_instance_of::<PyRuntimeError>(py)
+                                .then_some(())
+                                .ok_or(e)
+                        })
+                });
+            }),
+            Completion::Trio(callback) => on_blocking_pool(move |py| {
+                report(py, outcome, |args| callback.call1(py, args).map(drop));
+            }),
+        }
+    }
+}
+
+/// Runs `f` attached to the interpreter on tokio's blocking pool.
+fn on_blocking_pool(f: impl FnOnce(Python<'_>) + Send + 'static) {
+    tokio::task::spawn_blocking(move || Python::try_attach(f));
+}
+
+/// Converts `outcome` to `(value, error, cancelled)` for `send`, logging what
+/// `send` raises.
 fn report<T>(
     py: Python<'_>,
-    constants: &Constants,
-    completion: &Completion,
-    outcome: Option<Result<PyResult<T>, Box<dyn Any + Send>>>,
+    outcome: Outcome<T>,
+    send: impl FnOnce((Py<PyAny>, Py<PyAny>, bool)) -> PyResult<()>,
 ) where
     T: for<'a> IntoPyObject<'a>,
 {
@@ -275,31 +331,12 @@ fn report<T>(
         }))
         .unwrap_or_else(|payload| Err(panic_error(&*payload))),
     };
-    let (value, error, cancelled) = match result {
+    let args = match result {
         Ok(Some(value)) => (value, py.None(), false),
         Ok(None) => (py.None(), py.None(), true),
         Err(err) => (py.None(), err.into_value(py).into_any(), false),
     };
-    let reported = match completion {
-        Completion::Asyncio {
-            event_loop,
-            deliver,
-        } => event_loop
-            .call_method1(
-                py,
-                &constants.call_soon_threadsafe,
-                (deliver, value, error, cancelled),
-            )
-            .map(drop)
-            // A closed loop raises RuntimeError: nobody waits.
-            .or_else(|e| {
-                e.is_instance_of::<PyRuntimeError>(py)
-                    .then_some(())
-                    .ok_or(e)
-            }),
-        Completion::Trio(callback) => callback.call1(py, (value, error, cancelled)).map(drop),
-    };
-    if let Err(e) = reported {
+    if let Err(e) = send(args) {
         e.write_unraisable(py, None);
     }
 }
