@@ -44,6 +44,9 @@ def test_alternating_loops(url: str, loop_factory) -> None:
     async def requests() -> None:
         await asyncio.gather(*(_get_ok(client, url) for _ in range(10)))
 
+    async def close() -> None:
+        await transport.aclose()
+
     # Two loops that take turns on one thread each complete their own requests.
     with asyncio.Runner(loop_factory=loop_factory) as first:
         with asyncio.Runner(loop_factory=loop_factory) as second:
@@ -53,7 +56,7 @@ def test_alternating_loops(url: str, loop_factory) -> None:
         # A loop that replaces a closed one completes its requests too.
         with asyncio.Runner(loop_factory=loop_factory) as third:
             third.run(requests())
-        first.run(transport.aclose())
+        first.run(close())
 
 
 class _Marker:
