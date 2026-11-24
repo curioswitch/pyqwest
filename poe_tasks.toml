@@ -67,6 +67,10 @@ help = "Run the test suite"
 deps = ["build"]
 cmd = "pytest"
 
+[tasks.test-rust]
+help = "Run the rust unit tests"
+cmd = "cargo test --lib"
+
 [tasks.wheel]
 help = "Builds the wheel"
 cmd = "uv run maturin build --release --strip --out dist"
