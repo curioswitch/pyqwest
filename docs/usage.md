@@ -61,6 +61,14 @@ and get back a [full response](/api/#pyqwest.FullResponse).
     print(response.text())
     ```
 
+## gevent
+
+`SyncClient` works with [gevent](https://www.gevent.org/) and other libraries that monkey-patch
+`select.select`. While `select.select` is patched, a sync request waits through it instead of blocking
+its thread, so other greenlets keep running, and a `gevent.Timeout` or a killed greenlet interrupts
+the request and cancels it. A streamed request body is read from its iterator on a native thread
+rather than a greenlet.
+
 ## Multipart forms
 
 To send a `multipart/form-data` request, for example to upload files, pass a

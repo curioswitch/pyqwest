@@ -214,9 +214,9 @@ impl ResponseContextManager {
         exc_type: Option<&Bound<'_, PyAny>>,
         exc_value: Option<&Bound<'_, PyAny>>,
         traceback: Option<&Bound<'_, PyAny>>,
-    ) {
+    ) -> PyResult<()> {
         self.response
             .get()
-            .__exit__(py, exc_type, exc_value, traceback);
+            .__exit__(py, exc_type, exc_value, traceback)
     }
 }
