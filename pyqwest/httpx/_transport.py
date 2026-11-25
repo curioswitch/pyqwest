@@ -41,10 +41,10 @@ class AsyncPyqwestTransport(httpx.AsyncBaseTransport):
 
     HTTPX's per-phase timeouts are approximated, not honored individually: the
     underlying transport supports a single operation timeout, which is taken as
-    the sum of the `read` and `write` timeouts. A phase explicitly set to
-    `None` means no limit and disables the operation timeout. The `connect`
-    timeout is configured on the pyqwest transport instead, and `pool` is
-    ignored.
+    the larger of the `read` and `write` timeouts, so `timeout=5` bounds the
+    whole request to 5 seconds. A phase explicitly set to `None` means no limit
+    and disables the operation timeout. The `connect` timeout is configured on
+    the pyqwest transport instead, and `pool` is ignored.
     """
 
     _transport: Transport
@@ -188,10 +188,10 @@ class PyqwestTransport(httpx.BaseTransport):
 
     HTTPX's per-phase timeouts are approximated, not honored individually: the
     underlying transport supports a single operation timeout, which is taken as
-    the sum of the `read` and `write` timeouts. A phase explicitly set to
-    `None` means no limit and disables the operation timeout. The `connect`
-    timeout is configured on the pyqwest transport instead, and `pool` is
-    ignored.
+    the larger of the `read` and `write` timeouts, so `timeout=5` bounds the
+    whole request to 5 seconds. A phase explicitly set to `None` means no limit
+    and disables the operation timeout. The `connect` timeout is configured on
+    the pyqwest transport instead, and `pool` is ignored.
     """
 
     _transport: SyncTransport
@@ -361,14 +361,18 @@ def convert_timeout(extensions: dict) -> float | None:
     # only an operation timeout, so we need to approximate that from the httpx
     # timeout dict.
     #
-    # The approximation is the sum of the specified read/write timeouts: an
-    # exchange is essentially a write followed by a read, so the caller's total
-    # budget across both phases is the closest match for an operation timeout.
+    # The approximation is the larger of the specified read/write timeouts.
+    # httpx fills every phase from a single value (`timeout=5` is read=5,
+    # write=5), and callers read that as "this request may take 5 seconds", so
+    # combining the phases must give back that value rather than a multiple of
+    # it. Summing them, as an earlier version did, made every such request wait
+    # twice as long as configured. When the phases differ, the larger one is
+    # used so that neither is held to less than the caller allowed it alone.
     #
     # httpx uses None to mean "no limit", which is not the same as the phase
-    # being unspecified, so an explicit None disables the operation timeout - a
-    # sum with an unbounded phase is unbounded. Negative values contribute
-    # nothing to the budget rather than shrinking the other phase's.
+    # being unspecified, so an explicit None disables the operation timeout -
+    # the bound of an unbounded phase is unbounded. Negative values are
+    # treated as zero.
     #
     # Connect is not used: it is applied while establishing the connection,
     # which the transport's own connect_timeout already covers, and it says
@@ -381,9 +385,9 @@ def convert_timeout(extensions: dict) -> float | None:
         phase_timeout = httpx_timeout[phase]
         if phase_timeout is None:
             return None
-        if operation_timeout is None:
-            operation_timeout = 0.0
-        operation_timeout += max(phase_timeout, 0.0)
+        phase_timeout = max(phase_timeout, 0.0)
+        if operation_timeout is None or phase_timeout > operation_timeout:
+            operation_timeout = phase_timeout
     return operation_timeout
 
 
