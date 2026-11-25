@@ -45,6 +45,12 @@ tokio-stream = "0.1.19"
 url = "2.5.9"
 zstd = "0.14.4"
 
+[target.'cfg(target_vendor = "apple")'.dependencies]
+socket2 = { version = "0.6.5", features = ["all"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2.191"
+
 [build-dependencies]
 pyo3-build-config = { version = "0.30.1", features = ["resolve-config"] }
 

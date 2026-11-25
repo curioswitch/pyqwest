@@ -219,6 +219,13 @@ class WSGITransport(SyncTransport):
             raise WSGITimeoutError(msg, app_future)
 
         if request_input.exception is not None:
+            # The app may still be handling the request body error, so wait for
+            # it to finish, within the timeout, before raising.
+            remaining = (
+                max(deadline - time.monotonic(), 0) if deadline is not None else None
+            )
+            with contextlib.suppress(Exception):
+                app_future.result(timeout=remaining)
             raise request_input.exception
 
         if status_str is _UNSET_STATUS:
