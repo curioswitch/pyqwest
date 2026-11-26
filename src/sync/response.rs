@@ -177,14 +177,18 @@ impl SyncResponse {
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {
-        close_request_iter(py, &self.request_iter, &self.constants);
-        match &self.content {
+        // Cancel any pending read before closing the request body. Otherwise
+        // the server may finish the response first, and the read ends normally
+        // instead of raising.
+        let res = match &self.content {
             Content::Http(content) => content.get().close(py),
             Content::Custom(content) => {
                 let _ = content.bind(py).call_method0("close");
                 Ok(())
             }
-        }
+        };
+        close_request_iter(py, &self.request_iter, &self.constants);
+        res
     }
 
     #[getter(_read_pending)]

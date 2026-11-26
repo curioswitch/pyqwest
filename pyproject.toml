@@ -39,7 +39,6 @@ dev = [
   "brotli==1.2.1",
   # Used in setup_it.py, not directly, keeping it here allows renovate for free.
   "connectrpc==0.13.0",
-  "gevent==26.9.0",
   "httpx[http2]==0.28.1",
   "maturin==1.16.0",
   "opentelemetry-test-utils==0.66b2",
@@ -65,6 +64,9 @@ dev = [
 ]
 
 docs = ["mkdocstrings-python", "zensical"]
+
+# Kept out of dev because gevent doesn't support free-threaded Python.
+gevent = ["gevent==26.9.0"]
 
 [build-system]
 requires = ["maturin>=1.16.0,<2.0"]

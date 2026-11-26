@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
     from anyio.streams.memory import MemoryObjectReceiveStream
 
-    from pyqwest import HTTPTransport
+    from pyqwest import HTTPTransport, SyncHTTPTransport, SyncResponse
 
 
 pytestmark = [
@@ -722,6 +722,51 @@ async def test_close_pending_read_sync(sync_client: SyncClient, url: str) -> Non
         assert request_body._closed
 
     await to_thread.run_sync(run)
+
+
+class _ClosingRequestBody(SyncRequestBody):
+    """Request body that records whether a response read was pending when it
+    was closed.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.resp: SyncResponse | None = None
+        self.read_pending_on_close: list[bool] = []
+
+    def close(self) -> None:
+        if self.resp is not None:
+            self.read_pending_on_close.append(self.resp._read_pending)  # ty: ignore[missing-attribute]
+        super().close()
+
+
+def test_close_cancels_read_before_request_sync(
+    sync_transport: SyncHTTPTransport, url: str
+) -> None:
+    # Closing the response must cancel the pending read before closing the
+    # request body. Otherwise the server can finish the response, and the read
+    # ends normally instead of raising. The WSGI transport gets the same order
+    # from its response queue, so only the HTTP transport is tested.
+    client = SyncClient(sync_transport)
+    request_body = _ClosingRequestBody()
+    last_read: object = None
+    with client.stream("POST", f"{url}/echo", content=request_body) as resp:
+        request_body.resp = resp
+
+        def read_content() -> None:
+            nonlocal last_read
+            try:
+                last_read = next(resp.content, None)
+            except Exception as e:
+                last_read = e
+
+        read_thread = threading.Thread(target=read_content)
+        read_thread.start()
+        while not resp._read_pending:  # ty: ignore[missing-attribute]
+            time.sleep(0.001)
+    read_thread.join()
+    assert isinstance(last_read, ReadError)
+    assert request_body.read_pending_on_close == [False]
 
 
 @pytest.mark.anyio

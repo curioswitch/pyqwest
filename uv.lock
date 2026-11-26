@@ -2145,7 +2145,6 @@ dev = [
     { name = "asgiref" },
     { name = "brotli" },
     { name = "connectrpc" },
-    { name = "gevent" },
     { name = "httpx", extra = ["http2"] },
     { name = "maturin" },
     { name = "opentelemetry-test-utils" },
@@ -2173,6 +2172,9 @@ docs = [
     { name = "mkdocstrings-python" },
     { name = "zensical" },
 ]
+gevent = [
+    { name = "gevent" },
+]
 
 [package.metadata]
 requires-dist = [{ name = "opentelemetry-api", specifier = ">=1.39.1" }]
@@ -2184,7 +2186,6 @@ dev = [
     { name = "asgiref", specifier = "==3.13.0" },
     { name = "brotli", specifier = "==1.2.1" },
     { name = "connectrpc", specifier = "==0.13.0" },
-    { name = "gevent", specifier = "==26.9.0" },
     { name = "httpx", extras = ["http2"], specifier = "==0.28.1" },
     { name = "maturin", specifier = "==1.16.0" },
     { name = "opentelemetry-test-utils", specifier = "==0.66b2" },
@@ -2212,6 +2213,7 @@ docs = [
     { name = "mkdocstrings-python" },
     { name = "zensical" },
 ]
+gevent = [{ name = "gevent", specifier = "==26.9.0" }]
 
 [[package]]
 name = "pyreqwest"

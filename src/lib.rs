@@ -76,6 +76,7 @@ mod pyqwest {
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
         add_protocols(m.py(), m)?;
+        sync::wait::init(m.py())?;
 
         Ok(())
     }

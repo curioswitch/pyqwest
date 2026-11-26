@@ -65,7 +65,8 @@ jobs:
 
       - run: uv lock --check
 
-      - run: uv sync
+      # gevent does not support free-threaded Python.
+      - run: uv sync ${{ !endsWith(matrix.python, 't') && '--group gevent' || '' }}
 
       # Go ahead and run lint on all Python versions since we may have version-specific
       # guards in rust in the future.

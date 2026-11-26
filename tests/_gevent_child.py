@@ -1,7 +1,10 @@
-"""Runs sync requests under gevent, for `test_gevent`.
+"""Runs sync requests under gevent for `test_gevent`.
 
-The server runs on the same gevent hub as the client, so it only answers if
-the client's waits yield to the hub. Prints `ok` if every check passes.
+Usage: _gevent_child.py URL HTTP_VERSION
+
+Requests go to the test server's `/echo` endpoint, which sends back each
+request body chunk as it arrives. If the request body pauses, so does the
+response. Prints `ok` if every check passes.
 """
 
 from __future__ import annotations
@@ -10,38 +13,57 @@ from gevent import monkey
 
 monkey.patch_all()
 
-from typing import TYPE_CHECKING, Any  # noqa: E402
+import sys  # noqa: E402
+import time  # noqa: E402
+from typing import TYPE_CHECKING  # noqa: E402
 
 import gevent  # noqa: E402
-from gevent.pywsgi import WSGIServer  # noqa: E402
 
-from pyqwest import SyncClient, SyncHTTPTransport  # noqa: E402
+from pyqwest import HTTPVersion, SyncClient, SyncHTTPTransport  # noqa: E402
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Iterator
 
-# Bounds the whole run, so a wait that blocks the hub fails rather than hangs.
+# Fail instead of hanging if a request never finishes. gevent can't interrupt
+# a wait that blocks the hub, so run_child's own timeout covers that case.
 RUN_TIMEOUT = 30
 
-
-def app(
-    environ: dict[str, Any], start_response: Callable[..., object]
-) -> Iterable[bytes]:
-    path = environ["PATH_INFO"]
-    if path == "/hang":
-        gevent.sleep(RUN_TIMEOUT)
-    start_response("200 OK", [("content-type", "text/plain")])
-    if path == "/stream":
-        return stream()
-    if path == "/echo":
-        return [environ["wsgi.input"].read()]
-    return [b"hello"]
+HTTP_VERSIONS = {"h1": HTTPVersion.HTTP1, "h2": HTTPVersion.HTTP2}
 
 
-def stream() -> Iterator[bytes]:
-    for i in range(3):
-        gevent.sleep(0.05)
-        yield str(i).encode()
+class PausingBody:
+    """Request body that yields each `bytes` item and sleeps for each `float`
+    item, in seconds.
+
+    pyqwest reads request bodies on a native thread, where the patched
+    `time.sleep` uses that thread's own hub. `close()` cuts a pause short.
+    """
+
+    def __init__(self, *items: bytes | float) -> None:
+        self._items = iter(items)
+        self._closed = False
+
+    def __iter__(self) -> PausingBody:
+        return self
+
+    def __next__(self) -> bytes:
+        for item in self._items:
+            if isinstance(item, bytes):
+                return item
+            deadline = time.monotonic() + item
+            while not self._closed and time.monotonic() < deadline:
+                time.sleep(0.01)
+        raise StopIteration
+
+    def close(self) -> None:
+        self._closed = True
+
+
+def next_data(chunks: Iterator[bytes | memoryview | bytearray]) -> bytes:
+    """Returns the next chunk that is not empty."""
+    while not (chunk := bytes(next(chunks))):
+        pass
+    return chunk
 
 
 def expect(actual: object, expected: object) -> None:
@@ -50,57 +72,64 @@ def expect(actual: object, expected: object) -> None:
         raise AssertionError(msg)
 
 
-def main() -> None:
-    # A server name skips looking up the host, which can be slow.
-    server = WSGIServer(
-        ("127.0.0.1", 0), app, log=None, environ={"SERVER_NAME": "localhost"}
-    )
-    server.start()
-    url = f"http://127.0.0.1:{server.server_port}"
-
-    with SyncHTTPTransport() as transport:
+def main(url: str, http_version: HTTPVersion) -> None:
+    echo = f"{url}/echo"
+    with SyncHTTPTransport(http_version=http_version) as transport:
         client = SyncClient(transport)
 
-        expect(client.get(f"{url}/").content, b"hello")
+        expect(client.post(echo, content=b"hello").content, b"hello")
 
-        # Other greenlets keep running while a request waits.
+        # The ticker can only run during the request if the request's waits
+        # yield to the hub.
         ticks: list[None] = []
 
         def tick() -> None:
-            for _ in range(5):
+            while True:
                 gevent.sleep(0.01)
                 ticks.append(None)
 
         ticker = gevent.spawn(tick)
-        with client.stream("GET", f"{url}/stream") as res:
-            expect(b"".join(res.content), b"012")
-        ticker.join()
-        expect(len(ticks), 5)
+        with client.stream("POST", echo, content=PausingBody(b"a", 0.2, b"b")) as res:
+            expect(b"".join(bytes(chunk) for chunk in res.content), b"ab")
+        ticked = len(ticks) > 0
+        ticker.kill()
+        expect(ticked, True)  # noqa: FBT003
 
-        # A streamed request body is read on a native thread while the
-        # request waits on the hub.
-        body = (str(i).encode() for i in range(3))
-        expect(client.post(f"{url}/echo", content=body).content, b"012")
-
-        # Many requests at once share the hub.
-        jobs = [gevent.spawn(client.get, f"{url}/stream") for _ in range(20)]
+        # Concurrent requests from many greenlets.
+        jobs = [
+            gevent.spawn(client.post, echo, content=PausingBody(b"a", 0.05, b"b"))
+            for _ in range(20)
+        ]
         gevent.joinall(jobs, raise_error=True)
-        expect([job.value.content for job in jobs], [b"012"] * 20)
+        expect([job.value.content for job in jobs], [b"ab"] * 20)
 
-        # A timeout interrupts a waiting request, which leaves the client usable.
+        # A timeout interrupts a request, and the client still works after.
         interrupted = False
         try:
             with gevent.Timeout(0.1):
-                client.get(f"{url}/hang")
+                client.post(echo, content=PausingBody(b"a", RUN_TIMEOUT))
         except gevent.Timeout:
             interrupted = True
         expect(interrupted, True)  # noqa: FBT003
-        expect(client.get(f"{url}/").content, b"hello")
+        expect(client.post(echo, content=b"hello").content, b"hello")
 
-    server.stop()
+        # A timeout during a chunk read doesn't lose the rest of the body.
+        body = PausingBody(b"a", 0.5, b"b", b"c")
+        with client.stream("POST", echo, content=body) as res:
+            chunks = iter(res.content)
+            expect(next_data(chunks), b"a")
+            interrupted = False
+            try:
+                with gevent.Timeout(0.1):
+                    next(chunks)
+            except gevent.Timeout:
+                interrupted = True
+            expect(interrupted, True)  # noqa: FBT003
+            expect(b"".join(bytes(chunk) for chunk in chunks), b"bc")
+
     print("ok")  # noqa: T201
 
 
 if __name__ == "__main__":
     with gevent.Timeout(RUN_TIMEOUT):
-        main()
+        main(sys.argv[1], HTTP_VERSIONS[sys.argv[2]])

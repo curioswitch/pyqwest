@@ -1,15 +1,14 @@
-//! Socket pairs that tokio threads write to, without the GIL, to wake Python
-//! code waiting on the other end: an asyncio event loop watching it with
-//! `add_reader`, or a sync call under gevent waiting on it with `select`.
+//! Socket pairs for waking Python code from tokio threads without taking the
+//! GIL. tokio writes a byte to one end, and Python waits on the other: an
+//! asyncio event loop through `add_reader`, or a sync call under gevent
+//! through `select`.
 
 use std::io::{Read as _, Write as _};
 
-/// tokio threads write to one end of a pair of these sockets to wake Python
-/// code watching the other end.
+/// One end of a waker socket pair.
 #[cfg(unix)]
 pub(crate) type WakerSocket = std::os::unix::net::UnixStream;
-/// tokio threads write to one end of a pair of these sockets to wake Python
-/// code watching the other end. The standard library has no Unix domain
+/// One end of a waker socket pair. The standard library has no Unix domain
 /// sockets on Windows, so the pair is connected over loopback.
 #[cfg(windows)]
 pub(crate) type WakerSocket = std::net::TcpStream;
@@ -69,15 +68,14 @@ pub(crate) fn socket_fd(socket: &WakerSocket) -> u64 {
     socket.as_raw_socket()
 }
 
-/// Writes the byte that wakes the code watching the reader. A full socket
-/// buffer means a wakeup is already pending, and a closed reader means nobody
-/// is watching, so callers ignore errors.
+/// Writes one wakeup byte. Callers ignore errors: a full buffer means a wakeup
+/// is already pending, and a closed reader means nobody is waiting.
 pub(crate) fn write_wakeup(writer: &WakerSocket) -> std::io::Result<()> {
     (&*writer).write_all(&[0])
 }
 
-/// Reads every pending wakeup from a nonblocking reader, so it is no longer
-/// readable until the next one is written.
+/// Reads all pending wakeup bytes, so the reader stays unreadable until the
+/// next wakeup.
 pub(crate) fn drain_wakeups(reader: &WakerSocket) {
     let mut buf = [0u8; 64];
     while let Ok(n) = (&*reader).read(&mut buf) {

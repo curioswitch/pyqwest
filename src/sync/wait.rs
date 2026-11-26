@@ -1,12 +1,11 @@
-//! Waits for work on the tokio runtime from a sync call.
+//! Waiting for tokio work from sync calls.
 //!
-//! A sync call usually blocks its thread, detached from the interpreter, until
-//! tokio finishes. Under gevent or eventlet one thread runs many greenlets, and
-//! blocking it stalls all of them. Both libraries patch `select.select` to
-//! switch to their hub until a descriptor is ready, so while it is patched, the
-//! call instead waits through it on a socket that the tokio task writes to when
-//! it finishes, and other greenlets run in the meantime. As with the asyncio
-//! waker, tokio threads never attach to the interpreter to wake the caller.
+//! A sync call normally blocks its thread until the tokio task finishes. Under
+//! gevent, that would block every greenlet on the thread. gevent patches
+//! `select.select` to yield to its hub, so if it was patched when pyqwest was
+//! imported, sync calls wait in `select` on a socket that the tokio task writes
+//! to when it's done. As with the asyncio waker, tokio threads never take the
+//! GIL to wake the caller.
 
 use std::{
     future::Future,
@@ -27,22 +26,21 @@ use crate::shared::{
     wakeup::{drain_wakeups, nonblocking_socket_pair, socket_fd, write_wakeup, WakerSocket},
 };
 
-/// Runs `future` on the tokio runtime and returns its output, waiting
-/// cooperatively if `select.select` is patched and blocking the thread
-/// otherwise.
+/// Runs `future` on the tokio runtime and returns its output. If
+/// `select.select` was patched at import, waits in it so other greenlets can
+/// run. Otherwise, blocks the thread.
 ///
-/// A cooperative wait raises whatever the patched `select` raises, such as
-/// `gevent.Timeout` or `GreenletExit` when another greenlet interrupts the
-/// waiting one, and cancels `future`.
+/// If the patched `select` raises, e.g. `gevent.Timeout` or `GreenletExit`,
+/// `future` is cancelled and the error is returned.
 pub(crate) fn wait<T, F>(py: Python<'_>, future: F) -> PyResult<T>
 where
     F: Future<Output = T> + Send + 'static,
     T: Send + 'static,
 {
-    if let Some(select) = patched_select(py)? {
-        // Without a socket the call can still block, so it does.
+    if let Some(Some(select)) = PATCHED_SELECT.get(py) {
+        // If we can't get a socket, fall back to blocking.
         if let Some(waker) = take_waker(py) {
-            return wait_with_select(py, &select, waker, future);
+            return wait_with_select(py, select.bind(py), waker, future);
         }
     }
     let (tx, rx) = oneshot::channel();
@@ -52,16 +50,18 @@ where
     py.detach(|| rx.blocking_recv()).map_err(|_| task_failed())
 }
 
-/// Returns `select.select` if a library such as gevent has replaced it, which
-/// it does with a function written in Python or Cython rather than C.
-fn patched_select(py: Python<'_>) -> PyResult<Option<Bound<'_, PyAny>>> {
-    static SELECT_MODULE: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
-    let module =
-        SELECT_MODULE.get_or_try_init(py, || PyModule::import(py, "select").map(Bound::unbind))?;
-    // Libraries usually patch on startup, but may do so after the first
-    // request, so the function is looked up each time.
-    let select = module.bind(py).getattr(intern!(py, "select"))?;
-    Ok((!select.is_instance_of::<PyCFunction>()).then_some(select))
+/// `select.select` as of import if it was patched, otherwise `None`. Any
+/// `select` that isn't the builtin C function counts as patched.
+static PATCHED_SELECT: PyOnceLock<Option<Py<PyAny>>> = PyOnceLock::new();
+
+/// Checks `select.select` once at import, so sync calls don't pay for the
+/// check. gevent has to patch before pyqwest is imported.
+pub(crate) fn init(py: Python<'_>) -> PyResult<()> {
+    let select = PyModule::import(py, "select")?.getattr(intern!(py, "select"))?;
+    PATCHED_SELECT.get_or_init(py, || {
+        (!select.is_instance_of::<PyCFunction>()).then(|| select.unbind())
+    });
+    Ok(())
 }
 
 fn wait_with_select<T, F>(
@@ -77,17 +77,17 @@ where
     let (tx, mut rx) = oneshot::channel();
     let task_waker = waker.clone();
     let task = get_runtime().spawn(async move {
-        // The output is sent before the wakeup is written, so a waiter woken by
-        // it always finds the output.
+        // Send the output before writing the wakeup, so a woken waiter always
+        // finds it.
         let _ = tx.send(future.await);
         let _ = write_wakeup(&task_waker.writer);
     });
     let rlist = PyTuple::new(py, [socket_fd(&waker.reader)])?;
     let empty = PyTuple::empty(py);
     loop {
-        // Draining before checking for the output means an output sent after
-        // the check leaves its wakeup pending for `select`. A wakeup left by a
-        // previous user of the socket only costs another check.
+        // Drain before checking for the output, so if the output arrives after
+        // the check, its wakeup is still there for `select`. A stale wakeup
+        // from an earlier use of the socket just costs one extra loop.
         drain_wakeups(&waker.reader);
         match rx.try_recv() {
             Ok(output) => {
@@ -98,8 +98,8 @@ where
             Err(TryRecvError::Empty) => {}
         }
         if let Err(e) = select.call1((&rlist, &empty, &empty)) {
-            // Nobody will read the output, so the work is stopped. The socket
-            // is not reused, as the task may still write to it.
+            // Nobody will read the output, so cancel the task. Don't reuse the
+            // socket, since the task may still write to it.
             task.abort();
             return Err(e);
         }
@@ -110,19 +110,19 @@ fn task_failed() -> PyErr {
     PyRuntimeError::new_err("pyqwest runtime task ended without a result")
 }
 
-/// A pair of sockets a waiting call watches one end of while the tokio task it
-/// waits for holds the other.
+/// The socket pair for one wait. The caller waits on `reader`, and the tokio
+/// task writes to `writer`.
 struct SyncWaker {
     reader: WakerSocket,
     writer: WakerSocket,
 }
 
-/// Sockets of finished waits, kept to save creating a pair for every request
-/// and every chunk of a streamed response.
+/// Socket pairs from finished waits, reused so we don't create a pair for every
+/// request and every streamed chunk.
 static IDLE_WAKERS: Mutex<Vec<Arc<SyncWaker>>> = Mutex::new(Vec::new());
 
-/// The most idle socket pairs to keep. Waits beyond this many at once close
-/// their sockets when they finish.
+/// The maximum number of idle socket pairs to keep. Extra pairs are closed when
+/// their wait finishes.
 const MAX_IDLE_WAKERS: usize = 64;
 
 fn take_waker(py: Python<'_>) -> Option<Arc<SyncWaker>> {
