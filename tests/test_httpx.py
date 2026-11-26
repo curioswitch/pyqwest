@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import socket
 import threading
+import time
 from typing import TYPE_CHECKING, cast
 
 import anyio
@@ -279,50 +280,42 @@ def test_sync_timeout() -> None:
         release.set()
 
 
-def test_sync_timeout_sums_phases() -> None:
-    # The read and write budgets together bound the operation, even with much
-    # longer connect and pool timeouts alongside.
-    release = threading.Event()
-
+def test_sync_timeout_not_doubled() -> None:
+    # The response arrives after the configured timeout but before twice it, so
+    # a deadline of read + write would let it through. Long connect and pool
+    # timeouts alongside must not extend the deadline either.
     def app(environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
-        release.wait(5)
+        time.sleep(0.3)
         return sync_echo_app(environ, start_response)
 
     transport = PyqwestTransport(WSGITransport(app))
-    try:
-        with (
-            httpx.Client(
-                transport=transport,
-                timeout=httpx.Timeout(connect=5, read=0.05, write=0.05, pool=5),
-            ) as client,
-            pytest.raises(httpx.ReadTimeout),
-        ):
-            client.get("http://localhost/")
-    finally:
-        release.set()
+    with (
+        httpx.Client(
+            transport=transport,
+            timeout=httpx.Timeout(connect=5, read=0.2, write=0.2, pool=5),
+        ) as client,
+        pytest.raises(httpx.ReadTimeout),
+    ):
+        client.get("http://localhost/")
 
 
 @pytest.mark.anyio
-async def test_async_timeout_sums_phases() -> None:
-    release = anyio.Event()
-
+async def test_async_timeout_not_doubled() -> None:
     async def app(
         scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
     ) -> None:
-        await release.wait()
+        await anyio.sleep(0.3)
         await echo_app(scope, receive, send)
 
     transport = AsyncPyqwestTransport(ASGITransport(app))
-    try:
-        async with httpx.AsyncClient(
-            transport=transport,
-            timeout=httpx.Timeout(connect=5, read=0.05, write=0.05, pool=5),
-        ) as client:
-            with pytest.raises(httpx.ReadTimeout):
-                await client.get("http://localhost/")
-    finally:
-        release.set()
-        await anyio.sleep(0.01)
+    async with httpx.AsyncClient(
+        transport=transport,
+        timeout=httpx.Timeout(connect=5, read=0.2, write=0.2, pool=5),
+    ) as client:
+        with pytest.raises(httpx.ReadTimeout):
+            await client.get("http://localhost/")
+    # Let the application task finish before the event loop closes.
+    await anyio.sleep(0.15)
 
 
 @pytest.mark.anyio
@@ -348,24 +341,25 @@ def test_convert_timeout_none() -> None:
     assert convert_timeout({"timeout": None}) is None
 
 
-def test_convert_timeout_sums_phases() -> None:
-    assert convert_timeout({"timeout": httpx.Timeout(5).as_dict()}) == 10
+def test_convert_timeout_max_of_phases() -> None:
+    # A single httpx timeout fills every phase, and must come back unchanged
+    # rather than doubled.
+    assert convert_timeout({"timeout": httpx.Timeout(5).as_dict()}) == 5
     assert (
         convert_timeout(
             {"timeout": httpx.Timeout(connect=30, read=2, write=30, pool=30).as_dict()}
         )
-        == 32
+        == 30
     )
     assert (
         convert_timeout({"timeout": httpx.Timeout(None, read=30, write=2).as_dict()})
-        == 32
+        == 30
     )
     assert convert_timeout({"timeout": {"read": 5}}) == 5
+    assert convert_timeout({"timeout": {"write": 5}}) == 5
 
 
 def test_convert_timeout_negative_phase() -> None:
-    # A negative phase contributes nothing to the budget rather than shrinking
-    # the other phase's.
     assert convert_timeout({"timeout": {"read": -5, "write": 10}}) == 10
     assert convert_timeout({"timeout": {"read": -5, "write": -10}}) == 0
 
