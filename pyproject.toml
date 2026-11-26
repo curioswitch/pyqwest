@@ -218,5 +218,9 @@ typing-extensions = false
 required-imports = ["from __future__ import annotations"]
 split-on-trailing-comma = false
 
+[tool.ty.analysis]
+# gevent is only installed where it supports the Python version.
+allowed-unresolved-imports = ["gevent.**"]
+
 [tool.ty.src]
 exclude = ["tests/test_benchmark.py"]
