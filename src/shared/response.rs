@@ -109,18 +109,40 @@ impl ResponseBody {
         *self.inner.extensions.lock().unwrap() = None;
     }
 
-    pub(crate) async fn chunk(&self) -> PyResult<Option<Bytes>> {
-        let _read_guard = self.inner.read_lock.lock().await;
+    /// Subscribes to the response being closed. Returns `None` if it is already
+    /// closed. Reads call this before taking `read_lock`, so a close that
+    /// happens while they wait for the lock still cancels them.
+    fn subscribe_cancel(&self) -> Option<watch::Receiver<bool>> {
         let mut cancel_rx = self.inner.cancel_tx.subscribe();
-        if *cancel_rx.borrow() {
-            return Ok(None);
-        }
-        let Some(mut body) = ({
-            let mut body_guard = self.inner.body.lock().await;
-            body_guard.take()
-        }) else {
+        let closed = *cancel_rx.borrow_and_update();
+        (!closed).then_some(cancel_rx)
+    }
+
+    pub(crate) async fn chunk(&self) -> PyResult<Option<Bytes>> {
+        let Some(mut cancel_rx) = self.subscribe_cancel() else {
             return Ok(None);
         };
+        let _read_guard = self.inner.read_lock.lock().await;
+        // Read the body in place instead of taking it out, so a read that is
+        // dropped partway, e.g. by a gevent timeout, doesn't lose the rest of
+        // the body.
+        let mut body_guard = self.inner.body.lock().await;
+        let Some(body) = body_guard.as_mut() else {
+            return Ok(None);
+        };
+        let res = self.next_data(body, &mut cancel_rx).await;
+        if !matches!(res, Ok(Some(_))) {
+            *body_guard = None;
+        }
+        res
+    }
+
+    /// Reads frames until a data frame, filling in trailers if they arrive.
+    async fn next_data(
+        &self,
+        body: &mut reqwest::Body,
+        cancel_rx: &mut watch::Receiver<bool>,
+    ) -> PyResult<Option<Bytes>> {
         loop {
             let res = tokio::select! {
                 _ = cancel_rx.changed() => {
@@ -154,11 +176,7 @@ impl ResponseBody {
                 };
             // A frame is either data or trailers.
             match frame.into_data().map_err(Frame::into_trailers) {
-                Ok(buf) => {
-                    let mut body_guard = self.inner.body.lock().await;
-                    *body_guard = Some(body);
-                    return Ok(Some(buf));
-                }
+                Ok(buf) => return Ok(Some(buf)),
                 Err(Ok(trailers)) => {
                     self.inner.trailers.get().fill(trailers);
                 }
@@ -175,7 +193,9 @@ impl ResponseBody {
     }
 
     pub(crate) fn try_close(&self) -> bool {
-        let _ = self.inner.cancel_tx.send(true);
+        // Unlike `send`, `send_replace` stores the value even when nothing is
+        // subscribed, so reads that start later still see the close.
+        self.inner.cancel_tx.send_replace(true);
         let Ok(_read_guard) = self.inner.read_lock.try_lock() else {
             return false;
         };
@@ -189,11 +209,10 @@ impl ResponseBody {
     }
 
     pub(crate) async fn read_full(&self) -> PyResult<Bytes> {
-        let _read_guard = self.inner.read_lock.lock().await;
-        let mut cancel_rx = self.inner.cancel_tx.subscribe();
-        if *cancel_rx.borrow() {
+        let Some(mut cancel_rx) = self.subscribe_cancel() else {
             return Ok(Bytes::new());
-        }
+        };
+        let _read_guard = self.inner.read_lock.lock().await;
         let Some(body) = ({
             let mut body_guard = self.inner.body.lock().await;
             body_guard.take()
@@ -242,5 +261,59 @@ impl<'py> IntoPyObject<'py> for RustFullResponse {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let body = PyBytes::new(py, &self.body);
         FullResponse::new(py, self.head, body.unbind(), self.trailers)?.into_pyobject(py)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures_util::FutureExt as _;
+
+    use super::*;
+
+    /// Returns a body that never yields data, so a read only finishes if it
+    /// sees the close.
+    fn pending_body(py: Python<'_>) -> ResponseBody {
+        let body =
+            ResponseBody::pending(Py::new(py, Headers::empty()).unwrap(), BodyError::default());
+        let stream = futures_util::stream::pending::<Result<Bytes, std::io::Error>>();
+        body.fill(reqwest::Body::wrap_stream(stream), http::Extensions::new())
+            .now_or_never()
+            .unwrap();
+        body
+    }
+
+    #[test]
+    fn read_after_unfinished_close_ends() {
+        Python::initialize();
+        Python::attach(|py| {
+            let body = pending_body(py);
+
+            // Another read holds `read_lock`, so the close cannot finish.
+            let read_guard = body.inner.read_lock.try_lock().unwrap();
+            assert!(!body.try_close());
+            drop(read_guard);
+
+            assert!(matches!(body.chunk().now_or_never(), Some(Ok(None))));
+        });
+    }
+
+    #[test]
+    fn close_cancels_read_waiting_for_its_turn() {
+        Python::initialize();
+        Python::attach(|py| {
+            let body = pending_body(py);
+
+            // Another read holds `read_lock`, so this one waits for it.
+            let read_guard = body.inner.read_lock.try_lock().unwrap();
+            let mut read = std::pin::pin!(body.chunk());
+            assert!(read.as_mut().now_or_never().is_none());
+            assert!(!body.try_close());
+            drop(read_guard);
+
+            let Some(Err(err)) = read.now_or_never() else {
+                panic!("read was not cancelled");
+            };
+            assert!(err.is_instance_of::<ReadError>(py));
+        });
     }
 }

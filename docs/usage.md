@@ -61,6 +61,25 @@ and get back a [full response](/api/#pyqwest.FullResponse).
     print(response.text())
     ```
 
+## gevent
+
+`SyncClient` supports [gevent](https://www.gevent.org/). Sync requests yield to the gevent hub while
+they wait instead of blocking the thread, so other greenlets keep running. A `gevent.Timeout` or a
+killed greenlet cancels the request.
+
+pyqwest checks whether gevent is active when it is imported, so call `monkey.patch_all()` before
+anything imports pyqwest:
+
+```python
+from gevent import monkey
+
+monkey.patch_all()
+
+import pyqwest
+```
+
+Streaming request bodies are read from their iterator on a native thread, not a greenlet.
+
 ## Multipart forms
 
 To send a `multipart/form-data` request, for example to upload files, pass a

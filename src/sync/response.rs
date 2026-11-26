@@ -1,14 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
-use bytes::Bytes;
 use pyo3::{
-    exceptions::PyRuntimeError,
     pyclass, pymethods,
     types::{PyAnyMethods as _, PyBytes, PyInt, PyTuple},
     Bound, IntoPyObjectExt as _, Py, PyAny, PyResult, Python,
 };
-use tokio::sync::oneshot;
 
 use crate::{
     common::{httpversion::HTTPVersion, FullResponse},
@@ -18,8 +15,8 @@ use crate::{
         constants::Constants,
         request::BodyError,
         response::{ResponseBody, ResponseHead},
-        runtime::get_runtime,
     },
+    sync::wait::wait,
 };
 
 enum Content {
@@ -136,8 +133,8 @@ impl SyncResponse {
         _exc_type: Option<&Bound<'_, PyAny>>,
         _exc_value: Option<&Bound<'_, PyAny>>,
         _traceback: Option<&Bound<'_, PyAny>>,
-    ) {
-        self.close(py);
+    ) -> PyResult<()> {
+        self.close(py)
     }
 
     #[getter]
@@ -179,14 +176,19 @@ impl SyncResponse {
         }
     }
 
-    fn close(&self, py: Python<'_>) {
-        close_request_iter(py, &self.request_iter, &self.constants);
-        match &self.content {
+    fn close(&self, py: Python<'_>) -> PyResult<()> {
+        // Cancel any pending read before closing the request body. Otherwise
+        // the server may finish the response first, and the read ends normally
+        // instead of raising.
+        let res = match &self.content {
             Content::Http(content) => content.get().close(py),
             Content::Custom(content) => {
                 let _ = content.bind(py).call_method0("close");
+                Ok(())
             }
-        }
+        };
+        close_request_iter(py, &self.request_iter, &self.constants);
+        res
     }
 
     #[getter(_read_pending)]
@@ -221,12 +223,7 @@ impl SyncResponse {
                 let body = content.get().body.load();
                 if let Some(body) = body.as_ref() {
                     let body = body.clone();
-                    let (tx, rx) = oneshot::channel::<PyResult<Bytes>>();
-                    get_runtime().spawn(async move { tx.send(body.read_full().await) });
-                    let res = py
-                        .detach(|| rx.blocking_recv())
-                        .map_err(|_| PyRuntimeError::new_err("Failed to receive full response"))
-                        .flatten();
+                    let res = wait(py, async move { body.read_full().await }).flatten();
                     close_request_iter(py, &self.request_iter, &self.constants);
                     let body = res?;
                     PyBytes::new(py, &body).unbind()
@@ -271,16 +268,7 @@ impl SyncContentGenerator {
             return Ok(None);
         };
         let body = body.clone();
-        let res = py
-            .detach(|| {
-                let (tx, rx) = oneshot::channel::<PyResult<Option<Bytes>>>();
-                get_runtime().spawn(async move {
-                    let chunk = body.chunk().await;
-                    tx.send(chunk).unwrap();
-                });
-                rx.blocking_recv()
-                    .map_err(|e| PyRuntimeError::new_err(format!("Error receiving chunk: {e}")))
-            })
+        let res = wait(py, async move { body.chunk().await })
             .flatten()
             .inspect_err(|_| close_request_iter(py, &self.request_iter, &self.constants))?;
         if res.is_none() {
@@ -289,20 +277,13 @@ impl SyncContentGenerator {
         Ok(res.map(BytesMemoryView::new))
     }
 
-    fn close(&self, py: Python<'_>) {
+    fn close(&self, py: Python<'_>) -> PyResult<()> {
         let Some(body) = self.body.swap(None) else {
-            return;
+            return Ok(());
         };
         if body.try_close() {
-            return;
+            return Ok(());
         }
-        let (tx, rx) = oneshot::channel::<()>();
-        get_runtime().spawn(async move {
-            body.close().await;
-            tx.send(()).unwrap();
-        });
-        py.detach(|| {
-            let _ = rx.blocking_recv();
-        });
+        wait(py, async move { body.close().await })
     }
 }

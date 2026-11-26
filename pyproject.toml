@@ -65,6 +65,9 @@ dev = [
 
 docs = ["mkdocstrings-python", "zensical"]
 
+# Kept out of dev because gevent doesn't support free-threaded Python.
+gevent = ["gevent==26.9.0"]
+
 [build-system]
 requires = ["maturin>=1.16.0,<2.0"]
 build-backend = "maturin"
@@ -214,6 +217,10 @@ typing-extensions = false
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
 split-on-trailing-comma = false
+
+[tool.ty.analysis]
+# gevent is only installed where it supports the Python version.
+allowed-unresolved-imports = ["gevent.**"]
 
 [tool.ty.src]
 exclude = ["tests/test_benchmark.py"]

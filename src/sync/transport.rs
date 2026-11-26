@@ -5,19 +5,18 @@ use arc_swap::ArcSwapOption;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::sync::PyOnceLock;
 use pyo3::{prelude::*, IntoPyObjectExt as _};
-use tokio::sync::oneshot;
 
 use crate::common::httpversion::HTTPVersion;
 use crate::pyerrors;
 use crate::shared::constants::Constants;
 use crate::shared::otel::{Instrumentation, Operation};
 use crate::shared::request::BodyError;
-use crate::shared::runtime::get_runtime;
 use crate::shared::transport::{
     get_default_reqwest_client, new_reqwest_client, ClientParams, DEFAULT_MAX_REDIRECTS,
 };
 use crate::sync::request::SyncRequest;
 use crate::sync::response::{close_request_iter, RequestIterHandle, SyncResponse};
+use crate::sync::wait::wait;
 
 #[pyclass(
     module = "_pyqwest",
@@ -203,7 +202,6 @@ impl SyncHttpTransport {
         let body_error = BodyError::default();
         let (mut request_rs, request_iter) = request.new_reqwest(py, self.http3, &body_error)?;
         let request_iter: RequestIterHandle = Arc::new(Mutex::new(request_iter));
-        let (tx, rx) = oneshot::channel::<PyResult<SyncResponse>>();
         let mut response = SyncResponse::pending(
             py,
             request_iter.clone(),
@@ -213,26 +211,19 @@ impl SyncHttpTransport {
         operation.inject(py, &mut request_rs)?;
         let client = client.clone();
         let operation = operation.clone();
-        get_runtime().spawn(async move {
+        wait(py, async move {
             match client.execute(request_rs).await {
                 Ok(res) => {
                     operation.fill_response(&res);
                     response.fill(res).await;
-                    let _ = tx.send(Ok(response));
+                    Ok(response)
                 }
-                Err(e) => {
-                    let err = body_error
-                        .take()
-                        .unwrap_or_else(|| pyerrors::from_reqwest(&e, "Request failed"));
-                    let _ = tx.send(Err(err));
-                }
+                Err(e) => Err(body_error
+                    .take()
+                    .unwrap_or_else(|| pyerrors::from_reqwest(&e, "Request failed"))),
             }
-        });
-        py.detach(|| {
-            rx.blocking_recv()
-                .map_err(|e| PyRuntimeError::new_err(format!("Error receiving response: {e}")))
-                .flatten()
         })
+        .flatten()
         .inspect_err(|_| close_request_iter(py, &request_iter, &self.constants))
     }
 

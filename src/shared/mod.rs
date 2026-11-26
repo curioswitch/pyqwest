@@ -20,3 +20,5 @@ pub(crate) mod runtime;
 pub(crate) mod transport;
 /// Shared utilities for validating arguments.
 pub(crate) mod validation;
+/// Sockets that wake Python code from tokio threads without the GIL.
+pub(crate) mod wakeup;
